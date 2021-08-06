@@ -58,13 +58,13 @@ if (PCB STREQUAL X10)
     )
   set(FIRMWARE_TARGET_SRC
     ${FIRMWARE_TARGET_SRC}
-    ../common/arm/stm32/adc_driver.cpp
+    ../common/arm/stm32/stm32_hal_adc.cpp
+    ../../hal/adc_driver.cpp
     )
   set(BITMAPS_TARGET x10_bitmaps)
   set(FONTS_TARGET x10_fonts)
   set(LCD_DRIVER lcd_driver.cpp)
   set(LUA_EXPORT lua_export_x10)
-  set(INTERNAL_GPS OFF)
   if (PCBREV STREQUAL EXPRESS)
     set(FLAVOUR x10express)
     option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" OFF)
@@ -137,6 +137,7 @@ elseif (PCB STREQUAL X12S)
     )
   set(FIRMWARE_TARGET_SRC
     ${FIRMWARE_TARGET_SRC}
+    ../../hal/adc_driver.cpp
     x12s_adc_driver.cpp
     )
   set(BITMAPS_TARGET x12s_bitmaps)
@@ -202,8 +203,8 @@ if(INTERNAL_MODULE_PXX2)
   add_definitions(-DHARDWARE_INTERNAL_MODULE)
   add_definitions(-DINTERNAL_MODULE_PXX2)
   if (NOT PCBREV STREQUAL EXPRESS)
-    set(ACCESS_LIB ON)
-    add_definitions(-DACCESS_LIB)
+    set(ACCESS_DENIED ON)
+    add_definitions(-DACCESS_DENIED)
   endif()
 endif()
 
