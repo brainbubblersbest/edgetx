@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,10 +27,6 @@
 traceCallbackFunc traceCallback = 0;
 #endif
 
-#if !defined(SIMU)
-uint32_t debugCounter1ms = 0;
-#endif
-
 #if defined(SIMU)
 #define PRINTF_BUFFER_SIZE     1024
 void debugPrintf(const char * format, ...)
@@ -45,65 +42,6 @@ void debugPrintf(const char * format, ...)
   if (traceCallback) {
     traceCallback(tmp);
   }
-}
-#endif
-
-#if defined(DEBUG_TRACE_BUFFER)
-static struct TraceElement traceBuffer[TRACE_BUFFER_LEN];
-static uint8_t traceBufferPos;
-extern Fifo<uint8_t, 512> auxSerialTxFifo;
-gtime_t filltm(const gtime_t *t, struct gtm *tp);
-
-void trace_event(enum TraceEvent event, uint32_t data)
-{
-  if (traceBufferPos >= TRACE_BUFFER_LEN) return;
-  __disable_irq();
-  struct TraceElement * p = &traceBuffer[traceBufferPos++];
-  __enable_irq();
-  p->time = g_rtcTime;
-  p->time_ms = g_ms100;
-  p->event = event;
-  p->data = data;
-}
-
-void trace_event_i(enum TraceEvent event, uint32_t data)
-{
-  if (traceBufferPos >= TRACE_BUFFER_LEN) return;
-  struct TraceElement * p = &traceBuffer[traceBufferPos++];
-  p->time = g_rtcTime;
-  p->time_ms = g_ms100;
-  p->event = event;
-  p->data = data;
-}
-
-
-const struct TraceElement * getTraceElement(uint16_t idx)
-{
-  if (idx < TRACE_BUFFER_LEN) return &traceBuffer[idx];
-  return 0;
-}
-
-
-void dumpTraceBuffer()
-{
-  TRACE("Dump of Trace Buffer (%s " DATE " " TIME "):", vers_stamp);
-  TRACE("#   Time                     Event  Data");
-  for(int n = 0; n < TRACE_BUFFER_LEN; ++n) {
-    struct gtm tp;
-    filltm(&traceBuffer[n].time, &tp);
-    TRACE_NOCRLF("%02d  ", n);
-    TRACE_NOCRLF("%4d-%02d-%02d,%02d:%02d:%02d.%02d0", tp.tm_year+TM_YEAR_BASE, tp.tm_mon+1, tp.tm_mday, tp.tm_hour, tp.tm_min, tp.tm_sec, traceBuffer[n].time_ms);
-    TRACE("  %03d    0x%08x", traceBuffer[n].event, traceBuffer[n].data);
-    if (traceBuffer[n].time == 0 && traceBuffer[n].time_ms == 0) break;
-#if !defined(SIMU)
-    if ((n % 5) == 0) {
-      while (!auxSerialTxFifo.isEmpty()) {
-        RTOS_WAIT_TICKS(1);
-      }
-    }
-#endif
-  }
-  TRACE("End of Trace Buffer dump");
 }
 #endif
 
@@ -142,7 +80,7 @@ void dumpTraceBuffer()
     " notd",  // INT_OTG_FS_RX_NOT_DEVICE,
 #endif // #if defined(DEBUG_USB_INTERRUPTS)
   };
-#elif defined(PCBTARANIS) 
+#elif defined(PCBTARANIS)
   const char * const interruptNames[INT_LAST] = {
     "Tick ",   // INT_TICK,
     "5ms  ",   // INT_5MS,
@@ -180,32 +118,6 @@ void dumpTraceBuffer()
 struct InterruptCounters interruptCounters;
 #endif //#if defined(DEBUG_INTERRUPTS)
 
-#if defined(DEBUG_TASKS)
-
-uint32_t taskSwitchLog[DEBUG_TASKS_LOG_SIZE] __SDRAM;
-uint16_t taskSwitchLogPos;
-
-/**
- *******************************************************************************
- * @brief      Hook for task switch logging
- * @param[in]  taskID Task which is now in RUNNING state
- * @retval     None
- *
- * @par Description
- * @details    This function logs the time when a task entered the RUNNING state.
- *******************************************************************************
- */
-void CoTaskSwitchHook(uint8_t taskID)
-{
-  /* Log task switch here */
-  taskSwitchLog[taskSwitchLogPos] = (taskID << 24) + ((uint32_t)CoGetOSTime() & 0xFFFFFF);
-  if(++taskSwitchLogPos >= DEBUG_TASKS_LOG_SIZE) {
-    taskSwitchLogPos = 0;
-  }
-}
-
-#endif // #if defined(DEBUG_TASKS)
-
 #if defined(DEBUG_TIMERS)
 
 void DebugTimer::start()
@@ -230,44 +142,43 @@ void DebugTimer::stop()
   else {
     last *= 10000ul; //adjust unit to 1us
   }
-  evalStats(); 
+  evalStats();
 }
 
 DebugTimer debugTimers[DEBUG_TIMERS_COUNT];
 
 const char * const debugTimerNames[DEBUG_TIMERS_COUNT] = {
-   "Pulses int."   // debugTimerIntPulses,
-  ,"Pulses dur."   // debugTimerIntPulsesDuration,
-  ,"10ms dur.  "   // debugTimerPer10ms,
-  ,"10ms period"   // debugTimerPer10msPeriod,
-  ,"Rotary enc."   // debugTimerRotEnc,
-  ,"Haptic     "   // debugTimerHaptic,
-  ,"Mixer calc "   // debugTimerMixer,
-  ,"Tel. wakeup"   // debugTimerTelemetryWakeup,
-  ,"perMain dur"   // debugTimerPerMain,
-  ," perMain s1"   // debugTimerPerMain1,
-  ," guiMain   "   // debugTimerGuiMain,
-  ,"  LUA bg   "   // debugTimerLuaBg,
-  ,"  LCD wait "   // debugTimerLcdRefreshWait,
-  ,"  LUA fg   "   // debugTimerLuaFg,
-  ,"  LCD refr."   // debugTimerLcdRefresh,
-  ,"  Menus    "   // debugTimerMenus,
-  ,"   Menu hnd"   // debugTimerMenuHandlers,
-  ,"Menu Vers. "   // debugTimerVersion,
-  ,"Menu simple"   // debugTimerSimpleMenu,
-  ,"Menu drawte"   // debugTimerDrawText,
-  ,"Menu drawt1"   // debugTimerDrawText1,
-  ,"Mix ADC    "   // debugTimerGetAdc,
-  ,"Mix getsw  "   // debugTimerGetSwitches,
-  ,"Mix eval   "   // debugTimerEvalMixes,
-  ,"Mix 10ms   "   // debugTimerMixes10ms,
-  ,"ADC read   "   // debugTimerAdcRead,
+   "Pulses int."   // debugTimerIntPulses
+  ,"Pulses dur."   // debugTimerIntPulsesDuration
+  ,"10ms dur.  "   // debugTimerPer10ms
+  ,"10ms period"   // debugTimerPer10msPeriod
+  ,"Rotary enc."   // debugTimerRotEnc
+  ,"Haptic     "   // debugTimerHaptic
+  ,"Mixer calc "   // debugTimerMixer
+  ,"Tel. wakeup"   // debugTimerTelemetryWakeup
+  ,"perMain dur"   // debugTimerPerMain
+  ," perMain s1"   // debugTimerPerMain1
+  ," guiMain   "   // debugTimerGuiMain
+  ,"  LUA      "   // debugTimerLua
+  ,"  LCD wait "   // debugTimerLcdRefreshWait
+  ,"  LCD refr."   // debugTimerLcdRefresh
+  ,"  Menus    "   // debugTimerMenus
+  ,"   Menu hnd"   // debugTimerMenuHandlers
+  ,"Menu Vers. "   // debugTimerVersion
+  ,"Menu simple"   // debugTimerSimpleMenu
+  ,"Menu drawte"   // debugTimerDrawText
+  ,"Menu drawt1"   // debugTimerDrawText1
+  ,"Mix ADC    "   // debugTimerGetAdc
+  ,"Mix getsw  "   // debugTimerGetSwitches
+  ,"Mix eval   "   // debugTimerEvalMixes
+  ,"Mix 10ms   "   // debugTimerMixes10ms
+  ,"ADC read   "   // debugTimerAdcRead
   ,"mix-pulses "   // debugTimerMixerCalcToUsage
   ,"mix-int.   "   // debugTimerMixerIterval
   ,"Audio int. "   // debugTimerAudioIterval
   ,"Audio dur. "   // debugTimerAudioDuration
-  ," A. consume"   // debugTimerAudioConsume,
-
+  ," A. consume"   // debugTimerAudioConsume
+  ,"SpaceMouse "   // debugTimerSpaceMouseWakeup
 };
 
 #endif

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,6 +20,7 @@
  */
 
 #include "view_main.h"
+#include "model_select.h"
 #include "menu_model.h"
 #include "menu_radio.h"
 #include "menu_screen.h"
@@ -27,24 +29,86 @@
 
 #include "opentx.h"
 
+static void tile_view_deleted_cb(lv_event_t* e)
+{
+  TRACE("CHILD_DELETED tile[%d]", lv_event_get_user_data(e));
+  lv_obj_t* target = lv_event_get_target(e);
+  lv_obj_t* obj = lv_event_get_current_target(e);
+
+  // LV_EVENT_CHILD_DELETED is bubbled to all parents, so
+  // we'd better make sure this is one of our own.
+  if (obj == target) { lv_obj_del(obj); }
+}
+
+static void saveViewId(unsigned view)
+{
+  if (view != g_model.view) {
+    TRACE("save view #%d", view);
+    g_model.view = view;
+    storageDirty(EE_MODEL);
+  }
+}
+
+static void tile_view_scroll(lv_event_t* e)
+{
+  // (void)e;
+  auto viewMain = ViewMain::instance();
+  if (viewMain) {
+    if (lv_event_get_code(e) == LV_EVENT_SCROLL_END) {
+      auto view = viewMain->getCurrentMainView();
+      saveViewId(view);
+    } else {
+      viewMain->updateTopbarVisibility();
+    }
+  }
+}
+
 ViewMain * ViewMain::_instance = nullptr;
 
 ViewMain::ViewMain():
-  Window(MainWindow::instance(), MainWindow::instance()->getRect(), NO_SCROLLBAR),
-  topbar(dynamic_cast<TopbarImpl*>(TopbarFactory::create(this)))
+  Window(MainWindow::instance(), MainWindow::instance()->getRect(), NO_SCROLLBAR | OPAQUE)
 {
-  setPageWidth(getParent()->width());
-  focusWindow = this;
+  Layer::push(this);
 
-  setFocusHandler([&](bool focus) {
-      TRACE("[ViewMain] Focus %s",
-            focus ? "gained" : "lost");
-    });
+  tile_view = lv_tileview_create(lvobj);
+  lv_obj_set_pos(tile_view, rect.x, rect.y);
+  lv_obj_set_size(tile_view, rect.w, rect.h);
+  lv_obj_set_style_bg_opa(tile_view, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_scrollbar_mode(tile_view, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_clear_flag(tile_view, LV_OBJ_FLAG_SCROLL_ELASTIC);
+
+  lv_obj_add_flag(tile_view, LV_OBJ_FLAG_EVENT_BUBBLE);
+  lv_obj_set_user_data(tile_view, this);
+  lv_obj_add_event_cb(tile_view, tile_view_scroll, LV_EVENT_SCROLL, nullptr);
+  lv_obj_add_event_cb(tile_view, tile_view_scroll, LV_EVENT_SCROLL_END, nullptr);
+  lv_obj_add_event_cb(lvobj, ViewMain::long_pressed, LV_EVENT_LONG_PRESSED, nullptr);
+  
+  // create last to be on top
+  topbar = dynamic_cast<TopbarImpl*>(TopbarFactory::create(this));
 }
 
 ViewMain::~ViewMain()
 {
   _instance = nullptr;
+}
+
+void ViewMain::deleteLater(bool detach, bool trash)
+{
+  Layer::pop(this);
+  Window::deleteLater(detach, trash);
+}
+
+void ViewMain::addMainView(Window* view, uint32_t viewId)
+{
+  TRACE("addMainView(0x%p, %d)", view, viewId);
+
+  auto tile = lv_tileview_add_tile(tile_view, viewId, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
+
+  auto view_obj = view->getLvObj();
+  lv_obj_set_parent(view_obj, tile);
+
+  auto user_data = (void*)(intptr_t)viewId;
+  lv_obj_add_event_cb(tile, tile_view_deleted_cb, LV_EVENT_CHILD_DELETED, user_data);
 }
 
 void ViewMain::setTopbarVisible(float visible)
@@ -54,28 +118,7 @@ void ViewMain::setTopbarVisible(float visible)
 
 unsigned ViewMain::getMainViewsCount() const
 {
-  return views;
-}
-
-void ViewMain::setMainViewsCount(unsigned views)
-{
-  if (views > MAX_CUSTOM_SCREENS)
-    views = MAX_CUSTOM_SCREENS;
-
-  // update number of views
-  this->views = views;
-
-  // adjust current screen if needed
-  if (g_model.view >= views) {
-    setCurrentMainView(views - 1);
-  }
-  
-  setInnerWidth(getParent()->width() * views);
-}
-
-coord_t ViewMain::getMainViewLeftPos(unsigned view) const
-{
-  return getParent()->width() * view;
+  return lv_obj_get_child_cnt(tile_view);
 }
 
 rect_t ViewMain::getMainZone(rect_t zone, bool hasTopbar) const
@@ -89,15 +132,17 @@ rect_t ViewMain::getMainZone(rect_t zone, bool hasTopbar) const
 
 unsigned ViewMain::getCurrentMainView() const
 {
-  return g_model.view;
+  return lv_obj_get_scroll_x(tile_view) / width();
 }
 
-void ViewMain::setCurrentMainView(unsigned view)
+void ViewMain::setCurrentMainView(unsigned viewId)
 {
-  if (view < getMainViewsCount()) {
-    setScrollPositionX(view * pageWidth);
-    TRACE("### switched to view #%i", g_model.view);
-  }
+  lv_obj_set_tile_id(tile_view, viewId, 0, LV_ANIM_OFF);
+}
+
+void setRequestedMainView(uint8_t view)
+{
+  g_model.view = view;
 }
 
 void ViewMain::nextMainView()
@@ -107,6 +152,7 @@ void ViewMain::nextMainView()
     view = 0;
 
   setCurrentMainView(view);
+  saveViewId(view);
 }
 
 void ViewMain::previousMainView()
@@ -118,6 +164,7 @@ void ViewMain::previousMainView()
     view = getMainViewsCount() - 1;
 
   setCurrentMainView(view);
+  saveViewId(view);
 }
 
 Topbar* ViewMain::getTopbar()
@@ -135,17 +182,37 @@ static bool hasTopbar(unsigned view)
   return false;
 }
 
+void ViewMain::enableTopbar()
+{
+  if (topbar && topbar->getLvObj()) {
+    lv_obj_clear_flag(topbar->getLvObj(), LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+void ViewMain::disableTopbar()
+{
+  if (topbar && topbar->getLvObj()) {
+    lv_obj_add_flag(topbar->getLvObj(), LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
 void ViewMain::updateTopbarVisibility()
 {
-  // relative to left visible page
-  int leftScroll = getScrollPositionX() % pageWidth;
+  if (!tile_view) return;
+
+  coord_t scrollPos = lv_obj_get_scroll_x(tile_view);
+  coord_t pageWidth = width();
+  if (!pageWidth) return;
+
+  int leftScroll =  scrollPos % width();
   if (leftScroll == 0) {
-    setTopbarVisible(hasTopbar(g_model.view));
-    if (customScreens[g_model.view])
-      customScreens[g_model.view]->adjustLayout();
+    int view = scrollPos / pageWidth;
+    setTopbarVisible(hasTopbar(view));
+    if (customScreens[view])
+      customScreens[view]->adjustLayout();
   }
   else {
-    int  leftIdx     = getScrollPositionX() / pageWidth;
+    int  leftIdx     = scrollPos / pageWidth;
     bool leftTopbar  = hasTopbar(leftIdx);
     bool rightTopbar = hasTopbar(leftIdx+1);
 
@@ -169,110 +236,47 @@ void ViewMain::updateTopbarVisibility()
   }
 }
 
-void ViewMain::setScrollPositionX(coord_t value)
+// Update screens after theme loaded / changed
+void ViewMain::updateFromTheme()
 {
-  Window::setScrollPositionX(value);
-  topbar->setLeft(getScrollPositionX());
-
-  // update page index
-  g_model.view = getPageIndex();
-  setFocus();
-
-  // update Topbar
-  updateTopbarVisibility();
-}
-
-void ViewMain::setScrollPositionY(coord_t value)
-{
-  // this one is not used yet, but could
-  // usefull to place the screens upwards
-  Window::setScrollPositionY(value);
-  topbar->setTop(getScrollPositionY());
-}
-
-#if defined(HARDWARE_TOUCH)
-
-//#define DEBUG_SLIDE
-
-bool ViewMain::onTouchSlide(coord_t x, coord_t y, coord_t startX, coord_t startY, coord_t slideX, coord_t slideY)
-{
-  // prevent screen sliding over the next one (one screen at a time)
-  if (slidingWindow == this) {
-    if (prevSlideState != touchState.event) {
-      if (touchState.event == TE_SLIDE_END) {
-        startSlidePage = getCurrentMainView();
-#if defined(DEBUG_SLIDE)
-        TRACE("### startSlidePage = %d ###", startSlidePage);
-#endif
-      }
-      prevSlideState = touchState.event;
-    }
-    else if (prevSlideState == TE_SLIDE_END){
-
-      // let's check what would be the next position
-      auto nextPos = (getScrollPositionX() - slideX);
-
-      // if we would get over more than one page counting from slide-start
-      if (abs(nextPos - getMainViewLeftPos(startSlidePage)) > pageWidth) {
-
-#if defined(DEBUG_SLIDE)
-        TRACE("### kill the move ###");
-#endif
-        // kill the movement and let "snap-to-view" finish the job
-        prevSlideState   = TE_NONE;
-        touchState.event = TE_NONE;
-        touchState.lastDeltaX = 0;
-        touchState.lastDeltaY = 0;
-        return true;
-      }
-    }
+  for (int i = 0; i < MAX_CUSTOM_SCREENS; i += 1) {
+    if (customScreens[i])
+      customScreens[i]->updateFromTheme();
   }
-
-#if defined(DEBUG_SLIDE)
-  TRACE("%sWindow[scrollX=%d, scrollY=%d]->onTouchSlide[x=%d, y=%d, startX=%d, startY=%d, slideX=%d, slideY=%d]",
-        touchState.event == TE_SLIDE_END && slidingWindow ? "###" : "",
-        getScrollPositionX(), getScrollPositionY(),
-        x, y, startX, startY, slideX, slideY);
-#endif
-
-  return Window::onTouchSlide(x, y, startX, startY, slideX, slideY);
 }
 
-bool ViewMain::onTouchEnd(coord_t x, coord_t y)
-{
-  if (Window::onTouchEnd(x,y)) return true;
-  if (!hasFocus()) {
-    setFocus();
-  }
-  else {
-    openMenu();
-  }
-  return true;
-}
-#endif
-
-#if defined(HARDWARE_KEYS)
 void ViewMain::onEvent(event_t event)
 {
+#if defined(HARDWARE_KEYS)
   switch (event) {
-    case EVT_KEY_FIRST(KEY_MODEL):
-      killEvents(event);
+    case EVT_KEY_BREAK(KEY_MODEL):
+      if (viewMainMenu) viewMainMenu->onCancel();
       new ModelMenu();
       break;
 
-    case EVT_KEY_FIRST(KEY_RADIO):
-      killEvents(event);
+    case EVT_KEY_LONG(KEY_MODEL):
+      killEvents(KEY_MODEL);
+      if (viewMainMenu) viewMainMenu->onCancel();
+      new ModelLabelsWindow();
+      break;
+
+    case EVT_KEY_BREAK(KEY_RADIO):
+      if (viewMainMenu) viewMainMenu->onCancel();
       new RadioMenu();
       break;
 
-    case EVT_KEY_FIRST(KEY_TELEM):
-      killEvents(event);
-      new ScreenMenu();
+    case EVT_KEY_LONG(KEY_RADIO):
+      {
+        killEvents(KEY_RADIO);
+        // Radio setup
+        auto m = new RadioMenu();
+        m->setCurrentTab(2);
+      }
       break;
 
-    case EVT_KEY_FIRST(KEY_ENTER):
-      killEvents(event);
-      openMenu();
+    case EVT_KEY_FIRST(KEY_TELEM):
+      if (viewMainMenu) viewMainMenu->onCancel();
+      new ScreenMenu();
       break;
 
 #if defined(KEYS_GPIO_REG_PGUP)
@@ -280,8 +284,10 @@ void ViewMain::onEvent(event_t event)
 #else
     case EVT_KEY_BREAK(KEY_PGDN):
 #endif
-      killEvents(event);
-      nextMainView();
+      if (!widget_select) {
+        if (viewMainMenu) viewMainMenu->onCancel();
+        nextMainView();
+      }
       break;
 
 //TODO: these need to go away!
@@ -292,26 +298,88 @@ void ViewMain::onEvent(event_t event)
     case EVT_KEY_LONG(KEY_PGDN):
 #endif
       killEvents(event);
-      previousMainView();
-      break;
-
-    case EVT_ROTARY_LEFT:
-      // decrement
-    case EVT_ROTARY_RIGHT:
-      // increment
-      if (customScreens[g_model.view]) {
-        customScreens[g_model.view]->setFocus();
+      if (!widget_select) {
+        if (viewMainMenu) viewMainMenu->onCancel();
+        previousMainView();
       }
       break;
+  }
+#endif
+}
 
-      break;
+void ViewMain::onClicked()
+{
+  openMenu();
+}
+
+void ViewMain::onCancel()
+{
+  if (widget_select) {
+    enableWidgetSelect(false);
   }
 }
-#endif
+
+void ViewMain::refreshWidgetSelectTimer()
+{
+  if (!widget_select_timer) {
+    widget_select_timer = lv_timer_create(ViewMain::ws_timer, 10 * 1000, this);
+  } else {
+    lv_timer_reset(widget_select_timer);
+  }
+}
+
+bool ViewMain::enableWidgetSelect(bool enable)
+{
+  TRACE("enableWidgetSelect(%d)", enable);
+  // TODO: start timer
+  if (widget_select == enable) return false;
+  widget_select = enable;
+
+  lv_obj_t* tile = lv_tileview_get_tile_act(tile_view);
+  if(!tile)
+    return true;
+
+  auto cont_obj = lv_obj_get_child(tile, 0);
+  if(!cont_obj)
+    return true;
+
+  auto cont = (WidgetsContainer*)lv_obj_get_user_data(cont_obj);
+
+  for (uint32_t i = 0; i < cont->getZonesCount(); i++) {
+    Widget* widget = cont->getWidget(i);
+    if (!widget) continue;
+    if (enable) {
+      widget->setFocusHandler([=](bool) { refreshWidgetSelectTimer(); });
+      lv_group_add_obj(lv_group_get_default(), widget->getLvObj());
+    } else {
+      widget->setFocusHandler(nullptr);
+      lv_group_remove_obj(widget->getLvObj());
+    }
+  }
+
+  if (enable) {
+    lv_obj_clear_flag(tile_view, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(tile_view, LV_OBJ_FLAG_SCROLL_CHAIN_HOR);
+    lv_obj_clear_flag(tile_view, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+  } else {
+    lv_obj_add_flag(tile_view, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(tile_view, LV_OBJ_FLAG_SCROLL_CHAIN_HOR);
+    lv_obj_add_flag(tile_view, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+
+    if (widget_select_timer) {
+      lv_timer_del(widget_select_timer);
+      widget_select_timer = nullptr;
+    }
+  }
+
+  return true;
+}
 
 void ViewMain::openMenu()
 {
-  new ViewMainMenu(this);
+  viewMainMenu = new ViewMainMenu(this, [=]() {
+    viewMainMenu = nullptr;
+  });
 }
 
 void ViewMain::paint(BitmapBuffer * dc)
@@ -319,9 +387,26 @@ void ViewMain::paint(BitmapBuffer * dc)
   TRACE_WINDOWS("### ViewMain::paint(offset_x=%d;offset_y=%d) ###",
         dc->getOffsetX(), dc->getOffsetY());
 
+  // TODO: set it as "window background" w/ LVGL
   OpenTxTheme::instance()->drawBackground(dc);
+}
 
-  if (g_model.view >= getMainViewsCount()) {
-    g_model.view = 0;
+void ViewMain::ws_timer(lv_timer_t* t)
+{
+  ViewMain* view = (ViewMain*)t->user_data;
+  if (!view) return;
+  view->enableWidgetSelect(false);
+}
+
+void ViewMain::long_pressed(lv_event_t* e)
+{
+  auto obj = lv_event_get_target(e);
+  auto view = (ViewMain*)lv_obj_get_user_data(obj);
+  if (!view) return;
+
+  if (view->enableWidgetSelect(true)) {
+    // kill subsequent CLICKED event
+    lv_obj_clear_state(obj, LV_STATE_PRESSED);
+    lv_indev_wait_release(lv_indev_get_act());
   }
 }

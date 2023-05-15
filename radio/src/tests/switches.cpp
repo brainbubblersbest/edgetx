@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -77,7 +78,7 @@ TEST(getSwitch, nullSW)
 TEST(getSwitch, inputWithTrim)
 {
   MODEL_RESET();
-  setModelDefaults(0);
+  setModelDefaults();
   MIXER_RESET();
 
   // g_model.logicalSw[0] = { LS_FUNC_VPOS, MIXSRC_FIRST_INPUT, 0, 0 };
@@ -99,7 +100,7 @@ TEST(evalLogicalSwitches, playFile)
 {
   SYSTEM_RESET();
   MODEL_RESET();
-  setModelDefaults(0);
+  setModelDefaults();
   MIXER_RESET();
 
   extern BitField<(MAX_LOGICAL_SWITCHES * 2/*on, off*/)> sdAvailableLogicalSwitchAudioFiles;

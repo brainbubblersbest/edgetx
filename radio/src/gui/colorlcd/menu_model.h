@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,9 +24,21 @@
 
 #include "tabsgroup.h"
 
-class ModelMenu: public TabsGroup {
-  public:
-    ModelMenu();
+class ModelMenu : public TabsGroup
+{
+ public:
+  ModelMenu();
+
+  void onEvent(event_t event);
+
+#if defined(DEBUG_WINDOWS)
+  std::string getName() const override { return "ModelMenu"; }
+#endif
+
+#if defined(PCBNV14) || defined(PCBPL18)
+protected:
+ void addGoToMonitorsButton(void);
+#endif
 };
 
 #endif // _MENU_MODEL_H_

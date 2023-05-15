@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -25,6 +26,7 @@
 #include "opentx_constants.h"
 #include "board_common.h"
 #include "hal.h"
+#include "hal/serial_port.h"
 
 #if !defined(LUA_EXPORT_GENERATION)
 #include "stm32f4xx_sdio.h"
@@ -34,9 +36,9 @@
 #endif
 
 #include "touch_driver.h"
-//#include "hallStick_driver.h"
 #include "lcd_driver.h"
 #include "battery_driver.h"
+#include "watchdog_driver.h"
 
 #define FLASHSIZE                       0x200000
 #define BOOTLOADER_SIZE                 0x20000
@@ -46,30 +48,17 @@
 #define LUA_MEM_EXTRA_MAX               (2 MB)    // max allowed memory usage for Lua bitmaps (in bytes)
 #define LUA_MEM_MAX                     (6 MB)    // max allowed memory usage for complete Lua  (in bytes), 0 means unlimited
 
-// HSI is at 168Mhz (over-drive is not enabled!)
-#define PERI1_FREQUENCY                 42000000
-#define PERI2_FREQUENCY                 84000000
-#define TIMER_MULT_APB1                 2
-#define TIMER_MULT_APB2                 2
-
 extern uint16_t sessionTimer;
 
 #define SLAVE_MODE()                    (g_model.trainerData.mode == TRAINER_MODE_SLAVE)
-#define TRAINER_CONNECTED()             (true)
 
-PACK(typedef struct {
-  uint8_t pxx2Enabled:1;
-}) HardwareOptions;
-
-extern HardwareOptions hardwareOptions;
+// initilizes the board for the bootloader
+#define HAVE_BOARD_BOOTLOADER_INIT 1
+void boardBootloaderInit();
 
 // Board driver
 void boardInit();
 void boardOff();
-
-// Timers driver
-void init2MhzTimer();
-void init1msTimer();
 
 // CPU Unique ID
 #define LEN_CPU_UID                     (3*8+2)
@@ -109,51 +98,72 @@ uint32_t isBootloaderStart(const uint8_t * buffer);
 // SDRAM driver
 void SDRAM_Init();
 
-// Pulses driver
-#define INTERNAL_MODULE_OFF()           GPIO_SetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN)
-#define INTERNAL_MODULE_ON()            GPIO_ResetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN)
-void EXTERNAL_MODULE_ON();
-void EXTERNAL_MODULE_OFF();
+enum {
+  PCBREV_NV14 = 0,
+  PCBREV_EL18 = 1,
+};
+
+typedef struct {
+  uint8_t pcbrev;
+} HardwareOptions;
+
+extern HardwareOptions hardwareOptions;
+
+#if !defined(SIMU)
+
+#define INTERNAL_MODULE_OFF()                                     \
+  do {                                                            \
+    if (hardwareOptions.pcbrev == PCBREV_NV14)                    \
+      GPIO_SetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN);   \
+    else                                                          \
+      GPIO_ResetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN); \
+  } while (0)
+
+#define INTERNAL_MODULE_ON()                                      \
+  do {                                                            \
+    if (hardwareOptions.pcbrev == PCBREV_NV14)                    \
+      GPIO_ResetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN); \
+    else                                                          \
+      GPIO_SetBits(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN);   \
+  } while (0)
+
+#define EXTERNAL_MODULE_ON()            GPIO_SetBits(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN)
+#define EXTERNAL_MODULE_OFF()           GPIO_ResetBits(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN)
+
 #define BLUETOOTH_MODULE_ON()           GPIO_ResetBits(BLUETOOTH_ON_GPIO, BLUETOOTH_ON_GPIO_PIN)
 #define BLUETOOTH_MODULE_OFF()          GPIO_SetBits(BLUETOOTH_ON_GPIO, BLUETOOTH_ON_GPIO_PIN)
-#define IS_INTERNAL_MODULE_ON()         (GPIO_ReadInputDataBit(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN) == Bit_SET)
-#define IS_EXTERNAL_MODULE_ON()         (GPIO_ReadInputDataBit(EXTMODULE_PWR_GPIO, EXTMODULE_PWR_GPIO_PIN) == Bit_SET)
+
+#else
+
+#define INTERNAL_MODULE_OFF()
+#define INTERNAL_MODULE_ON()
+#define EXTERNAL_MODULE_ON()
+#define EXTERNAL_MODULE_OFF()
+#define BLUETOOTH_MODULE_ON()
+#define BLUETOOTH_MODULE_OFF()
+#define IS_INTERNAL_MODULE_ON()         (false)
+#define IS_EXTERNAL_MODULE_ON()         (false)
+
+#endif // defined(SIMU)
+
+#define EXTERNAL_MODULE_PWR_OFF         EXTERNAL_MODULE_OFF
 #define IS_UART_MODULE(port)            (port == INTERNAL_MODULE)
 #define IS_PXX2_INTERNAL_ENABLED()      (false)
-
-void init_intmodule_heartbeat();
-void check_intmodule_heartbeat();
-
-void intmoduleSerialStart(uint32_t baudrate, uint8_t rxEnable, uint16_t parity, uint16_t stopBits, uint16_t wordLength);
-void intmoduleSendBuffer(const uint8_t * data, uint8_t size);
-void intmoduleSendNextFrame();
-
-//void extmoduleSerialStart(uint32_t baudrate, uint32_t period_half_us, bool inverted);
-void extmoduleSerialStart();
-void extmoduleSendNextFrame();
-void extmoduleSendInvertedByte(uint8_t byte);
-
-// Trainer driver
-void init_trainer_ppm();
-void stop_trainer_ppm();
-void init_trainer_capture();
-void stop_trainer_capture();
 
 // Keys driver
 enum EnumKeys
 {
+  KEY_ENTER,
+  KEY_EXIT,
   KEY_PGUP,
   KEY_PGDN,
-  KEY_ENTER,
+  KEY_UP,
+  KEY_DOWN,
+  KEY_LEFT,
+  KEY_RIGHT,
   KEY_MODEL,
-  KEY_UP = KEY_MODEL,
-  KEY_EXIT,
-  KEY_DOWN = KEY_EXIT,
-  KEY_TELEM,
-  KEY_RIGHT = KEY_TELEM,
   KEY_RADIO,
-  KEY_LEFT = KEY_RADIO,
-
+  KEY_TELEM,
   TRM_BASE,
   TRM_LH_DWN = TRM_BASE,
   TRM_LH_UP,
@@ -238,12 +248,19 @@ enum EnumSwitchesPositions
 
 #define STORAGE_NUM_SWITCHES_POSITIONS  (STORAGE_NUM_SWITCHES * 3)
 
+#if !defined(NUM_FUNCTIONS_SWITCHES)
+#define NUM_FUNCTIONS_SWITCHES        0
+#endif
+
 void monitorInit();
 void keysInit();
 uint8_t keyState(uint8_t index);
 uint32_t switchState(uint8_t index);
 uint32_t readKeys();
 uint32_t readTrims();
+void setTrimsAsButtons(bool);
+bool getTrimsAsButtons();
+#define TRIMS_EMULATE_BUTTONS
 #define NUM_TRIMS                       NUM_STICKS
 #define NUM_TRIMS_KEYS                  (NUM_TRIMS * 2)
 #define TRIMS_PRESSED()                 (readTrims())
@@ -252,27 +269,6 @@ uint32_t readTrims();
 #define DBLKEYS_PRESSED_UP_DWN(in)      (false)
 #define DBLKEYS_PRESSED_RGT_UP(in)      (false)
 #define DBLKEYS_PRESSED_LFT_DWN(in)     (false)
-
-#define WDG_DURATION                              500 /*ms*/
-void watchdogInit(unsigned int duration);
-#if defined(SIMU)
-  #define WAS_RESET_BY_WATCHDOG()               (false)
-  #define WAS_RESET_BY_SOFTWARE()               (false)
-  #define WAS_RESET_BY_WATCHDOG_OR_SOFTWARE()   (false)
-  #define WDG_ENABLE(x)
-  #define WDG_RESET()
-#else
-  #if defined(WATCHDOG)
-    #define WDG_ENABLE(x)                       watchdogInit(x)
-    #define WDG_RESET()                         IWDG->KR = 0xAAAA
-  #else
-    #define WDG_ENABLE(x)
-    #define WDG_RESET()
-  #endif
-  #define WAS_RESET_BY_WATCHDOG()               (RCC->CSR & (RCC_CSR_WDGRSTF | RCC_CSR_WWDGRSTF))
-  #define WAS_RESET_BY_SOFTWARE()               (RCC->CSR & RCC_CSR_SFTRSTF)
-  #define WAS_RESET_BY_WATCHDOG_OR_SOFTWARE()   (RCC->CSR & (RCC_CSR_WDGRSTF | RCC_CSR_WWDGRSTF | RCC_CSR_SFTRSTF))
-#endif
 
 // ADC driver
 #define NUM_POTS                        2
@@ -308,6 +304,11 @@ enum Analogs {
   TX_VBAT,
   NUM_ANALOGS
 };
+
+#define SLIDER_FIRST  0
+#define SLIDER_LAST  -1
+
+#define DEFAULT_STICK_DEADZONE          2
 
 #define DEFAULT_POTS_CONFIG (POT_WITHOUT_DETENT << 0) + (POT_WITHOUT_DETENT << 2) // 2 pots without detent
 
@@ -347,7 +348,6 @@ enum EnumPowerupState
   BOARD_REBOOT = 0xC00010FF,
 };
 
-extern uint32_t boardState;
 
 #if defined(__cplusplus)
 enum PowerReason {
@@ -384,7 +384,7 @@ extern "C" {
 
 // Power driver
 #define SOFT_PWR_CTRL
-#define POWER_ON_DELAY               100 // 3s
+#define POWER_ON_DELAY               10 // 1s
 void pwrInit();
 void extModuleInit();
 uint32_t pwrCheck();
@@ -402,46 +402,57 @@ bool pwrPressed();
 #endif
 uint32_t pwrPressedDuration();;
   
-#define AUX_SERIAL_POWER_ON()
-#define AUX_SERIAL_POWER_OFF()
-
+const etx_serial_port_t* auxSerialGetPort(int port_nr);
+  
 // LCD driver
 #define LCD_W                           320
 #define LCD_H                           480
+
+#define LCD_PHYS_W                      320
+#define LCD_PHYS_H                      480
+
 #define LCD_DEPTH                       16
 #define LCD_CONTRAST_DEFAULT            20
+
 void lcdInit();
-void lcdRefresh();
 void lcdCopy(void * dest, void * src);
 void DMAFillRect(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
 void DMACopyBitmap(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t x, uint16_t y, const uint16_t * src, uint16_t srcw, uint16_t srch, uint16_t srcx, uint16_t srcy, uint16_t w, uint16_t h);
 void DMACopyAlphaBitmap(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t x, uint16_t y, const uint16_t * src, uint16_t srcw, uint16_t srch, uint16_t srcx, uint16_t srcy, uint16_t w, uint16_t h);
 void DMABitmapConvert(uint16_t * dest, const uint8_t * src, uint16_t w, uint16_t h, uint32_t format);
-void lcdStoreBackupBuffer();
-int lcdRestoreBackupBuffer();
-void lcdSetContrast();
 void lcdOff();
 void lcdOn();
-#define lcdSetRefVolt(...)
 #define lcdRefreshWait(...)
 
 // Backlight driver
-void backlightInit();
-#if defined(SIMU) || !defined(__cplusplus)
-#define backlightEnable(...)
-#define isBacklightEnabled() (true)
-#else
-void backlightEnable(uint8_t dutyCycle = 0);
-bool isBacklightEnabled();
-#endif
-
 #define BACKLIGHT_LEVEL_MAX             100
 #define BACKLIGHT_FORCED_ON             BACKLIGHT_LEVEL_MAX + 1
-#define BACKLIGHT_LEVEL_MIN             15
+#define BACKLIGHT_LEVEL_MIN             1
 
-#define BACKLIGHT_ENABLE()              backlightEnable(globalData.unexpectedShutdown ? BACKLIGHT_LEVEL_MAX : BACKLIGHT_LEVEL_MAX-g_eeGeneral.backlightBright)
-#define BACKLIGHT_DISABLE()             backlightEnable(globalData.unexpectedShutdown ? BACKLIGHT_LEVEL_MAX : ((g_eeGeneral.blOffBright == BACKLIGHT_LEVEL_MIN) && (g_eeGeneral.backlightMode != e_backlight_mode_off)) ? 0 : g_eeGeneral.blOffBright)
+extern bool boardBacklightOn;
+void backlightLowInit( void );
+void backlightInit();
+void backlightEnable(uint8_t dutyCycle);
+void backlightFullOn();
+bool isBacklightEnabled();
 
+#define BACKLIGHT_ENABLE()                                               \
+  {                                                                      \
+    boardBacklightOn = true;                                             \
+    backlightEnable(globalData.unexpectedShutdown                        \
+                        ? BACKLIGHT_LEVEL_MAX                            \
+                        : BACKLIGHT_LEVEL_MAX - currentBacklightBright); \
+  }
+
+#define BACKLIGHT_DISABLE()                                                 \
+  {                                                                         \
+    boardBacklightOn = false;                                               \
+    backlightEnable(globalData.unexpectedShutdown ? BACKLIGHT_LEVEL_MAX     \
+                    : ((g_eeGeneral.blOffBright == BACKLIGHT_LEVEL_MIN) &&  \
+                       (g_eeGeneral.backlightMode != e_backlight_mode_off)) \
+                        ? 0                                                 \
+                        : g_eeGeneral.blOffBright);                         \
+  }
 
 #if !defined(SIMU)
 void usbJoystickUpdate();
@@ -490,24 +501,8 @@ int32_t getVolume();
 #define VOLUME_LEVEL_DEF               12
 
 // Telemetry driver
-#define TELEMETRY_FIFO_SIZE             512
-void telemetryPortInit(uint32_t baudrate, uint8_t mode);
-void telemetryPortSetDirectionOutput();
-void telemetryPortSetDirectionInput();
-void sportSendBuffer(const uint8_t * buffer, uint32_t count);
-bool telemetryGetByte(uint8_t * byte);
-void telemetryClearFifo();
-void sportSendByte(uint8_t byte);
-extern uint32_t telemetryErrors;
-
-// soft-serial
-void telemetryPortInvertedInit(uint32_t baudrate);
-
-// Sport update driver
-#define SPORT_UPDATE_POWER_ON()
-#define SPORT_UPDATE_POWER_OFF()
-#define SPORT_UPDATE_POWER_INIT()
-#define IS_SPORT_UPDATE_POWER_ON()     (false)
+#define INTMODULE_FIFO_SIZE            512
+#define TELEMETRY_FIFO_SIZE            512
 
 // Haptic driver
 void hapticInit();
@@ -519,37 +514,15 @@ void hapticOn(uint32_t pwmPercent);
 //#define AUX_SERIAL
 #define DEBUG_BAUDRATE                  115200
 #define LUA_DEFAULT_BAUDRATE            115200
-extern uint8_t auxSerialMode;
-#if defined __cplusplus
-void auxSerialSetup(unsigned int baudrate, bool dma, uint16_t length = USART_WordLength_8b, uint16_t parity = USART_Parity_No, uint16_t stop = USART_StopBits_1);
-#endif
-void auxSerialInit(unsigned int mode, unsigned int protocol);
-void auxSerialPutc(char c);
-#define auxSerialTelemetryInit(protocol) auxSerialInit(UART_MODE_TELEMETRY, protocol)
-void auxSerialSbusInit();
-void auxSerialStop();
-#if defined(AUX_SERIAL_PWR_GPIO)
-#define AUX_SERIAL_POWER_ON()            auxSerialPowerOn()
-#define AUX_SERIAL__POWER_OFF()          auxSerialPowerOff()
-#else
-#define AUX_SERIAL_POWER_ON()
-#define AUX_SERIAL__POWER_OFF()
-#endif
-#define USART_FLAG_ERRORS               (USART_FLAG_ORE | USART_FLAG_NE | USART_FLAG_FE | USART_FLAG_PE)
 
 extern uint8_t currentTrainerMode;
 void checkTrainerSettings();
 
-#if defined(__cplusplus)
-#include "fifo.h"
-#include "dmafifo.h"
-extern DMAFifo<512> telemetryFifo;
-typedef Fifo<uint8_t, 32> AuxSerialRxFifo;
-extern AuxSerialRxFifo auxSerialRxFifo;
-#endif
-
 // Touch panel driver
 bool touchPanelEventOccured();
-void touchPanelRead();
+struct TouchState touchPanelRead();
+struct TouchState getInternalTouchState();
+
+#define BATTERY_DIVIDER 2942
 
 #endif // _BOARD_H_

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -30,9 +31,12 @@ enum FlySkySensorType_E {
   FLYSKY_SENSOR_TEMP,
   FLYSKY_SENSOR_EXT_VOLTAGE,
   FLYSKY_SENSOR_MOTO_RPM,
-  FLYSKY_SENSOR_PRESURRE,
-  FLYSKY_SENSOR_GPS
+  FLYSKY_SENSOR_PRESSURE,
+  FLYSKY_SENSOR_GPS,
+  FLYSKY_SENSOR_SYNC = 0xEE,
 };
+
+
 typedef struct FLYSKY_GPS_INFO_S {
   uint8_t position_fix;
   uint8_t satell_cnt;
@@ -59,5 +63,9 @@ typedef struct FLYSKY_SENSOR_DATA_S {
 
 void flySkyNv14SetDefault(int index, uint8_t id, uint8_t subId, uint8_t instance);
 void flySkyNv14ProcessTelemetryPacket(const uint8_t * ptr, uint8_t SensorType );
+void processInternalFlySkyTelemetryData(uint8_t byte);
+uint8_t intmoduleGetByte(uint8_t * byte);
+
+extern bool syncAfhds2Module;
 
 #endif

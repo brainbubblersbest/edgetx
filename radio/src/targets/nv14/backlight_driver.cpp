@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,7 +19,23 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "opentx_types.h"
+#include "board.h"
+
+#include "globals.h"
+
+void backlightLowInit( void )
+{
+    RCC_AHB1PeriphClockCmd(BACKLIGHT_RCC_AHB1Periph, ENABLE);
+    GPIO_InitTypeDef GPIO_InitStructure;
+    GPIO_InitStructure.GPIO_Pin = BACKLIGHT_GPIO_PIN;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
+    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+    GPIO_Init(BACKLIGHT_GPIO, &GPIO_InitStructure);
+    GPIO_WriteBit( BACKLIGHT_GPIO, BACKLIGHT_GPIO_PIN, Bit_RESET );
+}
 
 void backlightInit()
 {
@@ -37,7 +54,7 @@ void backlightInit()
   BACKLIGHT_TIMER->PSC = BACKLIGHT_TIMER_FREQ / 1000000 - 1; // 10kHz (same as FrOS)
   BACKLIGHT_TIMER->CCMR1 = TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1PE; // PWM mode 1
   BACKLIGHT_TIMER->CCER = TIM_CCER_CC1E | TIM_CCER_CC1NE;
-  BACKLIGHT_TIMER->CCR1 = 100; // 100% on init
+  BACKLIGHT_TIMER->CCR1 = 0;
   BACKLIGHT_TIMER->EGR = TIM_EGR_UG;
   BACKLIGHT_TIMER->CR1 |= TIM_CR1_CEN; // Counter enable
   BACKLIGHT_TIMER->BDTR |= TIM_BDTR_MOE;
@@ -59,6 +76,11 @@ void backlightEnable(uint8_t dutyCycle)
   lastDutyCycle = dutyCycle;
 }
 
+void backlightFullOn()
+{
+  backlightEnable(BACKLIGHT_LEVEL_MAX);
+}
+
 void lcdOff() {
   backlightEnable(0);
 }
@@ -69,6 +91,10 @@ void lcdOn(){
   backlightEnable(BACKLIGHT_LEVEL_MAX);
 }
 
-bool isBacklightEnabled() {
-  return lastDutyCycle != 0;
+bool boardBacklightOn;
+
+bool isBacklightEnabled()
+{
+  if (globalData.unexpectedShutdown) return true;
+  return boardBacklightOn;
 }

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -35,7 +36,7 @@ void displayRssiLine()
     lcdDrawSizedText(0, STATUS_BAR_Y, STR_RX, 2);
     lcdDrawNumber(4*FW, STATUS_BAR_Y, rssi, LEADING0|RIGHT, 2);
     lcdDrawRect(BAR_LEFT, 57, 78, 7);
-    lcdDrawFilledRect(BAR_LEFT+1, 58, 19*rssi/25, 5, (rssi < g_model.rssiAlarms.getWarningRssi()) ? DOTTED : SOLID);
+    lcdDrawFilledRect(BAR_LEFT+1, 58, 19*rssi/25, 5, (rssi < g_model.rfAlarms.warning) ? DOTTED : SOLID);
   }
   else {
     lcdDrawText(7*FW, STATUS_BAR_Y, STR_NODATA, BLINK);
@@ -171,18 +172,7 @@ bool displayTelemetryScreen()
 {
 #if defined(LUA)
   if (TELEMETRY_SCREEN_TYPE(s_frsky_view) == TELEMETRY_SCREEN_TYPE_SCRIPT) {
-    uint8_t state = isTelemetryScriptAvailable(s_frsky_view);
-    switch (state) {
-      case SCRIPT_OK:
-        return true;  // contents will be drawed by Lua Task
-      case SCRIPT_NOFILE:
-        return false;  // requested lua telemetry screen not available
-      case SCRIPT_SYNTAX_ERROR:
-      case SCRIPT_PANIC:
-        luaError(lsScripts, state, false);
-        return true;
-    }
-    return false;
+    return isTelemetryScriptAvailable(); // contents will be drawn by Lua Task
   }
 #endif
 

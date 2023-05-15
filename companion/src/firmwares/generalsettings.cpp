@@ -54,24 +54,30 @@ bool GeneralSettings::switchSourceAllowedTaranis(int index) const
 
 bool GeneralSettings::isPotAvailable(int index) const
 {
-  if (index < 0 || index > Boards::getCapability(getCurrentBoard(), Board::Pots))
+  int numPots = Boards::getCapability(getCurrentBoard(), Board::Pots);
+  if (getCurrentFirmware()->getCapability(HasFlySkyGimbals))
+    numPots -= 2;
+
+  if (index < 0 || index >= numPots)
     return false;
   return potConfig[index] != Board::POT_NONE;
 }
 
 bool GeneralSettings::isSliderAvailable(int index) const
 {
-  if (index < 0 || index > Boards::getCapability(getCurrentBoard(), Board::Sliders))
+  if (index < 0 || index >= Boards::getCapability(getCurrentBoard(), Board::Sliders))
     return false;
   return sliderConfig[index] != Board::SLIDER_NONE;
 }
 
-GeneralSettings::GeneralSettings()
+void GeneralSettings::clear()
 {
   memset(reinterpret_cast<void *>(this), 0, sizeof(GeneralSettings));
+  init();
+}
 
-  contrast  = 25;
-
+void GeneralSettings::init()
+{
   for (int i = 0; i < CPN_MAX_ANALOGS; ++i) {
     calibMid[i]     = 0x200;
     calibSpanNeg[i] = 0x180;
@@ -111,6 +117,9 @@ GeneralSettings::GeneralSettings()
   setDefaultControlTypes(board);
 
   backlightMode = 3; // keys and sticks
+  backlightDelay = 2; // 2 * 5 = 10 secs
+  inactivityTimer = 10;
+
   // backlightBright = 0; // 0 = 100%
 
   if (IS_FAMILY_HORUS_OR_T16(board)) {
@@ -118,21 +127,29 @@ GeneralSettings::GeneralSettings()
   }
 
   speakerVolume = 12;
+  wavVolume = 2;
+  backgroundVolume = 1;
+
+  if (IS_TARANIS(board))
+    contrast = 25;
 
   if (IS_JUMPER_T16(board))
     strcpy(bluetoothName, "t16");
-  else if (IS_FAMILY_HORUS_OR_T16(board)) {
+  else if (IS_FLYSKY_NV14(board))
+    strcpy(bluetoothName, "nv14");
+  else if (IS_FAMILY_HORUS_OR_T16(board))
     strcpy(bluetoothName, "horus");
-  }
-  else if (IS_TARANIS_X9E(board) || IS_TARANIS_SMALL(board)) {
+  else if (IS_TARANIS_X9E(board) || IS_TARANIS_SMALL(board))
     strcpy(bluetoothName, "taranis");
-  }
 
   for (uint8_t i = 0; i < 4; i++) {
     trainer.mix[i].mode = TrainerMix::TRN_MIX_MODE_SUBST;
     trainer.mix[i].src = i;
     trainer.mix[i].weight = 100;
   }
+
+  ttsLanguage[0] = 'e';
+  ttsLanguage[1] = 'n';
 
   templateSetup = g.profile[g.sessionId()].channelOrder();
   stickMode = g.profile[g.sessionId()].defaultMode();
@@ -233,11 +250,11 @@ GeneralSettings::GeneralSettings()
     }
   }
 
-  strcpy(themeName, "default");
-  ThemeOptionData option1 = { 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0 };
-  memcpy(&themeOptionValue[0], option1, sizeof(ThemeOptionData));
-  ThemeOptionData option2 = { 0x03, 0xe1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0 };
-  memcpy(&themeOptionValue[1], option2, sizeof(ThemeOptionData));
+  internalModule = g.profile[g.sessionId()].defaultInternalModule();
+
+  if (IS_FLYSKY_NV14(board))
+    stickDeadZone = 2;
+
 }
 
 void GeneralSettings::setDefaultControlTypes(Board::Type board)
@@ -251,10 +268,14 @@ void GeneralSettings::setDefaultControlTypes(Board::Type board)
     return;
 
   // TODO: move to Boards, like with switches
-  if (IS_FAMILY_HORUS_OR_T16(board)) {
+  if (IS_FAMILY_HORUS_OR_T16(board) && !IS_FLYSKY_NV14(board)) {
     potConfig[0] = Board::POT_WITH_DETENT;
     potConfig[1] = Board::POT_MULTIPOS_SWITCH;
     potConfig[2] = Board::POT_WITH_DETENT;
+  }
+  else if (IS_FLYSKY_NV14(board)) {
+    potConfig[0] = Board::POT_WITHOUT_DETENT;
+    potConfig[1] = Board::POT_WITHOUT_DETENT;
   }
   else if (IS_TARANIS_XLITE(board)) {
     potConfig[0] = Board::POT_WITHOUT_DETENT;
@@ -263,6 +284,15 @@ void GeneralSettings::setDefaultControlTypes(Board::Type board)
   else if (IS_TARANIS_X7(board)) {
     potConfig[0] = Board::POT_WITHOUT_DETENT;
     potConfig[1] = Board::POT_WITH_DETENT;
+  }
+  else if(IS_RADIOMASTER_ZORRO(board)) {
+    potConfig[0] = Board::POT_WITHOUT_DETENT;
+    potConfig[1] = Board::POT_WITHOUT_DETENT;
+  }
+  else if(IS_RADIOMASTER_BOXER(board)) {
+    potConfig[0] = Board::POT_WITH_DETENT;
+    potConfig[1] = Board::POT_WITH_DETENT;
+    potConfig[2] = Board::POT_MULTIPOS_SWITCH;
   }
   else if (IS_FAMILY_T12(board)) {
     potConfig[0] = Board::POT_WITH_DETENT;
@@ -323,6 +353,15 @@ void GeneralSettings::convert(RadioDataConversionState & cstate)
   cstate.setOrigin(tr("Radio Settings"));
 
   setDefaultControlTypes(cstate.toType);  // start with default switches/pots/sliders
+
+  cstate.setComponent("Hardware");
+  cstate.setItemType("Int. Module");
+  RadioDataConversionState::LogField oldData(internalModule, ModuleData::typeToString(internalModule));
+
+  if (internalModule != MODULE_TYPE_NONE && (int)internalModule != g.currentProfile().defaultInternalModule()) {
+    internalModule = MODULE_TYPE_NONE;
+    cstate.setInvalid(oldData);
+  }
 
   // Try to intelligently copy any custom control names
 
@@ -399,14 +438,17 @@ QString GeneralSettings::bluetoothModeToString() const
   return bluetoothModeToString(bluetoothMode);
 }
 
-QString GeneralSettings::auxSerialModeToString() const
+QString GeneralSettings::serialPortModeToString(int port_nr) const
 {
-  return auxSerialModeToString(auxSerialMode);
+  if (port_nr < 0 || port_nr >= SP_COUNT)
+    return QString();
+
+  return serialModeToString(serialPort[port_nr]);
 }
 
-QString GeneralSettings::telemetryBaudrateToString() const
+QString GeneralSettings::internalModuleBaudrateToString() const
 {
-  return telemetryBaudrateToString(telemetryBaudrate);
+  return moduleBaudrateToString(internalModuleBaudrate);
 }
 
 //  static
@@ -448,7 +490,7 @@ QString GeneralSettings::bluetoothModeToString(int value)
 }
 
 //  static
-QString GeneralSettings::auxSerialModeToString(int value)
+QString GeneralSettings::serialModeToString(int value)
 {
   switch(value) {
     case AUX_SERIAL_OFF:
@@ -461,22 +503,25 @@ QString GeneralSettings::auxSerialModeToString(int value)
       return tr("SBUS Trainer");
     case AUX_SERIAL_LUA:
       return tr("LUA");
+    case AUX_SERIAL_CLI:
+      return tr("CLI");
+    case AUX_SERIAL_GPS:
+      return tr("GPS");
+    case AUX_SERIAL_DEBUG:
+      return tr("Debug");
+    case AUX_SERIAL_SPACEMOUSE:
+      return tr("SpaceMouse");
+    case AUX_SERIAL_EXT_MODULE:
+      return tr("External module");
     default:
       return CPN_STR_UNKNOWN_ITEM;
   }
 }
 
 //  static
-QString GeneralSettings::telemetryBaudrateToString(int value)
+QString GeneralSettings::moduleBaudrateToString(int value)
 {
-  switch(value) {
-    case 0:
-      return "400000";
-    case 1:
-      return "115200";
-    default:
-      return CPN_STR_UNKNOWN_ITEM;
-  }
+  return moduleBaudratesList.value(value, CPN_STR_UNKNOWN_ITEM);
 }
 
 //  static
@@ -494,20 +539,6 @@ FieldRange GeneralSettings::getPPM_MultiplierRange()
 }
 
 //  static
-FieldRange GeneralSettings::getTxVoltageCalibrationRange()
-{
-  FieldRange result;
-
-  result.decimals = 1;
-  result.max = 9.9;
-  result.min = -result.max;
-  result.step = 0.1;
-  result.unit = tr("v");
-
-  return result;
-}
-
-//  static
 FieldRange GeneralSettings::getTxCurrentCalibration()
 {
   FieldRange result;
@@ -520,13 +551,13 @@ FieldRange GeneralSettings::getTxCurrentCalibration()
 }
 
 //  static
-AbstractStaticItemModel * GeneralSettings::antennaModeItemModel()
+AbstractStaticItemModel * GeneralSettings::antennaModeItemModel(bool model_setup)
 {
   AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
   mdl->setName(AIM_GS_ANTENNAMODE);
 
   for (int i = ANTENNA_MODE_FIRST; i <= ANTENNA_MODE_LAST; i++) {
-    mdl->appendToItemList(antennaModeToString(i), i);
+    mdl->appendToItemList(antennaModeToString(i), i, model_setup ? i != ANTENNA_MODE_PER_MODEL : true);
   }
 
   mdl->loadItemList();
@@ -548,13 +579,27 @@ AbstractStaticItemModel * GeneralSettings::bluetoothModeItemModel()
 }
 
 //  static
-AbstractStaticItemModel * GeneralSettings::auxSerialModeItemModel()
+AbstractStaticItemModel * GeneralSettings::serialModeItemModel()
 {
   AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
-  mdl->setName(AIM_GS_AUXSERIALMODE);
+  mdl->setName(AIM_GS_SERIALMODE);
+
 
   for (int i = 0; i < AUX_SERIAL_COUNT; i++) {
-    mdl->appendToItemList(auxSerialModeToString(i), i);
+    int contexts = AllAuxSerialModeContexts;
+
+    if (i == AUX_SERIAL_EXT_MODULE) {
+      contexts &= ~(AUX2Context | VCPContext);
+    }
+    else if (i == AUX_SERIAL_TELE_IN ||
+             i == AUX_SERIAL_SBUS_TRAINER ||
+             i == AUX_SERIAL_GPS ||
+             i == AUX_SERIAL_SPACEMOUSE ||
+             i == AUX_SERIAL_EXT_MODULE) {
+      contexts &= ~VCPContext;
+    }
+
+    mdl->appendToItemList(serialModeToString(i), i, true, 0, contexts);
   }
 
   mdl->loadItemList();
@@ -562,13 +607,59 @@ AbstractStaticItemModel * GeneralSettings::auxSerialModeItemModel()
 }
 
 //  static
-AbstractStaticItemModel * GeneralSettings::telemetryBaudrateItemModel()
+AbstractStaticItemModel * GeneralSettings::internalModuleBaudrateItemModel()
 {
   AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
-  mdl->setName(AIM_GS_TELEMETRYBAUDRATE);
+  mdl->setName(AIM_GS_INTMODULEBAUDRATE);
 
-  for (int i = 0; i <= 1; i++) {
-    mdl->appendToItemList(telemetryBaudrateToString(i), i);
+  for (int i = 0; i < moduleBaudratesList.size(); i++) {
+    mdl->appendToItemList(moduleBaudrateToString(i), i);
+  }
+
+  mdl->loadItemList();
+  return mdl;
+}
+
+//  static
+AbstractStaticItemModel * GeneralSettings::stickDeadZoneItemModel()
+{
+  AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
+  mdl->setName(AIM_GS_STICKDEADZONE);
+
+  for (int i = 0; i <= 7; i++) {
+    mdl->appendToItemList(i ? QString::number((int)(2 << (i - 1))) : QString::number(0), i);
+  }
+
+  mdl->loadItemList();
+  return mdl;
+}
+
+QString GeneralSettings::uartSampleModeToString() const
+{
+  return uartSampleModeToString(uartSampleMode);
+}
+
+//  static
+QString GeneralSettings::uartSampleModeToString(int value)
+{
+  switch(value) {
+    case UART_SAMPLE_MODE_NORMAL:
+      return tr("Normal");
+    case UART_SAMPLE_MODE_ONEBIT:
+      return tr("OneBit");
+    default:
+      return CPN_STR_UNKNOWN_ITEM;
+  }
+}
+
+//  static
+AbstractStaticItemModel * GeneralSettings::uartSampleModeItemModel()
+{
+  AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
+  mdl->setName(AIM_GS_UARTSAMPLEMODE);
+
+  for (int i = 0; i < UART_SAMPLE_MODE_COUNT; i++) {
+    mdl->appendToItemList(uartSampleModeToString(i), i);
   }
 
   mdl->loadItemList();

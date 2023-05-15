@@ -28,10 +28,30 @@
 #include "translations.h"
 #include "menus.h"
 #include "libopenui.h"
-
-#include <string.h>
+#include "lvgl_widgets/input_mix_line.h"
 
 #define SET_DIRTY() storageDirty(EE_MODEL)
+
+// Overview grid
+static const lv_coord_t col_dsc[] = {LV_GRID_CONTENT,
+                                     LV_GRID_TEMPLATE_LAST};
+
+// Edit grid
+#if LCD_W > LCD_H
+static const lv_coord_t e_col_dsc[] = {LV_GRID_FR(2), LV_GRID_FR(3),
+                                      LV_GRID_TEMPLATE_LAST};
+#else
+static const lv_coord_t e_col_dsc[] = {LV_GRID_FR(5), LV_GRID_FR(4),
+                                      LV_GRID_TEMPLATE_LAST};
+#endif
+
+// Line button grid
+static const lv_coord_t b_col_dsc[] = {40, 84, 84, LV_GRID_FR(1),
+                                       LV_GRID_TEMPLATE_LAST
+};
+
+static const lv_coord_t row_dsc[] = {LV_GRID_CONTENT,
+                                     LV_GRID_TEMPLATE_LAST};
 
 class ScriptEditWindow : public Page {
   public:
@@ -44,12 +64,12 @@ class ScriptEditWindow : public Page {
     }
 
   protected:
-    uint8_t idx;
-    bool    update = false;
+    const uint8_t idx;
+    bool update = false;
 
     void checkEvents() override
     {
-      if (update) {
+      if ((update) && (luaState == INTERPRETER_RUNNING)) {
         TRACE("rebuilding ScriptEditWindow...");
         rebuildBody(&body);
         update = false;
@@ -60,166 +80,199 @@ class ScriptEditWindow : public Page {
 
     void buildHeader(Window * window)
     {
-      new StaticText(window,
-                     {PAGE_TITLE_LEFT, PAGE_TITLE_TOP, LCD_W - PAGE_TITLE_LEFT,
-                      PAGE_LINE_HEIGHT},
-                     STR_MENUCUSTOMSCRIPTS, 0, FOCUS_COLOR);
-      new StaticText(window,
-                     {PAGE_TITLE_LEFT, PAGE_TITLE_TOP + PAGE_LINE_HEIGHT,
-                      LCD_W - PAGE_TITLE_LEFT, PAGE_LINE_HEIGHT},
-                     std::string("LUA") + std::to_string(idx + 1), 0, FOCUS_COLOR);
+      header.setTitle(STR_MENUCUSTOMSCRIPTS);
+      header.setTitle2(std::string("LUA") + std::to_string(idx + 1));
     }
 
     void buildBody(FormWindow * window, bool focusScript = false)
     {
-      FormGridLayout grid;
-      grid.spacer(PAGE_PADDING);
+      auto form = new FormWindow(window, rect_t{});
+      form->setFlexLayout();
+      form->padAll(4);
 
-      ScriptData* sd = &(g_model.scriptsData[idx]);
+      FlexGridLayout grid(e_col_dsc, row_dsc, 2);
 
-      // Filename
-      new StaticText(window, grid.getLabelSlot(), STR_SCRIPT);
+      // the general pattern seems to be using capture-by-value for the closures: so need to copy the pointers, not the objects
+      ScriptData* const sd = &(g_model.scriptsData[idx]);
+      ScriptInputsOutputs* const sio = &(scriptInputsOutputs[idx]);
+
+      // File
+      auto line = form->newLine(&grid);
+      new StaticText(line, rect_t{}, STR_SCRIPT, 0, COLOR_THEME_PRIMARY1);
       auto fc = new FileChoice(
-          window, grid.getFieldSlot(), SCRIPTS_MIXES_PATH, SCRIPTS_EXT,
+          line, rect_t{}, SCRIPTS_MIXES_PATH, SCRIPTS_EXT,
           LEN_SCRIPT_FILENAME,
-          [=]() { return std::string(sd->file, LEN_SCRIPT_FILENAME); },
+          [=]() { return stringFromNtString(sd->file); },
           [=](std::string newValue) {
-            strncpy(sd->file, newValue.c_str(), LEN_SCRIPT_FILENAME);
-            if (newValue.empty()) { memset((void*)sd, 0, sizeof(ScriptData)); }
+             clearStruct(*sd);
+             clearStruct(*sio);
+             if (!newValue.empty()) {
+                 copyToUnTerminated(sd->file, newValue);
+             }
             storageDirty(EE_MODEL);
-            LUA_LOAD_MODEL_SCRIPT(idx); // async reload...
+            LUA_LOAD_MODEL_SCRIPT(idx); // async reload ...
             update = true;
           }, true);
-      grid.nextLine();
 
       // Custom name
-      new StaticText(window, grid.getLabelSlot(), STR_NAME);
-      new ModelTextEdit(window, grid.getFieldSlot(), sd->name, sizeof(sd->name));
-      grid.nextLine();
+      line = form->newLine(&grid);
+      new StaticText(line, rect_t{}, STR_NAME, 0, COLOR_THEME_PRIMARY1);
+      new ModelTextEdit(line, rect_t{}, sd->name, sizeof(sd->name));
 
-      // scriptInputsOutputs
-      ScriptInputsOutputs& sio = scriptInputsOutputs[idx];
+      if (sio->inputsCount > 0) {
+        line = form->newLine(&grid);
+        new Subtitle(line, rect_t{}, STR_INPUTS, 0, COLOR_THEME_PRIMARY1);
 
-      if (sio.inputsCount > 0) {
-        new Subtitle(window, grid.getLineSlot(), STR_INPUTS);
-        grid.nextLine();
-
-        auto gInputs =
-            new FormGroup(window, grid.getFieldSlot(),
-                          FORM_BORDER_FOCUS_ONLY | PAINT_CHILDREN_FIRST);
-        GridLayout inputsGrid(gInputs);
-
-        for (int i = 0; i < sio.inputsCount; i++) {
-          ScriptInput& si = sio.inputs[i];
-          new StaticText(window, grid.getLabelSlot(true), si.name);
-          grid.nextLine();
+        for (int i = 0; i < sio->inputsCount; i++) {
+          line = form->newLine(&grid);
+          ScriptInput& si = sio->inputs[i];
+          auto lbl = new StaticText(line, rect_t{}, si.name, 0, COLOR_THEME_PRIMARY1);
+          lbl->padLeft(10);
           if (si.type == INPUT_TYPE_VALUE) {
-            new NumberEdit(gInputs, inputsGrid.getSlot(), si.min - si.def,
-                           si.max - si.def,
-                           GET_SET_WITH_OFFSET(sd->inputs[i].value, si.def));
+            (new NumberEdit(line, rect_t{}, si.min, si.max,
+                            GET_SET_WITH_OFFSET(sd->inputs[i].value, si.def)))->setDefault(si.def);
           } else {
-            new SourceChoice(gInputs, inputsGrid.getSlot(), 0,
-                             MIXSRC_LAST_TELEM,
+            new SourceChoice(line, rect_t{}, 0, MIXSRC_LAST_TELEM,
                              GET_SET_DEFAULT(sd->inputs[i].source));
           }
-          inputsGrid.nextLine();
         }
-        gInputs->setHeight(inputsGrid.getWindowHeight());
       }
 
-      if (sio.outputsCount > 0) {
-        new Subtitle(window, grid.getLabelSlot(), STR_OUTPUTS);
-        grid.nextLine();
+      if (sio->outputsCount > 0) {
+        line = form->newLine(&grid);
+        new Subtitle(line, rect_t{}, STR_OUTPUTS, 0, COLOR_THEME_PRIMARY1);
 
-        auto gOutputs =
-            new FormGroup(window, grid.getLineSlot(),
-                          FORM_BORDER_FOCUS_ONLY | PAINT_CHILDREN_FIRST);
-        FormGridLayout outputsGrid(gOutputs->width());
-
-        for (int i = 0; i < sio.outputsCount; i++) {
-          ScriptOutput* so = &(sio.outputs[i]);
-          new DynamicText(gOutputs, outputsGrid.getLabelSlot(), [=]() {
+        for (int i = 0; i < sio->outputsCount; i++) {
+          line = form->newLine(&grid);
+          ScriptOutput* so = &(sio->outputs[i]);
+          auto lbl = new DynamicText(line, rect_t{}, [=]() {
             char s[16];
-            getSourceString(s,
-                            MIXSRC_FIRST_LUA + (idx * MAX_SCRIPT_OUTPUTS) + i);
+            getSourceString(s, MIXSRC_FIRST_LUA + (idx * MAX_SCRIPT_OUTPUTS) + i);
             return std::string(s, sizeof(s) - 1);
-          });
-          new DynamicNumber<int>(gOutputs, outputsGrid.getFieldSlot(),
-                                 [=]() { return calcRESXto1000(so->value); });
-
-          outputsGrid.nextLine();
+          }, COLOR_THEME_PRIMARY1);
+          lbl->padLeft(10);
+          new DynamicNumber<int16_t>(line, rect_t{}, [=]() { return calcRESXto1000(so->value); }, COLOR_THEME_PRIMARY1);
         }
-        gOutputs->setHeight(outputsGrid.getWindowHeight());
-        grid.addWindow(gOutputs);
       }
-
-      window->setInnerHeight(grid.getWindowHeight());
-      if (focusScript) { fc->setFocus(); }
     }
     
     void rebuildBody(FormWindow * window)
     {
-        coord_t scrollPosition = window->getScrollPositionY();
-        window->clear();
-        buildBody(window);
-        window->setScrollPositionY(scrollPosition);
+      auto scroll_y = lv_obj_get_scroll_y(window->getLvObj());  
+      window->clear();
+      buildBody(window);
+      lv_obj_scroll_to_y(window->getLvObj(), scroll_y, LV_ANIM_OFF);
     }
 };
-
-constexpr char SCRIPT_STATUS_ERROR[] = "(error)";
 
 class ScriptLineButton : public Button
 {
  public:
-  ScriptLineButton(FormGroup* parent, const rect_t& rect,
+  ScriptLineButton(Window* parent, const rect_t& rect,
                    const ScriptData& scriptData,
-                   const ScriptInternalData* runtimeData) :
-      Button(parent, rect), scriptData(scriptData), runtimeData(runtimeData)
+                   const ScriptInternalData* runtimeData,
+                   uint8_t index) :
+      Button(parent, rect, nullptr, 0, 0, input_mix_line_create),
+      scriptData(scriptData),
+      runtimeData(runtimeData),
+      index(index)
   {
+#if LCD_H > LCD_W
+  padTop(5);
+#endif
+    padLeft(3);
+    padRight(3);
+    lv_obj_set_layout(lvobj, LV_LAYOUT_GRID);
+    lv_obj_set_grid_dsc_array(lvobj, b_col_dsc, row_dsc);
+    lv_obj_set_style_pad_row(lvobj, 0, 0);
+    lv_obj_set_style_pad_column(lvobj, 4, 0);
+
+    lv_obj_update_layout(parent->getLvObj());
+    if(lv_obj_is_visible(lvobj)) delayed_init(nullptr);
+
+    lv_obj_add_event_cb(lvobj, ScriptLineButton::on_draw, LV_EVENT_DRAW_MAIN_BEGIN, nullptr);
   }
 
-  void paint(BitmapBuffer* dc) override
+  static void on_draw(lv_event_t * e)
   {
-    LcdFlags textColor = DEFAULT_COLOR;
-    LcdFlags bgColor = FIELD_BGCOLOR;
+    lv_obj_t* target = lv_event_get_target(e);
+    auto line = (ScriptLineButton*)lv_obj_get_user_data(target);
+    if (line) {
+      if (!line->init)
+        line->delayed_init(e);
+      else
+        line->refresh();
+    }
+  }
+  
+  void delayed_init(lv_event_t* e)
+  {
+    auto lbl = lv_label_create(lvobj);
+    lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_grid_cell(lbl, LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
 
-    dc->drawSolidFilledRect(0, 0, width(), height(), bgColor);
+    lv_label_set_text(lbl, (std::string("LUA") + std::to_string(index + 1)).c_str());
 
     if (runtimeData) {
-      coord_t x = 2*FIELD_PADDING_LEFT;
-      coord_t y = FIELD_PADDING_TOP;
+      char s[20];
 
-      x = dc->drawSizedText(x, y, scriptData.name, sizeof(scriptData.name), textColor);
-      x += 4*FIELD_PADDING_LEFT;
+      lbl = lv_label_create(lvobj);
+      lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_LEFT, 0);
+      lv_obj_set_grid_cell(lbl, LV_GRID_ALIGN_START, 1, 1, LV_GRID_ALIGN_CENTER, 0, 1);
 
-      dc->drawSizedText(x, y, scriptData.file, sizeof(scriptData.file), textColor);
+      strAppend(s, scriptData.name, LEN_SCRIPT_NAME);
+      lv_label_set_text(lbl, s);
 
-      x = width() - 2*FIELD_PADDING_LEFT;
-      y = FIELD_PADDING_TOP;
-      textColor |= RIGHT;
-      
+      lbl = lv_label_create(lvobj);
+      lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_LEFT, 0);
+      lv_obj_set_grid_cell(lbl, LV_GRID_ALIGN_START, 2, 1, LV_GRID_ALIGN_CENTER, 0, 1);
+
+      strAppend(s, scriptData.file, LEN_SCRIPT_FILENAME);
+      lv_label_set_text(lbl, s);
+
+      lbl = lv_label_create(lvobj);
+      lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_LEFT, 0);
+      lv_obj_set_grid_cell(lbl, LV_GRID_ALIGN_START, 3, 1, LV_GRID_ALIGN_CENTER, 0, 1);
+
+      // TODO: runtimeData->instructions has no value 
       switch (runtimeData->state) {
         case SCRIPT_SYNTAX_ERROR:
-          dc->drawSizedText(x, y, SCRIPT_STATUS_ERROR,
-                            sizeof(SCRIPT_STATUS_ERROR), textColor);
+          lv_label_set_text(lbl, STR_SCRIPT_ERROR);
+          break;
+        case SCRIPT_NOFILE:
+          lv_label_set_text(lbl, STR_NEEDS_FILE);
+          break;
+        case SCRIPT_OK:
+          lv_label_set_text(lbl, "-");
           break;
         default:
-          dc->drawNumber(x, y, runtimeData->instructions, textColor, 0, nullptr, "%");
+          lv_label_set_text(lbl, "");
           break;
       }
     }
 
-    // bounding rect
-    if (hasFocus())
-      dc->drawSolidRect(0, 0, rect.w, rect.h, 2, FOCUS_BGCOLOR);
-    else
-      dc->drawSolidRect(0, 0, rect.w, rect.h, 1, FIELD_FRAME_COLOR);
+    init = true;
+    refresh();
+    lv_obj_update_layout(lvobj);
+
+    if(e) {
+      auto param = lv_event_get_param(e);
+      lv_event_send(lvobj, LV_EVENT_DRAW_MAIN, param);
+    }
+  }
+
+  void refresh()
+  {
   }
 
  protected:
+  bool init = false;
+  uint8_t index;
   const ScriptData&         scriptData;
   const ScriptInternalData* runtimeData;
 };
+
+#define CM_BUTTON_H 34
 
 ModelMixerScriptsPage::ModelMixerScriptsPage() :
   PageTab(STR_MENUCUSTOMSCRIPTS, ICON_MODEL_LUA_SCRIPTS)
@@ -228,43 +281,44 @@ ModelMixerScriptsPage::ModelMixerScriptsPage() :
 
 void ModelMixerScriptsPage::rebuild(FormWindow * window, int8_t focusIdx)
 {
-  coord_t scrollPosition = window->getScrollPositionY();
+  auto scroll_y = lv_obj_get_scroll_y(window->getLvObj());  
   window->clear();
   build(window, focusIdx);
-  window->setScrollPositionY(scrollPosition);
+  lv_obj_scroll_to_y(window->getLvObj(), scroll_y, LV_ANIM_OFF);
 }
 
 void ModelMixerScriptsPage::build(FormWindow * window, int8_t focusIdx)
 {
-  FormGridLayout grid;
-  grid.spacer(PAGE_PADDING);
-  grid.setLabelWidth(66);
+  window->padAll(4);
+  window->setFlexLayout(LV_FLEX_FLOW_COLUMN, 0);
+
+  FlexGridLayout grid(col_dsc, row_dsc, 2);
+
+  FormWindow::Line* line;
 
   int8_t scriptIdx = 0;
   for (int8_t idx = 0; idx < MAX_SCRIPTS; idx++) {
+    auto line = window->newLine(&grid);
 
     ScriptInternalData* runtimeData = nullptr;
-    ScriptData &sd = g_model.scriptsData[idx];
+    ScriptData* const sd = &(g_model.scriptsData[idx]);
+    ScriptInputsOutputs* const sio = &(scriptInputsOutputs[idx]);
 
-    if (sd.file[0] != '\0') {
+    if (sd->file[0] != '\0') {
       runtimeData = &(scriptInternalData[scriptIdx++]);
     }
     
-    // LUAx label
-    auto txt = new StaticText(window, grid.getLabelSlot(),
-                              std::string("LUA") + std::to_string(idx + 1),
-                              BUTTON_BACKGROUND, CENTERED);
-    
-    Button* button = new ScriptLineButton(window, grid.getFieldSlot(), sd, runtimeData);
+    Button* const button = new ScriptLineButton(line, rect_t{0, 0, window->width() - 12, CM_BUTTON_H}, *sd, runtimeData, idx);
 
     button->setPressHandler([=]() -> uint8_t {
-      Menu* menu = new Menu(window);
+      Menu* const menu = new Menu(window);
       menu->addLine(STR_EDIT, [=]() { editLine(window, idx); });
 
       if (runtimeData != nullptr) {
-        menu->addLine(STR_RESET, [=]() {
-          memset((void*)&sd, 0, sizeof(sd));
-          // TODO: anything else? reload scripts???
+        menu->addLine(STR_DELETE, [=]() {
+            clearStruct(*sd);
+            clearStruct(*sio);
+          LUA_LOAD_MODEL_SCRIPTS();
           storageDirty(EE_MODEL);
           rebuild(window, idx);
         });
@@ -272,36 +326,11 @@ void ModelMixerScriptsPage::build(FormWindow * window, int8_t focusIdx)
       }
       return 0;
     });
-
-    button->setFocusHandler([=](bool focus) {
-      if (focus) {
-        txt->setBackgroundColor(FOCUS_BGCOLOR);
-        txt->setTextFlags(FOCUS_COLOR | CENTERED);
-      } else {
-        txt->setBackgroundColor(FIELD_FRAME_COLOR);
-        txt->setTextFlags(CENTERED);
-      }
-      txt->invalidate();
-    });
-
-    if (focusIdx == idx) {
-      button->setFocus(SET_FOCUS_DEFAULT);
-      txt->setBackgroundColor(FOCUS_BGCOLOR);
-      txt->setTextFlags(FOCUS_COLOR | CENTERED);
-      txt->invalidate();
-    }
-
-    txt->setHeight(button->height());
-    grid.spacer(button->height() + 5);
   }
-
-  grid.nextLine();
-  window->setInnerHeight(grid.getWindowHeight());
 }
 
 void ModelMixerScriptsPage::editLine(FormWindow * window, uint8_t idx)
 {
-  Window::clearFocus();
   Window * editWindow = new ScriptEditWindow(idx);
   editWindow->setCloseHandler([=]() {
     rebuild(window, idx);

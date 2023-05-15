@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -32,7 +33,7 @@ enum BaseCurves {
   CURVE_BASE
 };
 
-void curveReset(uint8_t index);
+void curveClear(uint8_t index);
 void curveMirror(uint8_t index);
 bool isCurveUsed(uint8_t index);
 void loadCurves();
@@ -45,5 +46,7 @@ point_t getPoint(uint8_t curveIndex, uint8_t index);
 int applyCustomCurve(int x, uint8_t idx);
 int applyCurve(int x, CurveRef & curve);
 int applyCurrentCurve(int x);
+
+char *getCurveRefString(char *dest, size_t len, const CurveRef& curve);
 
 #endif

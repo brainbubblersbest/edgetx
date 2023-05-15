@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,19 +24,16 @@
 
 #include "tabsgroup.h"
 
-class ModelOutputsPage: public PageTab {
-  public:
-    ModelOutputsPage();
+class OutputLineButton;
 
-    virtual void build(FormWindow * window) override
-    {
-      build(window, 0);
-    }
+class ModelOutputsPage : public PageTab
+{
+ public:
+  ModelOutputsPage();
+  void build(FormWindow* window) override;
 
-  protected:
-    void build(FormWindow * window, int8_t focusChannel);
-    void rebuild(FormWindow * window, int8_t focusChannel);
-    void editOutput(FormWindow * window, uint8_t channel);
+ protected:
+  void editOutput(uint8_t channel, OutputLineButton* btn);
 };
 
 #endif // _MODEL_OUTPUTS_H_

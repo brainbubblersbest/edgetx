@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,7 +19,6 @@
  * GNU General Public License for more details.
  */
 
-
 #ifndef PULSES_AFHDS2_H_
 #define PULSES_AFHDS2_H_
 
@@ -27,31 +27,12 @@
 #include <map>
 #include <list>
 
-struct FlySkySerialPulsesData {
-  uint8_t  pulses[64];
-  uint8_t  * ptr;
-  uint8_t  frame_index;
-  uint8_t  crc;
-  uint8_t  state;
-  uint8_t  timeout;
-  uint8_t  esc_state;
-  uint8_t  telemetry[64];
-  uint8_t  telemetry_index;
-} __attribute__((__packed__));
+#include "hal/serial_driver.h"
+#include "hal/module_driver.h"
 
-enum AfhdsSpecialChars {
-  END = 0xC0,             //Frame end
-  START = END,
-  ESC_END = 0xDC,         //Escaped frame end - in case END occurs in fame then ESC ESC_END must be used
-  ESC = 0xDB,             //Escaping character
-  ESC_ESC = 0xDD,         //Escaping character in case ESC occurs in fame then ESC ESC_ESC  must be used
-};
+#define AFHDS2_PERIOD (2 * 1000) /* us */
 
-
-class afhds2 {
-public:
-  afhds2();
-  virtual ~afhds2();
-};
+extern const etx_serial_init afhds2SerialInitParams;
+extern const etx_proto_driver_t Afhds2InternalDriver;
 
 #endif /* PULSES_AFHDS2_H_ */

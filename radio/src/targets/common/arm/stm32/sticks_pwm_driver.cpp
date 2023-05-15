@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -20,7 +21,7 @@
 
 #include "opentx.h"
 
-volatile uint32_t pwm_interrupt_count;
+volatile uint32_t pwm_interrupt_count = 0;
 volatile uint16_t timer_capture_values[NUM_PWMSTICKS];
 
 void sticksPwmInit()
@@ -117,6 +118,15 @@ extern "C" void PWM_IRQHandler(void)
   }
 }
 
+#if defined(STICK_CHANNEL_CHANGE)
+void sticksPwmRead(uint16_t * values)
+{
+  values[0] = timer_capture_values[STICK_PWM_CHANNEL_0];
+  values[1] = timer_capture_values[STICK_PWM_CHANNEL_1];
+  values[2] = timer_capture_values[STICK_PWM_CHANNEL_2];
+  values[3] = timer_capture_values[STICK_PWM_CHANNEL_3];
+}
+#else
 void sticksPwmRead(uint16_t * values)
 {
   values[0] = timer_capture_values[0];
@@ -124,3 +134,4 @@ void sticksPwmRead(uint16_t * values)
   values[2] = timer_capture_values[3];
   values[3] = timer_capture_values[2];
 }
+#endif

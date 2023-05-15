@@ -21,17 +21,17 @@
 #ifndef _SDCARD_H2_
 #define _SDCARD_H2_
 
-#include "categorized.h"
+#include "labeled.h"
 
 #include <QtCore>
 
-class SdcardFormat : public CategorizedStorageFormat
+class SdcardFormat : public LabelsStorageFormat
 {
   Q_DECLARE_TR_FUNCTIONS(SdcardFormat)
 
   public:
     SdcardFormat(const QString & filename):
-      CategorizedStorageFormat(filename)
+      LabelsStorageFormat(filename)
     {
     }
 
@@ -41,6 +41,8 @@ class SdcardFormat : public CategorizedStorageFormat
   protected:
     virtual bool loadFile(QByteArray & fileData, const QString & fileName);
     virtual bool writeFile(const QByteArray & fileData, const QString & fileName);
+    virtual bool getFileList(std::list<std::string>& filelist);
+    virtual bool deleteFile(const QString & fileName);
 };
 
 class SdcardStorageFactory : public DefaultStorageFactory<SdcardFormat>

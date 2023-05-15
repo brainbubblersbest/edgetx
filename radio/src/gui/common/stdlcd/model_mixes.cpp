@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,6 +20,7 @@
  */
 
 #include "opentx.h"
+#include "tasks/mixer_task.h"
 
 #define _STR_MAX(x)                     "/" #x
 #define STR_MAX(x)                     _STR_MAX(x)
@@ -48,17 +50,17 @@ bool reachMixesLimit()
 
 void deleteMix(uint8_t idx)
 {
-  pauseMixerCalculations();
+  mixerTaskStop();
   MixData * mix = mixAddress(idx);
   memmove(mix, mix+1, (MAX_MIXERS-(idx+1))*sizeof(MixData));
   memclear(&g_model.mixData[MAX_MIXERS-1], sizeof(MixData));
-  resumeMixerCalculations();
+  mixerTaskStart();
   storageDirty(EE_MODEL);
 }
 
 void insertMix(uint8_t idx)
 {
-  pauseMixerCalculations();
+  mixerTaskStop();
   MixData * mix = mixAddress(idx);
   memmove(mix+1, mix, (MAX_MIXERS-(idx+1))*sizeof(MixData));
   memclear(mix, sizeof(MixData));
@@ -71,16 +73,16 @@ void insertMix(uint8_t idx)
     }
   }
   mix->weight = 100;
-  resumeMixerCalculations();
+  mixerTaskStart();
   storageDirty(EE_MODEL);
 }
 
 void copyMix(uint8_t idx)
 {
-  pauseMixerCalculations();
+  mixerTaskStop();
   MixData * mix = mixAddress(idx);
   memmove(mix+1, mix, (MAX_MIXERS-(idx+1))*sizeof(MixData));
-  resumeMixerCalculations();
+  mixerTaskStart();
   storageDirty(EE_MODEL);
 }
 
@@ -119,9 +121,9 @@ bool swapMixes(uint8_t & idx, uint8_t up)
     return true;
   }
 
-  pauseMixerCalculations();
+  mixerTaskStop();
   memswap(x, y, sizeof(MixData));
-  resumeMixerCalculations();
+  mixerTaskStart();
 
   idx = tgt_idx;
   return true;
@@ -231,6 +233,7 @@ void displayMixInfos(coord_t y, MixData * md)
 void displayMixLine(coord_t y, MixData * md, bool active)
 {
   if(active && md->name[0]) {
+    lcdDrawFilledRect(FW*sizeof(TR_MIXES)+FW/2, 0, FW*4+1, MENU_HEADER_HEIGHT, 0xFF, ERASE);
     lcdDrawSizedText(FW*sizeof(TR_MIXES)+FW/2, 0, md->name, sizeof(md->name), 0);
     if (!md->flightModes || ((md->curve.value || md->swtch) && ((get_tmr10ms() / 200) & 1)))
       displayMixInfos(y, md);

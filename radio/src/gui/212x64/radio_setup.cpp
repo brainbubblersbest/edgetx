@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,6 +22,7 @@
 #define LANGUAGE_PACKS_DEFINITION
 
 #include "opentx.h"
+#include "tasks/mixer_task.h"
 
 const unsigned char sticks[]  = {
 #include "sticks.lbm"
@@ -94,6 +96,7 @@ enum MenuRadioSetupItems {
   ITEM_RADIO_SETUP_SWITCHES_DELAY,
   ITEM_RADIO_SETUP_USB_MODE,
   ITEM_RADIO_SETUP_RX_CHANNEL_ORD,
+  CASE_ROTARY_ENCODER(ITEM_RADIO_SETUP_ROTARY_ENC_MODE)
   ITEM_RADIO_SETUP_STICK_MODE_LABELS,
   ITEM_RADIO_SETUP_STICK_MODE,
   ITEM_RADIO_SETUP_MAX
@@ -121,8 +124,10 @@ void menuRadioSetup(event_t event)
   }
 #endif
 
+#if defined(PXX2)
   uint8_t old_editMode = s_editMode;
-  
+#endif
+
   MENU(STR_RADIO_SETUP, menuTabGeneral, MENU_RADIO_SETUP, ITEM_RADIO_SETUP_MAX, {
     2, // date
     2, // time
@@ -173,6 +178,7 @@ void menuRadioSetup(event_t event)
     0, // switches delay
     0, // USB mode
     0, // RX channels order
+    CASE_ROTARY_ENCODER(0)  // Invert rotary encoder
     LABEL(TX_MODE),
       0, // sticks mode
       1 /*to force edit mode*/
@@ -180,6 +186,9 @@ void menuRadioSetup(event_t event)
 
   if (event == EVT_ENTRY) {
     reusableBuffer.generalSettings.stickMode = g_eeGeneral.stickMode;
+#if defined(ROTARY_ENCODER_NAVIGATION)
+    reusableBuffer.generalSettings.rotaryEncoderMode = g_eeGeneral.rotEncMode;
+#endif
   }
 
   int sub = menuVerticalPosition;
@@ -573,7 +582,7 @@ void menuRadioSetup(event_t event)
         break;
 
       case ITEM_RADIO_SETUP_RX_CHANNEL_ORD:
-        lcdDrawTextAlignedLeft(y, STR_RXCHANNELORD); // RAET->AETR
+        lcdDrawTextAlignedLeft(y, STR_DEF_CHAN_ORD); // RAET->AETR
         for (uint8_t i=1; i<=4; i++) {
           putsChnLetter(RADIO_SETUP_2ND_COLUMN - FW + i*FW, y, channelOrder(i), attr);
         }
@@ -587,6 +596,25 @@ void menuRadioSetup(event_t event)
         }
         break;
 
+#if defined(ROTARY_ENCODER_NAVIGATION)
+      case ITEM_RADIO_SETUP_ROTARY_ENC_MODE:
+        lcdDrawTextAlignedLeft(y, STR_ROTARY_ENC_MODE);
+        lcdDrawTextAtIndex(RADIO_SETUP_2ND_COLUMN, y, STR_ROTARY_ENC_OPT,
+                           reusableBuffer.generalSettings.rotaryEncoderMode,
+                           attr);
+        if (attr && s_editMode > 0) {
+          CHECK_INCDEC_GENVAR(event,
+                              reusableBuffer.generalSettings.rotaryEncoderMode,
+                              ROTARY_ENCODER_MODE_NORMAL,
+                              ROTARY_ENCODER_MODE_INVERT_VERT_HORZ_ALT);
+        } else if (reusableBuffer.generalSettings.rotaryEncoderMode !=
+                   g_eeGeneral.rotEncMode) {
+          g_eeGeneral.rotEncMode =
+              reusableBuffer.generalSettings.rotaryEncoderMode;
+        }
+        break;
+#endif
+
       case ITEM_RADIO_SETUP_STICK_MODE:
         lcdDrawChar(2*FW, y, '1'+reusableBuffer.generalSettings.stickMode, attr);
         for (uint8_t i=0; i<4; i++) {
@@ -596,10 +624,10 @@ void menuRadioSetup(event_t event)
           CHECK_INCDEC_GENVAR(event, reusableBuffer.generalSettings.stickMode, 0, 3);
         }
         else if (reusableBuffer.generalSettings.stickMode != g_eeGeneral.stickMode) {
-          pausePulses();
+          mixerTaskStop();
           g_eeGeneral.stickMode = reusableBuffer.generalSettings.stickMode;
           checkThrottleStick();
-          resumePulses();
+          mixerTaskStart();
           waitKeysReleased();
         }
         break;

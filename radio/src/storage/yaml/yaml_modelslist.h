@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,9 +22,12 @@
 #ifndef _YAML_MODELSLIST_H_
 #define _YAML_MODELSLIST_H_
 
+#include <vector>
+#include <string>
+
 struct YamlParserCalls;
 
-void* get_modelslist_iter();
+void* get_modelslist_iter(std::vector<std::string>* filelist);
 const YamlParserCalls* get_modelslist_parser_calls();
 
 #endif

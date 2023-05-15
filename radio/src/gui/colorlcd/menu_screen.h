@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,14 +24,11 @@
 
 #include "tabsgroup.h"
 
-class ScreenMenu: public TabsGroup {
-  friend class ScreenSetupPage;
-
-  public:
-    ScreenMenu();
-
-  protected:
-    void updateTabs();
+class ScreenMenu : public TabsGroup
+{
+ public:
+  ScreenMenu(int8_t tabIdx = -1);
+  void updateTabs(int8_t tabIdx);
 };
 
 #endif // _MENU_SCREEN_H_

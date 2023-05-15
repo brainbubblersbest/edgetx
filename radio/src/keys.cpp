@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,7 +19,9 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "keys.h"
+#include "timers_driver.h"
+#include "opentx_helpers.h"
 
 #define KEY_LONG_DELAY              32  // long key press minimum duration (x10ms), must be less than KEY_REPEAT_DELAY
 #define KEY_REPEAT_DELAY            40  // press longer than this enables repeat (but does not fire it yet)
@@ -41,6 +44,15 @@
 event_t s_evt;
 struct InactivityData inactivity = {0};
 Key keys[NUM_KEYS];
+
+/**
+ * @brief returns true if there is an event waiting.
+ * 
+ */
+bool isEvent()
+{
+  return s_evt != 0;
+}
 
 event_t getEvent(bool trim)
 {
@@ -176,9 +188,6 @@ void killAllEvents()
 
 bool waitKeysReleased()
 {
-#if defined(PCBSKY9X)
-  RTOS_WAIT_MS(200); // 200ms
-#endif
 
   // loop until all keys are up
 #if !defined(BOOT)

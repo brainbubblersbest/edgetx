@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,17 +19,27 @@
  * GNU General Public License for more details.
  */
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-#include "usb_dcd_int.h"
-#include "usb_bsp.h"
-#if defined(__cplusplus)
-}
+#include "usb_driver.h"
+
+#if defined(USBJ_EX)
+#include "usb_joystick.h"
 #endif
 
-#include "opentx.h"
+extern "C" {
+#include "usb_conf.h"
+#include "usb_dcd_int.h"
+#include "usb_bsp.h"
+#include "usbd_core.h"
+#include "usbd_msc_core.h"
+#include "usbd_desc.h"
+#include "usbd_usr.h"
+#include "usbd_hid_core.h"
+#include "usbd_cdc_core.h"
+}
+
+#include "board.h"
 #include "debug.h"
+#include "debounce.h"
 
 static bool usbDriverStarted = false;
 #if defined(BOOT)
@@ -68,12 +79,17 @@ void usbInit()
   usbDriverStarted = false;
 }
 
+extern void usbInitLUNs();
+
 void usbStart()
 {
   switch (getSelectedUsbMode()) {
 #if !defined(BOOT)
     case USB_JOYSTICK_MODE:
       // initialize USB as HID device
+#if defined(USBJ_EX)
+      setupUSBJoystick();
+#endif
       USBD_Init(&USB_OTG_dev, USB_OTG_FS_CORE_ID, &USR_desc, &USBD_HID_cb, &USR_cb);
       break;
 #endif
@@ -86,6 +102,7 @@ void usbStart()
     default:
     case USB_MASS_STORAGE_MODE:
       // initialize USB as MSC device
+      usbInitLUNs();
       USBD_Init(&USB_OTG_dev, USB_OTG_FS_CORE_ID, &USR_desc, &USBD_MSC_cb, &USR_cb);
       break;
   }
@@ -98,12 +115,26 @@ void usbStop()
   USBD_DeInit(&USB_OTG_dev);
 }
 
+#if defined(USBJ_EX)
+void usbJoystickRestart()
+{
+  if (getSelectedUsbMode() != USB_JOYSTICK_MODE) return;
+
+  USBD_DeInit(&USB_OTG_dev);
+  DCD_DevDisconnect(&USB_OTG_dev);
+  DCD_DevConnect(&USB_OTG_dev);
+  USBD_Init(&USB_OTG_dev, USB_OTG_FS_CORE_ID, &USR_desc, &USBD_HID_cb, &USR_cb);
+}
+#endif
+
 bool usbStarted()
 {
   return usbDriverStarted;
 }
 
 #if !defined(BOOT)
+#include "globals.h"
+
 /*
   Prepare and send new USB data packet
 
@@ -113,6 +144,7 @@ bool usbStarted()
 */
 void usbJoystickUpdate()
 {
+#if !defined(USBJ_EX)
   static uint8_t HID_Buffer[HID_IN_PACKET];
 
   // test to se if TX buffer is free
@@ -146,5 +178,12 @@ void usbJoystickUpdate()
     }
     USBD_HID_SendReport(&USB_OTG_dev, HID_Buffer, HID_IN_PACKET);
   }
+#else
+  // test to se if TX buffer is free
+  if (USBD_HID_SendReport(&USB_OTG_dev, 0, 0) == USBD_OK) {
+    usbReport_t ret = usbReport();
+    USBD_HID_SendReport(&USB_OTG_dev, ret.ptr, ret.size);
+  }
+#endif
 }
 #endif

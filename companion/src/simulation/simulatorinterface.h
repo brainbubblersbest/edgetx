@@ -144,6 +144,8 @@ class SimulatorInterface : public QObject
     virtual void setTrainerInput(unsigned int inputNumber, int16_t value) = 0;
     virtual void setInputValue(int type, uint8_t index, int16_t value) = 0;
     virtual void rotaryEncoderEvent(int steps) = 0;
+    virtual void touchEvent(int type, int x, int y) = 0;
+    virtual void lcdFlushed() = 0;
     virtual void setTrainerTimeout(uint16_t ms) = 0;
     virtual void sendTelemetry(const QByteArray data) = 0;
     virtual void setLuaStateReloadPermanentScripts() = 0;
@@ -182,7 +184,7 @@ class SimulatorLoader
     static void registerSimulators();
     static void unregisterSimulators();
     static QStringList getAvailableSimulators();
-    static QString findSimulatorByFirmwareName(const QString & name);
+    static QString findSimulatorByName(const QString & name);
     static SimulatorInterface * loadSimulator(const QString & name);
     static bool unloadSimulator(const QString & name);
 

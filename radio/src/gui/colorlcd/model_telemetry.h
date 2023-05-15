@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -27,19 +28,19 @@ class ModelTelemetryPage: public PageTab {
   public:
     ModelTelemetryPage();
 
-    void build(FormWindow * window) override
-    {
-      build(window, -1);
-    }
+    void build(FormWindow * window) override;
 
     void checkEvents() override;
 
   protected:
-    FormWindow * window = nullptr;
-    void editSensor(FormWindow * window, uint8_t index);
     int lastKnownIndex = 0;
-    void build(FormWindow * window, int8_t focusSensorIndex=-1);
+    FormWindow* window = nullptr;
+    FormWindow* sensorWindow = nullptr;
+    TextButton* discover = nullptr;
+
+    void editSensor(FormWindow * window, uint8_t index);
     void rebuild(FormWindow * window, int8_t focusSensorIndex=-1);
+    void buildSensorList(int8_t focusSensorIndex=-1);
 };
 
 #endif //_MODEL_TELEMETRY_H

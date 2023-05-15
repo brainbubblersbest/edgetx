@@ -27,7 +27,7 @@ bool SdcardFormat::write(const RadioData & radioData)
   QDir dir(filename);
   dir.mkdir("RADIO");
   dir.mkdir("MODELS");
-  return CategorizedStorageFormat::write(radioData);
+  return LabelsStorageFormat::write(radioData);
 }
 
 bool SdcardFormat::loadFile(QByteArray & filedata, const QString & filename)
@@ -57,8 +57,32 @@ bool SdcardFormat::writeFile(const QByteArray & data, const QString & filename)
   return true;
 }
 
+bool SdcardFormat::getFileList(std::list<std::string>& filelist)
+{
+  QDir dir(filename);
+  if (!dir.cd("MODELS")) return false;
+
+  QStringList ql = dir.entryList();
+  for (const auto& str : ql) {
+    filelist.push_back("MODELS/" + str.toStdString());
+  }
+  return true;
+}
+
+bool SdcardFormat::deleteFile(const QString & filename)
+{
+  QString path = this->filename + "/" + filename;
+
+  if (!QFile::remove(path)) {
+    setError(tr("Error deleting file %1").arg(path));
+    return false;
+  }
+
+  qDebug() << "File" << path << "deleted";
+  return true;
+}
+
 bool SdcardStorageFactory::probe(const QString & path)
 {
   return QDir(path).exists();
 }
-

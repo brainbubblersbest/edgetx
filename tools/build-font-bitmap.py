@@ -5,7 +5,7 @@ import argparse
 import os
 import sys
 from PIL import Image, ImageDraw, ImageFont
-from charset import get_chars, special_chars, extra_chars, standard_chars, is_cjk_char
+from charset import get_chars, special_chars, extra_chars, standard_chars
 
 EXTRA_BITMAP_MAX_WIDTH = 297
 
@@ -18,6 +18,7 @@ class FontBitmap:
         self.background = background
         self.font = self.load_font(font_name)
         self.extra_bitmap = self.load_extra_bitmap()
+        self.extra_bitmap_added = False
         self.extra_bitmap_width = EXTRA_BITMAP_MAX_WIDTH
         if self.extra_bitmap is not None:
             self.extra_bitmap_width = self.extra_bitmap.width
@@ -49,14 +50,21 @@ class FontBitmap:
 
         return (text_width, text_height)
 
-    def draw_char(self, draw, x, c):
+    def draw_char(self, draw, x, y, c):
 
         # default width for space
         width = 4
         if c != ' ':
-            width = self.font.getmask(c).getbbox()[2]
-            _, (offset_x, offset_y) = self.font.font.getsize(c)
-            draw.text((x - offset_x, 0), c, fill=self.foreground, font=self.font)
+            if "0123456789".find(c) >= 0 :
+              width = self.font.getmask("4").getbbox()[2]
+              _, (offset_x, offset_y) = self.font.font.getsize(c)
+              _, (offset_x2, offset_y2) = self.font.font.getsize("4")
+              offset_x = (offset_x + offset_x2) / 2
+            else :
+              width = self.font.getmask(c).getbbox()[2]
+              _, (offset_x, offset_y) = self.font.font.getsize(c)
+
+            draw.text((x - offset_x, y), c, fill=self.foreground, font=self.font)
 
         return width
 
@@ -65,6 +73,11 @@ class FontBitmap:
 
         (_,baseline), (offset_x, offset_y) = self.font.font.getsize(self.chars)
         (text_width, text_height) = self.get_text_dimensions(self.chars)
+        y_shifts = 0
+        if offset_y < 0:
+            y_shifts = -offset_y
+            text_height += y_shifts
+            offset_y = 0
 
         img_width = text_width + self.extra_bitmap_width
         image = Image.new("RGB", (img_width, text_height), self.background)
@@ -73,28 +86,32 @@ class FontBitmap:
         width = 0
         for c in self.chars:
             if c in extra_chars:
-                if self.extra_bitmap:
-
+                if not self.extra_bitmap_added:
                     # append same width for non-existing characters
                     for i in range(128 - 32 - len(standard_chars)):
                         coords.append(width)
 
-                    # copy extra_bitmap at once
-                    image.paste(self.extra_bitmap, (width, offset_y))
+                    if self.extra_bitmap:
 
-                    # append width for extra_bitmap symbols
-                    for coord in [14, 14, 12, 12, 13, 13, 13, 13, 13] + [15] * 12:
-                        coords.append(width)
-                        width += coord
+                        # copy extra_bitmap at once
+                        image.paste(self.extra_bitmap, (width, offset_y + y_shifts))
 
-                    # once inserted, now remove it
-                    self.extra_bitmap = None
+                        # append width for extra_bitmap symbols
+                        for coord in [14, 14, 12, 12, 13, 13, 13, 13, 13] + [15] * 12:
+                            coords.append(width)
+                            width += coord
+                    else:
+                        for coord in range(21):
+                            coords.append(width)                    
+
+                    # once inserted, disable insert again
+                    self.extra_bitmap_added = True
 
                 # skip
                 continue
 
             # normal characters + CJK
-            w = self.draw_char(draw, width, c)
+            w = self.draw_char(draw, width, y_shifts, c)
 
             coords.append(width)
             width += w

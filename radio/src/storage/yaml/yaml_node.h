@@ -1,3 +1,24 @@
+/*
+ * Copyright (C) EdgeTX
+ *
+ * Based on code named
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
+ *   er9x - http://code.google.com/p/er9x
+ *   gruvin9x - http://code.google.com/p/gruvin9x
+ *
+ * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _node_h_
 #define _node_h_
 
@@ -17,7 +38,8 @@ enum YamlDataType {
     YDT_ARRAY,
     YDT_ENUM,
     YDT_UNION,
-    YDT_PADDING
+    YDT_PADDING,
+    YDT_CUSTOM
 };
 
 struct YamlIdStr
@@ -31,47 +53,62 @@ typedef bool (*yaml_writer_func)(void* opaque, const char* str, size_t len);
 
 struct YamlNode
 {
-    typedef bool (*is_active_func)(uint8_t* data, uint32_t bitoffs);
+  typedef bool (*is_active_func)(void* user, uint8_t* data, uint32_t bitoffs);
 
-    typedef uint32_t (*cust_to_uint_func)(const YamlNode* node, const char* val, uint8_t val_len);
+  typedef uint32_t (*cust_to_uint_func)(const YamlNode* node, const char* val,
+                                        uint8_t val_len);
 
-    typedef bool (*uint_to_cust_func)(const YamlNode* node, uint32_t val, yaml_writer_func wf, void* opaque);
+  typedef bool (*uint_to_cust_func)(const YamlNode* node, uint32_t val,
+                                    yaml_writer_func wf, void* opaque);
 
-    typedef uint8_t (*select_member_func)(uint8_t* data, uint32_t bitoffs);
+  typedef uint8_t (*select_member_func)(void* user, uint8_t* data,
+                                        uint32_t bitoffs);
 
-    typedef uint32_t (*cust_idx_read_func)(const char* val, uint8_t val_len);
-    typedef bool (*cust_idx_write_func)(uint32_t idx, yaml_writer_func wf, void* opaque);
-    
-    uint8_t      type;
-    uint32_t     size;  // bits
-    uint8_t      tag_len;
-    const char*  tag;
-    union {
+  typedef uint32_t (*cust_idx_read_func)(void* user, const char* val,
+                                         uint8_t val_len);
+  typedef bool (*cust_idx_write_func)(void* user, yaml_writer_func wf,
+                                      void* opaque);
+
+  typedef void (*cust_read_func)(void* user, uint8_t* data, uint32_t bitoffs,
+                                 const char* val, uint8_t val_len);
+  typedef bool (*cust_write_func)(void* user, uint8_t* data, uint32_t bitoffs,
+                                  yaml_writer_func wf, void* opaque);
+
+  uint8_t type;
+  uint32_t size;  // bits
+  uint8_t tag_len;
+  const char* tag;
+  union {
+    struct {
+      const YamlNode* child;
+      union {
         struct {
-            const YamlNode* child;
-            union {
-                struct {
-                    is_active_func  is_active;
-                    uint16_t        elmts; // maximum number of elements
-                } _a;
-                select_member_func select_member;
-            } u;
-        } _array;
+          is_active_func is_active;
+          uint16_t elmts;  // maximum number of elements
+        } _a;
+        select_member_func select_member;
+      } u;
+    } _array;
 
-        struct {
-            const YamlIdStr* choices;
-        } _enum;
+    struct {
+      const YamlIdStr* choices;
+    } _enum;
 
-        struct {
-            cust_to_uint_func cust_to_uint;
-            uint_to_cust_func uint_to_cust;
-        } _cust;
+    struct {
+      cust_to_uint_func cust_to_uint;
+      uint_to_cust_func uint_to_cust;
+    } _cust;
 
-        struct {
-            cust_idx_read_func  read;
-            cust_idx_write_func write;
-        } _cust_idx;
-    } u;
+    struct {
+      cust_idx_read_func read;
+      cust_idx_write_func write;
+    } _cust_idx;
+
+    struct {
+      cust_read_func read;
+      cust_write_func write;
+    } _cust_attr;
+  } u;
 };
 
 #if !defined(_MSC_VER)
@@ -113,6 +150,9 @@ struct YamlNode
 
 #define YAML_PADDING(bits)                      \
     { .type=YDT_PADDING, .size=(bits) }
+
+#define YAML_CUSTOM(tag, f_read, f_write)       \
+    { .type=YDT_CUSTOM, .size=0, YAML_TAG(tag), .u={._cust_attr={.read=(f_read), .write=(f_write) }} }
 
 #define YAML_END                                \
     { .type=YDT_NONE }

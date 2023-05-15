@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -91,48 +92,53 @@ uint16_t get_battery_charge_state()
   return chargeState;
 }
 
-void drawChargingInfo(uint16_t chargeState){
-	static int progress = 0;
-	const char* text = chargeState == CHARGE_STARTED ? STR_BATTERYCHARGING : STR_BATTERYFULL;
-    int h = 0;
-    LcdFlags color = 0;
-    if(CHARGE_STARTED == chargeState)
-    {
-        if(progress >= 100)
-        {
-            progress = 0;
-        }
-        else
-        {
-            progress+=25;
-        }
-        text = STR_BATTERYCHARGING;
-        h = ((BATTERY_H_INNER * progress) / 100);
-        color = BATTERY_CHARGE_COLOR;
+void drawChargingInfo(uint16_t chargeState)
+{
+  static int progress = 0;
+  const char* text =
+      chargeState == CHARGE_STARTED ? STR_BATTERYCHARGING : STR_BATTERYFULL;
+  int h = 0;
+  LcdFlags color = 0;
+  if (CHARGE_STARTED == chargeState) {
+    if (progress >= 100) {
+      progress = 0;
+    } else {
+      progress += 25;
     }
-    else if(CHARGE_FINISHED == chargeState)
-    {
-        text = STR_BATTERYFULL;
-        h = BATTERY_H_INNER;
-        color = BATTERY_CHARGE_COLOR;
-    }
-    else
-    {
-        text = STR_BATTERYNONE;
-        h = BATTERY_H_INNER;
-        color = TRIM_SHADOW_COLOR;
-    }
+    text = STR_BATTERYCHARGING;
+    h = ((BATTERY_H_INNER * progress) / 100);
+    color = COLOR_THEME_EDIT;
+  } else if (CHARGE_FINISHED == chargeState) {
+    text = STR_BATTERYFULL;
+    h = BATTERY_H_INNER;
+    color = COLOR_THEME_EDIT;
+  } else {
+    text = STR_BATTERYNONE;
+    h = BATTERY_H_INNER;
+    color = COLOR_THEME_PRIMARY1;
+  }
 
-    BACKLIGHT_ENABLE();
-    lcd->drawSizedText(LCD_W/2, LCD_H-50, text, strlen(text), CENTERED|MAINVIEW_PANES_COLOR);
+  BACKLIGHT_ENABLE();
+  lcd->clear();
+  lcd->drawSizedText(LCD_W / 2, LCD_H - 50, text, strlen(text),
+                     CENTERED | COLOR_THEME_PRIMARY2);
 
-    lcd->drawFilledRect((LCD_W - BATTERY_W)/2, BATTERY_TOP, BATTERY_W, BATTERY_H, SOLID, MAINVIEW_PANES_COLOR);
-    lcd->drawFilledRect((LCD_W - BATTERY_W_INNER)/2, BATTERY_TOP_INNER, BATTERY_W_INNER, BATTERY_H_INNER, SOLID, TRIM_SHADOW_COLOR);
+  lcd->drawFilledRect((LCD_W - BATTERY_W) / 2, BATTERY_TOP, BATTERY_W,
+                      BATTERY_H, SOLID, COLOR_THEME_PRIMARY2);
+  lcd->drawFilledRect((LCD_W - BATTERY_W_INNER) / 2, BATTERY_TOP_INNER,
+                      BATTERY_W_INNER, BATTERY_H_INNER, SOLID,
+                      COLOR_THEME_PRIMARY1);
 
-    lcd->drawFilledRect((LCD_W - BATTERY_W_INNER)/2, BATTERY_TOP_INNER + BATTERY_H_INNER - h , BATTERY_W_INNER, h, SOLID, color);
-    lcd->drawFilledRect((LCD_W - BATTERY_CONNECTOR_W)/2, BATTERY_TOP-BATTERY_CONNECTOR_H , BATTERY_CONNECTOR_W, BATTERY_CONNECTOR_H, SOLID, MAINVIEW_PANES_COLOR);
+  lcd->drawFilledRect((LCD_W - BATTERY_W_INNER) / 2,
+                      BATTERY_TOP_INNER + BATTERY_H_INNER - h, BATTERY_W_INNER,
+                      h, SOLID, color);
+  lcd->drawFilledRect((LCD_W - BATTERY_CONNECTOR_W) / 2,
+                      BATTERY_TOP - BATTERY_CONNECTOR_H, BATTERY_CONNECTOR_W,
+                      BATTERY_CONNECTOR_H, SOLID, COLOR_THEME_PRIMARY2);
 }
+
 #define CHARGE_INFO_DURATION 500
+
 //this method should be called by timer interrupt or by GPIO interrupt
 void handle_battery_charge(uint32_t last_press_time)
 {
@@ -142,7 +148,6 @@ void handle_battery_charge(uint32_t last_press_time)
   static uint32_t info_until = 0;
   static bool lcdInited = false;
 
-  if(boardState != BOARD_POWER_OFF) return;
   uint32_t now = get_tmr10ms();
   uint16_t chargeState = get_battery_charge_state();
   if(chargeState != CHARGE_UNKNOWN) {
@@ -174,23 +179,16 @@ void handle_battery_charge(uint32_t last_press_time)
   if(updateTime == 0 || ((get_tmr10ms() - updateTime) >= 50))
   {
       if(!lcdInited) {
-        backlightInit();
-        lcdInit();
+        lcdInitDisplayDriver();
         lcdInited = true;
       }
       else {
         lcdOn();
       }
       updateTime = get_tmr10ms();     
-      lcd->clear();
+      lcdInitDirectDrawing();
       drawChargingInfo(chargeState);
       lcdRefresh();
    }
 #endif
-}
-
-uint16_t getBatteryVoltage()
-{
-  int32_t instant_vbat = anaIn(TX_VOLTAGE);  // using filtered ADC value on purpose
-  return (uint16_t)((instant_vbat * (1000 + g_eeGeneral.txVoltageCalibration)) / 2942);
 }

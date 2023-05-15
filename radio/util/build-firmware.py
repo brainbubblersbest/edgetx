@@ -25,11 +25,11 @@ def build_target(target, path, cmake_options):
     cmd = ["cmake"]
     for option, value in cmake_options.items():
         cmd.append("-D%s=%s" % (option, value))
-    if "OPENTX_VERSION_SUFFIX" in os.environ:
-        suffix = os.environ["OPENTX_VERSION_SUFFIX"]
+    if "EDGETX_VERSION_SUFFIX" in os.environ:
+        suffix = os.environ["EDGETX_VERSION_SUFFIX"]
         cmd.append('-DVERSION_SUFFIX="%s"' % suffix)
-        if suffix.startswith("N"):
-            cmd.append('-DTEST_BUILD_WARNING=YES')
+#       if not suffix.startswith("rel"):
+#           cmd.append('-DTEST_BUILD_WARNING=YES')
     cmd.append(srcdir)
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -69,21 +69,7 @@ def main():
     cmake_options = {}
     board_name = options[optcount]
 
-    if board_name == "sky9x":
-        cmake_options["PCB"] = "SKY9X"
-        firmware_options = options_sky9x
-        maxsize = 65536 * 4
-    elif board_name == "9xrpro":
-        cmake_options["PCB"] = "9XRPRO"
-        cmake_options["SDCARD"] = "YES"
-        firmware_options = options_sky9x
-        maxsize = 65536 * 4
-    elif board_name == "ar9x":
-        cmake_options["PCB"] = "AR9X"
-        cmake_options["SDCARD"] = "YES"
-        firmware_options = options_ar9x
-        maxsize = 65536 * 4
-    elif board_name == "x9lite":
+    if board_name == "x9lite":
         cmake_options["PCB"] = "X9LITE"
         firmware_options = options_taranis_x9lite
         maxsize = 65536 * 8
@@ -138,6 +124,11 @@ def main():
         cmake_options["PCB"] = "X12S"
         firmware_options = options_horus_x12s
         maxsize = 2 * 1024 * 1024
+    elif board_name == "lr3pro":
+        cmake_options["PCB"] = "X7"
+        cmake_options["PCBREV"] = "LR3PRO"
+        firmware_options = options_betafpv_lr3pro
+        maxsize = 65536 * 8
     elif board_name == "tlite":
         cmake_options["PCB"] = "X7"
         cmake_options["PCBREV"] = "TLITE"
@@ -152,6 +143,11 @@ def main():
         cmake_options["PCB"] = "X7"
         cmake_options["PCBREV"] = "TX12"
         firmware_options = options_radiomaster_tx12
+        maxsize = 65536 * 8
+    elif board_name == "zorro":
+        cmake_options["PCB"] = "X7"
+        cmake_options["PCBREV"] = "ZORRO"
+        firmware_options = options_radiomaster_zorro
         maxsize = 65536 * 8
     elif board_name == "t8":
         cmake_options["PCB"] = "X7"

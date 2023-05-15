@@ -1,20 +1,22 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
- * Source:
- *  https://github.com/opentx/libopenui
+ * Based on code named
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
+ *   er9x - http://code.google.com/p/er9x
+ *   gruvin9x - http://code.google.com/p/gruvin9x
  *
- * This file is a part of libopenui library.
+ * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include "libopenui_config.h"
@@ -25,27 +27,33 @@
 const uint8_t __alpha_button_on[] {
 #include "alpha_button_on.lbm"
 };
-Bitmap ALPHA_BUTTON_ON(BMP_ARGB4444, (const uint16_t*)__alpha_button_on);
+LZ4Bitmap ALPHA_BUTTON_ON(BMP_ARGB4444, __alpha_button_on);
 
 const uint8_t __alpha_button_off[] {
 #include "alpha_button_off.lbm"
 };
-Bitmap ALPHA_BUTTON_OFF(BMP_ARGB4444, (const uint16_t*)__alpha_button_off);
+LZ4Bitmap ALPHA_BUTTON_OFF(BMP_ARGB4444, __alpha_button_off);
 
 FabButton::FabButton(FormGroup* parent, coord_t x, coord_t y, uint8_t icon,
                      std::function<uint8_t(void)> pressHandler,
                      WindowFlags windowFlags) :
     Button(parent,
-           {x - FAB_BUTTON_SIZE / 2, y - FAB_BUTTON_SIZE / 2, FAB_BUTTON_SIZE,
-            FAB_BUTTON_SIZE},
+           {x, y, FAB_BUTTON_SIZE, FAB_BUTTON_SIZE},
            pressHandler, windowFlags),
     icon(icon)
 {
 }
 
+FabButton::FabButton(FormGroup* parent, uint8_t icon,
+                     std::function<uint8_t(void)> pressHandler,
+                     WindowFlags windowFlags) :
+    Button(parent, {}, pressHandler, windowFlags), icon(icon)
+{
+}
+
 void FabButton::paint(BitmapBuffer * dc)
 {
-  auto bitmap = checked() ? &ALPHA_BUTTON_ON : &ALPHA_BUTTON_OFF;
+  const BitmapBuffer* bitmap = checked() ? &ALPHA_BUTTON_ON : &ALPHA_BUTTON_OFF;
 
   dc->drawBitmap((width() - bitmap->width()) / 2,
                  (FAB_BUTTON_SIZE - bitmap->height()) / 2, bitmap);
@@ -53,6 +61,6 @@ void FabButton::paint(BitmapBuffer * dc)
   const BitmapBuffer* mask = theme->getIconMask(icon);
   if (mask) {
     dc->drawMask((width() - mask->width()) / 2,
-                 (FAB_BUTTON_SIZE - mask->height()) / 2, mask, DEFAULT_BGCOLOR);
+                 (FAB_BUTTON_SIZE - mask->height()) / 2, mask, COLOR2FLAGS(WHITE));
   }
 }

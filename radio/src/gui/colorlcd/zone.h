@@ -1,3 +1,23 @@
+/*
+ * Copyright (C) EdgeTX
+ *
+ * Based on code named
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
+ *   er9x - http://code.google.com/p/er9x
+ *   gruvin9x - http://code.google.com/p/gruvin9x
+ *
+ * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
 
 #ifndef _ZONE_H_
 #define _ZONE_H_
@@ -9,7 +29,7 @@
 
 #if defined(_MSC_VER)
   #define OPTION_VALUE_UNSIGNED(x)    { uint32_t(x) }
-  #define OPTION_VALUE_SIGNED(x)      { uint32_t(x) }
+  #define OPTION_VALUE_SIGNED(x)      { int32_t(x) }
   #define OPTION_VALUE_BOOL(x)        {  bool(x) }
   #define OPTION_VALUE_STRING(...)    { *(ZoneOptionValue *)(const char *) #__VA_ARGS__ }
 #else
@@ -25,13 +45,17 @@ union ZoneOptionValue
   int32_t signedValue;
   uint32_t boolValue;
   char stringValue[LEN_ZONE_OPTION_STRING];
+  CUST_ATTR(source, r_zov_source, w_zov_source);
+  CUST_ATTR(color, r_zov_color, w_zov_color);
 };
 
 enum ZoneOptionValueEnum {
   ZOV_Unsigned=0,
   ZOV_Signed,
   ZOV_Bool,
-  ZOV_String
+  ZOV_String,
+  ZOV_Source,
+  ZOV_Color
 };
 
 struct ZoneOption
@@ -45,7 +69,8 @@ struct ZoneOption
     TextSize,
     Timer,
     Switch,
-    Color
+    Color,
+    Align
   };
 
   const char * name;
@@ -53,7 +78,19 @@ struct ZoneOption
   ZoneOptionValue deflt;
   ZoneOptionValue min;
   ZoneOptionValue max;
+  const char * displayName;
 };
+
+enum ZoneOptionAlign
+{
+  ALIGN_LEFT,
+  ALIGN_CENTER,
+  ALIGN_RIGHT,
+
+  // this one MUST be last
+  ALIGN_COUNT
+};
+
 
 struct ZoneOptionValueTyped
 {
@@ -75,11 +112,16 @@ inline ZoneOptionValueEnum zoneValueEnumFromType(ZoneOption::Type type)
   case ZoneOption::Bool:
     return ZOV_Bool;
 
+  case ZoneOption::Source:
+    return ZOV_Source;
+
   case ZoneOption::Color:
+    return ZOV_Color;
+    
   case ZoneOption::Timer:
   case ZoneOption::Switch:
-  case ZoneOption::Source:
   case ZoneOption::TextSize:
+  case ZoneOption::Align:
   default:
     return ZOV_Unsigned;
   }

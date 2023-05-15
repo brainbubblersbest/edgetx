@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -24,10 +25,10 @@
 #include "view_main.h"
 #include "storage/storage.h"
 
-ScreenMenu::ScreenMenu():
+ScreenMenu::ScreenMenu(int8_t tabIdx):
   TabsGroup(ICON_THEME)
 {
-  updateTabs();
+  updateTabs(tabIdx);
 
   setCloseHandler([]{
       ViewMain::instance()->updateTopbarVisibility();
@@ -35,7 +36,7 @@ ScreenMenu::ScreenMenu():
   });
 }
 
-void ScreenMenu::updateTabs()
+void ScreenMenu::updateTabs(int8_t tabIdx)
 {
   removeAllTabs();
 
@@ -45,7 +46,16 @@ void ScreenMenu::updateTabs()
     if (customScreens[index]) {
       auto tab = new ScreenSetupPage(this, getTabs(), index);
       std::string title(STR_MAIN_VIEW_X);
-      title.back() = index + '1';
+      if (index >= 9)
+      {
+        title[title.size() - 2] = '1';
+        title.back() = (index - 9) + '0';
+      }
+      else
+      {
+        title[title.size() - 2] = index + '1';
+        title.back() = ' ';
+      }
       tab->setTitle(title);
       tab->setIcon(ICON_THEME_VIEW1 + index);
 
@@ -56,4 +66,14 @@ void ScreenMenu::updateTabs()
       break;
     }
   }
+
+  // set the active tab to the currently shown screen on the MainView
+  auto viewMain = ViewMain::instance();
+  auto tab = viewMain->getCurrentMainView() + 1;
+
+  if (tabIdx >= 0) {
+    tab = tabIdx;
+  }
+
+  setCurrentTab(tab);
 }

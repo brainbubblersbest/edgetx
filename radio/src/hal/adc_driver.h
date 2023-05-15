@@ -31,14 +31,19 @@
   #define FIRST_ANALOG_ADC             0
   #define NUM_ANALOGS_ADC              11
   #define NUM_ANALOGS_ADC_EXT          (NUM_ANALOGS - NUM_ANALOGS_ADC)
-#elif defined(PCBNV14) && defined(FLYSKY_HALL_STICKS)
-  #define FIRST_ANALOG_ADC             4
-  #define NUM_ANALOGS_ADC              10
-  #define NUM_ANALOGS_ADC_EXT          2
 #else
+  #define FIRST_ANALOG_ADC_FS          4
+ #if defined (RADIO_BOXER)
+  #define NUM_ANALOGS_ADC_FS           5
+ #else
+  #define NUM_ANALOGS_ADC_FS           10
+  #define NUM_ANALOGS_ADC_EXT          2
+ #endif
   #define FIRST_ANALOG_ADC             0
   #define NUM_ANALOGS_ADC              NUM_ANALOGS
 #endif
+
+#define ADCMAXVALUE                    4095
 
 // TODO: get rid of this special case
 #if defined(PCBX10) || defined(PCBX12S)
@@ -55,5 +60,25 @@ bool adcInit(const etx_hal_adc_driver_t* driver);
 // void adcDeInit();
 
 bool     adcRead();
+uint16_t getBatteryVoltage();
 uint16_t getRTCBatteryVoltage();
 uint16_t getAnalogValue(uint8_t index);
+
+#define JITTER_FILTER_STRENGTH  4         // tune this value, bigger value - more filtering (range: 1-5) (see explanation below)
+#define ANALOG_SCALE            1         // tune this value, bigger value - more filtering (range: 0-1) (see explanation below)
+#define JITTER_ALPHA            (1<<JITTER_FILTER_STRENGTH)
+
+#if defined(JITTER_MEASURE)
+extern JitterMeter<uint16_t> rawJitter[NUM_ANALOGS];
+extern JitterMeter<uint16_t> avgJitter[NUM_ANALOGS];
+#if defined(PCBHORUS) || defined(PCBTARANIS)
+  #define JITTER_MEASURE_ACTIVE()   (menuHandlers[menuLevel] == menuRadioDiagAnalogs)
+#elif defined(CLI)
+  #define JITTER_MEASURE_ACTIVE()   (1)
+#else
+  #define JITTER_MEASURE_ACTIVE()   (0)
+#endif
+#endif
+
+void getADC();
+uint16_t anaIn(uint8_t chan);

@@ -2,25 +2,25 @@ option(SHUTDOWN_CONFIRMATION "Shutdown confirmation" OFF)
 option(LCD_DUAL_BUFFER "Dual LCD Buffer" OFF)
 option(PXX1 "PXX1 protocol support" ON)
 option(PXX2 "PXX2 protocol support" OFF)
-option(AFHDS3 "AFHDS3 TX Module" ON)
+option(AFHDS3 "AFHDS3 TX Module" OFF)
 option(GHOST "Ghost TX Module" ON)
 option(INTERNAL_MODULE_PPM "Support for PPM internal module" OFF)
 option(AUTOUPDATE "Auto update internal chips from SD" OFF)
 option(BIND_KEY "Enable bind button" OFF)
 
-set(EXTERNAL_MODULE YES)
+set(USE_RTC_CLOCK YES)
+set(HARDWARE_EXTERNAL_MODULE YES)
 
 add_definitions(-DPCBFRSKY)
 
 if(PCB STREQUAL X9E)
-  option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" ON)
-  option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" OFF)
+  set(DEFAULT_INTERNAL_MODULE XJT_PXX1 CACHE STRING "Default internal module")
   set(PWR_BUTTON "PRESS" CACHE STRING "Pwr button type (PRESS/SWITCH)")
   set(STICKS "STANDARD" CACHE STRING "Sticks type (STANDARD/HORUS)")
   set(CPU_TYPE STM32F4)
   set(CPU_TYPE_FULL STM32F407xE)  # for size report
   set(LINKER_SCRIPT targets/taranis/stm32f4_flash.ld)
-  add_definitions(-DSTM32F40_41xxx)
+  add_definitions(-DSTM32F40_41xxx -DSTM32F407xx)
   set(HAPTIC YES)
   set(LUA_EXPORT lua_export_x9e)
   set(FLAVOUR x9e)
@@ -30,9 +30,8 @@ if(PCB STREQUAL X9E)
   set(FIRMWARE_TARGET_SRC
     ${FIRMWARE_TARGET_SRC}
     top_lcd_driver.cpp
-    startup_stm32f40_41xxx.s
     )
-  set(AUX_SERIAL_DRIVER ../common/arm/stm32/aux_serial_driver.cpp)
+  set(AUX_SERIAL ON)
   if(STICKS STREQUAL HORUS)
     add_definitions(-DHORUS_STICKS)
   endif()
@@ -60,24 +59,19 @@ elseif(PCB STREQUAL X9D+)
   set(LCD_DRIVER lcd_driver_spi.cpp)
   set(GVAR_SCREEN model_gvars.cpp)
   set(PCBREV 2014 CACHE STRING "PCB Revision")
-  set(AFHDS3 NO)
+  #set(AFHDS3 NO)
   add_definitions(-DPCBREV=${PCBREV})
   add_definitions(-DMANUFACTURER_FRSKY)
   if (${PCBREV} STREQUAL 2019)
-    option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" OFF)
-    option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" ON)
+    set(DEFAULT_INTERNAL_MODULE ISRM_PXX2 CACHE STRING "Default internal module")
     set(FLAVOUR x9d+2019)
     set(LUA_EXPORT lua_export_x9d+2019)
     set(CPU_TYPE STM32F4)
     set(CPU_TYPE_FULL STM32F407xE)  # for size report
     set(LINKER_SCRIPT targets/taranis/stm32f4_flash.ld)
     set(PWR_BUTTON "PRESS" CACHE STRING "Pwr button type (PRESS/SWITCH)")
-    set(FIRMWARE_TARGET_SRC
-      ${FIRMWARE_TARGET_SRC}
-      startup_stm32f40_41xxx.s
-      )
     add_definitions(-DRADIO_X9DP2019)
-    add_definitions(-DSTM32F40_41xxx)
+    add_definitions(-DSTM32F40_41xxx -DSTM32F407xx)
     add_definitions(-DSOFTWARE_VOLUME -DPWR_BUTTON_${PWR_BUTTON} -DHARDWARE_POWER_MANAGEMENT_UNIT)
     set(STATUS_LEDS YES)
     set(PXX2 ON)
@@ -86,23 +80,23 @@ elseif(PCB STREQUAL X9D+)
     set(ROTARY_ENCODER YES)
     set(INTERNAL_MODULE_SERIAL YES)
   else()
-    option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" ON)
-    option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" OFF)
+    set(DEFAULT_INTERNAL_MODULE XJT_PXX1 CACHE STRING "Default internal module")
     set(FLAVOUR x9d+)
     set(CPU_TYPE STM32F2)
     set(CPU_TYPE_FULL STM32F205xE)  # for size report
+    add_definitions(-DSTM32F205xx)
     set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
-    set(AUX_SERIAL_DRIVER ../common/arm/stm32/aux_serial_driver.cpp)
+    set(AUX_SERIAL ON)
     set(STATUS_LEDS NO)
   endif()
 elseif(PCB STREQUAL X9D)
-  option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" ON)
-  option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" OFF)
+  set(DEFAULT_INTERNAL_MODULE XJT_PXX1 CACHE STRING "Default internal module")
   set(FLAVOUR x9d)
   set(CPU_TYPE STM32F2)
   set(CPU_TYPE_FULL STM32F205xE)  # for size report
+  add_definitions(-DSTM32F205xx)
   set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
-  option(HAPTIC "Haptic support" OFF)
+  option(HAPTIC "Haptic support" ON) # While the X9D doesn't have haptic OOTB, it can be added
   set(LUA_EXPORT lua_export_x9d)
   add_definitions(-DPCBX9D -DPCBX9)
   add_definitions(-DEEPROM_VARIANT=0)
@@ -112,11 +106,11 @@ elseif(PCB STREQUAL X9D)
   set(BITMAPS_TARGET taranis_bitmaps)
   set(FONTS_TARGET taranis_fonts)
   set(LCD_DRIVER lcd_driver_aspi.cpp)
-  set(AUX_SERIAL_DRIVER ../common/arm/stm32/aux_serial_driver.cpp)
+  set(AUX_SERIAL ON)
   set(GVAR_SCREEN model_gvars.cpp)
   set(STATUS_LEDS NO)
   add_definitions(-DMANUFACTURER_FRSKY)
-  set(AFHDS3 NO)
+  #set(AFHDS3 NO)
 elseif(PCB STREQUAL X7)
   set(PWR_BUTTON "PRESS" CACHE STRING "Pwr button type (PRESS/SWITCH)")
   set(HAPTIC YES)
@@ -130,35 +124,92 @@ elseif(PCB STREQUAL X7)
   add_definitions(-DPCBX7 -DSOFTWARE_VOLUME)
   add_definitions(-DPWR_BUTTON_${PWR_BUTTON})
   if(PCBREV STREQUAL T12)
-    option(INTERNAL_MODULE_MULTI "Support for MULTI internal module" OFF)
+    set(DEFAULT_INTERNAL_MODULE MULTIMODULE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
     set(FLAVOUR t12)
     set(NAVIGATION_TYPE 9x)
     set(CPU_TYPE STM32F2)
     set(CPU_TYPE_FULL STM32F205xE)  # for size report
+    add_definitions(-DSTM32F205xx)
     set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
     set(LUA_EXPORT lua_export_t12)
     add_definitions(-DRADIO_T12)
     add_definitions(-DRADIO_FAMILY_JUMPER_T12)
     add_definitions(-DEEPROM_VARIANT=0x4001)
     add_definitions(-DMANUFACTURER_JUMPER)
+  elseif(PCBREV STREQUAL TPRO)
+    set(DEFAULT_INTERNAL_MODULE MULTIMODULE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
+    set(FLAVOUR tpro)
+    set(NAVIGATION_TYPE x7)
+    set(CPU_TYPE STM32F2)
+    set(ROTARY_ENCODER YES)
+    set(CPU_TYPE_FULL STM32F205xE)  # for size report
+    add_definitions(-DSTM32F205xx)
+    set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
+    set(LUA_EXPORT lua_export_tpro)
+    add_definitions(-DFUNCTION_SWITCHES)
+    add_definitions(-DRADIO_TPRO)
+    add_definitions(-DEEPROM_VARIANT=0x4005)
+    add_definitions(-DMANUFACTURER_JUMPER)
+    set(ENABLE_SERIAL_PASSTHROUGH ON CACHE BOOL "Enable serial passthrough")
+    set(CLI ON CACHE BOOL "Enable CLI")
   elseif(PCBREV STREQUAL TLITE)
-    option(INTERNAL_MODULE_MULTI "Support for MULTI internal module" ON)
+    set(DEFAULT_INTERNAL_MODULE MULTIMODULE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
     set(FLAVOUR tlite)
     set(NAVIGATION_TYPE 9x)
     set(CPU_TYPE STM32F2)
     set(CPU_TYPE_FULL STM32F205xE)  # for size report
+    add_definitions(-DSTM32F205xx)
     set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
     set(LUA_EXPORT lua_export_tlite)
     add_definitions(-DRADIO_TLITE)
     add_definitions(-DRADIO_FAMILY_JUMPER_T12)
     add_definitions(-DEEPROM_VARIANT=0x4003)
     add_definitions(-DMANUFACTURER_JUMPER)
+    set(ENABLE_SERIAL_PASSTHROUGH ON CACHE BOOL "Enable serial passthrough")
+    set(CLI ON CACHE BOOL "Enable CLI")
+  elseif(PCBREV STREQUAL TLITEF4)
+    set(DEFAULT_INTERNAL_MODULE MULTIMODULE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
+    set(FLAVOUR tlitef4)
+    set(NAVIGATION_TYPE 9x)
+    set(CPU_TYPE STM32F4)
+    set(CPU_TYPE_FULL STM32F407xE)  # for size report
+    add_definitions(-DSTM32F407xx)
+    set(LINKER_SCRIPT targets/taranis/stm32f4_flash.ld)
+    add_definitions(-DSTM32F40_41xxx -DSTM32F407xx)
+    set(LUA_EXPORT lua_export_tlite)
+    add_definitions(-DRADIO_TLITE)
+    add_definitions(-DRADIO_FAMILY_JUMPER_T12)
+    add_definitions(-DEEPROM_VARIANT=0x4003)
+    add_definitions(-DMANUFACTURER_JUMPER)
+    set(ENABLE_SERIAL_PASSTHROUGH ON CACHE BOOL "Enable serial passthrough")
+    set(CLI ON CACHE BOOL "Enable CLI")
+  elseif(PCBREV STREQUAL LR3PRO)
+    set(DEFAULT_INTERNAL_MODULE CROSSFIRE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
+    set(FLAVOUR lr3pro)
+    set(NAVIGATION_TYPE 9x)
+    set(CPU_TYPE STM32F2)
+    set(CPU_TYPE_FULL STM32F205xE)  # for size report
+    add_definitions(-DSTM32F205xx)
+    set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
+    set(LUA_EXPORT lua_export_lr3pro)
+    add_definitions(-DRADIO_LR3PRO)
+    add_definitions(-DRADIO_FAMILY_JUMPER_T12)
+    add_definitions(-DMANUFACTURER_BETAFPV)
+    set(ENABLE_SERIAL_PASSTHROUGH ON CACHE BOOL "Enable serial passthrough")
+    set(CLI ON CACHE BOOL "Enable CLI")
   elseif(PCBREV STREQUAL TX12)
-    option(INTERNAL_MODULE_MULTI "Support for MULTI internal module" ON)
+    set(DEFAULT_INTERNAL_MODULE MULTIMODULE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
     set(FLAVOUR tx12)
     set(NAVIGATION_TYPE x7)
     set(CPU_TYPE STM32F2)
     set(CPU_TYPE_FULL STM32F205xE)  # for size report
+    add_definitions(-DSTM32F205xx)
     set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
     set(ROTARY_ENCODER YES)
     set(LUA_EXPORT lua_export_tx12)
@@ -167,14 +218,78 @@ elseif(PCB STREQUAL X7)
     add_definitions(-DRADIO_TX12)
     add_definitions(-DEEPROM_VARIANT=0x4002)
     add_definitions(-DMANUFACTURER_RADIOMASTER)
+  elseif(PCBREV STREQUAL TX12MK2)
+    set(DEFAULT_INTERNAL_MODULE CROSSFIRE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
+    set(FLAVOUR tx12mk2)
+    set(NAVIGATION_TYPE x7)
+    set(CPU_TYPE STM32F4)
+    set(CPU_TYPE_FULL STM32F407xE)  # for size report
+    add_definitions(-DSTM32F407xx)
+    set(LINKER_SCRIPT targets/taranis/stm32f4_flash.ld)
+    add_definitions(-DSTM32F40_41xxx -DSTM32F407xx)
+    set(ROTARY_ENCODER YES)
+    set(LUA_EXPORT lua_export_tx12mk2)
+    set(BLUETOOTH NO)
+    set(USB_CHARGER YES)
+    set(AUX_SERIAL ON)
+    add_definitions(-DRADIO_TX12MK2)
+    add_definitions(-DEEPROM_VARIANT=0x4008)
+    add_definitions(-DMANUFACTURER_RADIOMASTER)
+    set(PXX2 ON)
+    set(ENABLE_SERIAL_PASSTHROUGH ON CACHE BOOL "Enable serial passthrough")
+    set(CLI ON CACHE BOOL "Enable CLI")
+  elseif(PCBREV STREQUAL BOXER)
+    set(DEFAULT_INTERNAL_MODULE CROSSFIRE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
+    set(FLAVOUR boxer)
+    set(NAVIGATION_TYPE x7)
+    set(CPU_TYPE STM32F4)
+    set(CPU_TYPE_FULL STM32F407xE)  # for size report
+    add_definitions(-DSTM32F407xx)
+    set(LINKER_SCRIPT targets/taranis/stm32f4_flash.ld)
+    add_definitions(-DSTM32F40_41xxx -DSTM32F407xx)
+    set(ROTARY_ENCODER YES)
+    set(LUA_EXPORT lua_export_boxer)
+    set(BLUETOOTH NO)
+    set(USB_CHARGER YES)
+    set(AUX_SERIAL ON)
+    add_definitions(-DRADIO_BOXER)
+    add_definitions(-DMANUFACTURER_RADIOMASTER)
+    set(PXX2 ON)
+    set(ENABLE_SERIAL_PASSTHROUGH ON CACHE BOOL "Enable serial passthrough")
+    set(CLI ON CACHE BOOL "Enable CLI")
+    set(FLYSKY_GIMBAL ON)
+  elseif(PCBREV STREQUAL ZORRO)
+    set(DEFAULT_INTERNAL_MODULE CROSSFIRE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
+    set(FLAVOUR zorro)
+    set(NAVIGATION_TYPE x7)
+    set(CPU_TYPE STM32F4)
+    set(CPU_TYPE_FULL STM32F407xE)  # for size report
+    add_definitions(-DSTM32F407xx)
+    set(LINKER_SCRIPT targets/taranis/stm32f4_flash.ld)
+    add_definitions(-DSTM32F40_41xxx -DSTM32F407xx)
+    set(ROTARY_ENCODER YES)
+    set(LUA_EXPORT lua_export_zorro)
+    set(BLUETOOTH NO)
+    set(USB_CHARGER YES)
+    set(AUX_SERIAL ON)
+    add_definitions(-DRADIO_ZORRO)
+    add_definitions(-DEEPROM_VARIANT=0x4006)
+    add_definitions(-DMANUFACTURER_RADIOMASTER)
+    set(PXX2 ON)
+    set(ENABLE_SERIAL_PASSTHROUGH ON CACHE BOOL "Enable serial passthrough")
+    set(CLI ON CACHE BOOL "Enable CLI")
   elseif(PCBREV STREQUAL T8)
-    option(INTERNAL_MODULE_MULTI "Support for MULTI internal module" ON)
-    set(EXTERNAL_MODULE NO)
-    set(AFHDS3 NO)
+    set(DEFAULT_INTERNAL_MODULE MULTIMODULE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
+    set(HARDWARE_EXTERNAL_MODULE NO)
     set(FLAVOUR t8)
     set(NAVIGATION_TYPE x7)
     set(CPU_TYPE STM32F2)
     set(CPU_TYPE_FULL STM32F205xE)  # for size report
+    add_definitions(-DSTM32F205xx)
     set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
     set(ROTARY_ENCODER NO)
     set(LUA_EXPORT lua_export_t8)
@@ -185,9 +300,28 @@ elseif(PCB STREQUAL X7)
     add_definitions(-DRADIO_T8)
     add_definitions(-DEEPROM_VARIANT=0x4004)
     add_definitions(-DMANUFACTURER_RADIOMASTER)
+  elseif(PCBREV STREQUAL COMMANDO8)
+    set(DEFAULT_INTERNAL_MODULE MULTIMODULE CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
+    set(HARDWARE_EXTERNAL_MODULE YES)
+    set(FLAVOUR commando8)
+    set(NAVIGATION_TYPE x7)
+    set(CPU_TYPE STM32F4)
+    set(CPU_TYPE_FULL STM32F407xE)  # for size report
+    add_definitions(-DSTM32F407xx)
+    set(LINKER_SCRIPT targets/taranis/stm32f4_flash.ld)
+    add_definitions(-DSTM32F407xx -DSTM32F40_41xxx)  
+    set(ROTARY_ENCODER NO)
+    set(LUA_EXPORT lua_export_commando8)
+    set(BLUETOOTH NO)
+    set(USE_RTC_CLOCK NO)
+    add_definitions(-DRADIO_COMMANDO8)
+    add_definitions(-DSTICKS_PWM)
+    add_definitions(-DMUTUALLY_EXCLUSIVE_MODULES)
+    add_definitions(-DMANUFACTURER_IFLIGHT)
   elseif(PCBREV STREQUAL ACCESS)
-    option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" OFF)
-    option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" ON)
+    set(DEFAULT_INTERNAL_MODULE ISRM_PXX2 CACHE STRING "Default internal module")
+    set(INTERNAL_MODULE_SERIAL YES)
     set(FLAVOUR x7access)
     set(NAVIGATION_TYPE x7)
     set(CPU_TYPE STM32F4)
@@ -198,25 +332,20 @@ elseif(PCB STREQUAL X7)
     add_definitions(-DEEPROM_VARIANT=0x4000)
     add_definitions(-DPCBREV=${PCBREV})
     add_definitions(-DPCBX7ACCESS)
-    set(FIRMWARE_TARGET_SRC
-      ${FIRMWARE_TARGET_SRC}
-      startup_stm32f40_41xxx.s
-      )
-    add_definitions(-DSTM32F40_41xxx)
+    add_definitions(-DSTM32F40_41xxx -DSTM32F407xx)
     add_definitions(-DHARDWARE_POWER_MANAGEMENT_UNIT)
     set(PXX2 ON)
     set(PXX_FREQUENCY "HIGH")
     set(BLUETOOTH YES)
     set(ROTARY_ENCODER YES)
-    set(INTERNAL_MODULE_SERIAL YES)
     add_definitions(-DMANUFACTURER_FRSKY)
   else()
-    option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" ON)
-    option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" OFF)
+    set(DEFAULT_INTERNAL_MODULE XJT_PXX1 CACHE STRING "Default internal module")
     set(FLAVOUR x7)
     set(NAVIGATION_TYPE x7)
     set(CPU_TYPE STM32F2)
     set(CPU_TYPE_FULL STM32F205xE)  # for size report
+    add_definitions(-DSTM32F205xx)
     set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
     set(LUA_EXPORT lua_export_x7)
     add_definitions(-DRADIO_X7)
@@ -235,12 +364,13 @@ elseif(PCB STREQUAL X7)
     endif()
   endif()
 elseif(PCB STREQUAL X9LITE)
-  option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" OFF)
-  option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" ON)
+  set(DEFAULT_INTERNAL_MODULE ISRM_PXX2 CACHE STRING "Default internal module")
+  set(INTERNAL_MODULE_SERIAL YES)
   set(PXX_FREQUENCY "HIGH")
   set(PWR_BUTTON "PRESS" CACHE STRING "Pwr button type (PRESS/SWITCH)")
   set(CPU_TYPE STM32F2)
   set(CPU_TYPE_FULL STM32F205xE)  # for size report
+  add_definitions(-DSTM32F205xx)
   set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
   set(HAPTIC YES)
   set(LUA_EXPORT lua_export_x9lite)
@@ -259,15 +389,15 @@ elseif(PCB STREQUAL X9LITE)
   set(GVAR_SCREEN model_gvars.cpp)
   set(STATUS_LEDS YES)
   set(ROTARY_ENCODER YES)
-  set(INTERNAL_MODULE_SERIAL YES)
   add_definitions(-DMANUFACTURER_FRSKY)
 elseif(PCB STREQUAL X9LITES)
-  option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" OFF)
-  option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" ON)
+  set(DEFAULT_INTERNAL_MODULE ISRM_PXX2 CACHE STRING "Default internal module")
+  set(INTERNAL_MODULE_SERIAL YES)
   set(PXX_FREQUENCY "HIGH")
   set(PWR_BUTTON "PRESS" CACHE STRING "Pwr button type (PRESS/SWITCH)")
   set(CPU_TYPE STM32F2)
   set(CPU_TYPE_FULL STM32F205xE)  # for size report
+  add_definitions(-DSTM32F205xx)
   set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
   set(HAPTIC YES)
   set(LUA_EXPORT lua_export_x9lites)
@@ -287,15 +417,15 @@ elseif(PCB STREQUAL X9LITES)
   set(STATUS_LEDS YES)
   set(BLUETOOTH YES)
   set(ROTARY_ENCODER YES)
-  set(INTERNAL_MODULE_SERIAL YES)
   add_definitions(-DMANUFACTURER_FRSKY)
 elseif(PCB STREQUAL XLITE)
-  option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" ON)
-  option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" OFF)
+  set(DEFAULT_INTERNAL_MODULE XJT_PXX1 CACHE STRING "Default internal module")
+  set(INTERNAL_MODULE_SERIAL YES)
   set(PXX_FREQUENCY "HIGH" CACHE STRING "PXX frequency (LOW / HIGH)") # always use HIGH except on some prototype boards
   set(PWR_BUTTON "PRESS" CACHE STRING "Pwr button type (PRESS/SWITCH)")
   set(CPU_TYPE STM32F2)
   set(CPU_TYPE_FULL STM32F205xE)  # for size report
+  add_definitions(-DSTM32F205xx)
   set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
   set(HAPTIC YES)
   set(LUA_EXPORT lua_export_xlite)
@@ -313,15 +443,15 @@ elseif(PCB STREQUAL XLITE)
   set(GVAR_SCREEN model_gvars.cpp)
   set(STATUS_LEDS YES)
   set(BLUETOOTH YES)
-  set(INTERNAL_MODULE_SERIAL YES)
   add_definitions(-DMANUFACTURER_FRSKY)
 elseif(PCB STREQUAL XLITES)
-  option(INTERNAL_MODULE_PXX1 "Support for PXX1 internal module" OFF)
-  option(INTERNAL_MODULE_PXX2 "Support for PXX2 internal module" ON)
+  set(DEFAULT_INTERNAL_MODULE ISRM_PXX2 CACHE STRING "Default internal module")
+  set(INTERNAL_MODULE_SERIAL YES)
   set(PXX_FREQUENCY "HIGH")
   set(PWR_BUTTON "PRESS" CACHE STRING "Pwr button type (PRESS/SWITCH)")
   set(CPU_TYPE STM32F2)
   set(CPU_TYPE_FULL STM32F205xE)  # for size report
+  add_definitions(-DSTM32F205xx)
   set(LINKER_SCRIPT targets/taranis/stm32f2_flash.ld)
   set(HAPTIC YES)
   set(LUA_EXPORT lua_export_xlites)
@@ -339,8 +469,7 @@ elseif(PCB STREQUAL XLITES)
   set(STATUS_LEDS YES)
   set(PXX2 ON)
   set(BLUETOOTH YES)
-  set(GYRO YES)
-  set(INTERNAL_MODULE_SERIAL YES)
+  set(IMU YES)
   add_definitions(-DMANUFACTURER_FRSKY)
 endif()
 
@@ -348,64 +477,68 @@ if(NOT PCB STREQUAL PCBXLITE)
   add_definitions(-DHARDWARE_TRAINER_JACK)
 endif()
 
-if(GYRO)
-  add_definitions(-DGYRO)
-  set(TARGET_SRC
-    ${TARGET_SRC}
-    ../common/arm/stm32/lsm6ds_driver.cpp
-    )
-  set(SRC
-    ${SRC}
-    gyro.cpp
-    )
-endif()
-
 if(INTERNAL_MODULE_SERIAL)
+
+  if("${PCBREV}" STREQUAL 2019 OR "${PCBREV}" STREQUAL ACCESS)
+    # defines existing internal modules
+    set(INTERNAL_MODULES PXX2 CACHE STRING "Internal modules")
+  else()
+    # defines existing internal modules
+    set(INTERNAL_MODULES PXX1;PXX2;MULTI;CRSF CACHE STRING "Internal modules")
+  endif()
+
   add_definitions(-DINTERNAL_MODULE_SERIAL)
   if(PXX_FREQUENCY STREQUAL HIGH)
     add_definitions(-DPXX_FREQUENCY_HIGH)
   endif()
-  set(TARGET_SRC
-    ${TARGET_SRC}
-    ../common/arm/stm32/intmodule_serial_driver.cpp
-    )
-elseif(INTERNAL_MODULE_PXX1 OR INTERNAL_MODULE_PXX2)
-  set(TARGET_SRC
-    ${TARGET_SRC}
+
+else()
+
+  # defines existing internal modules
+  set(INTERNAL_MODULES PXX1)
+
+  set(FIRMWARE_TARGET_SRC
+    ${FIRMWARE_TARGET_SRC}
     intmodule_pulses_driver.cpp
     )
 endif()
 
+if(HARDWARE_EXTERNAL_MODULE)
+  set(FIRMWARE_SRC
+    ${FIRMWARE_SRC}
+    targets/common/arm/stm32/extmodule_driver.cpp
+    )
+endif()
+
 if(ROTARY_ENCODER)
-  set(TARGET_SRC
-    ${TARGET_SRC}
-    ../common/arm/stm32/rotary_encoder_driver.cpp
+  set(FIRMWARE_SRC
+    ${FIRMWARE_SRC}
+    targets/common/arm/stm32/rotary_encoder_driver.cpp
     )
 endif()
 
 if(BIND_KEY)
-  set(TARGET_SRC
-        ${TARGET_SRC}
-        bind_button_driver.cpp
-        )
+  set(FIRMWARE_TARGET_SRC
+    ${FIRMWARE_TARGET_SRC}
+    bind_button_driver.cpp
+    )
   add_definitions(-DBIND_KEY)
 endif()
 
 if(USB_CHARGER)
-  set(TARGET_SRC ${TARGET_SRC} usb_charger_driver.cpp)
+  set(FIRMWARE_TARGET_SRC
+    ${FIRMWARE_TARGET_SRC} usb_charger_driver.cpp)
   add_definitions(-DUSB_CHARGER)
 endif()
 
 if(BLUETOOTH)
   add_definitions(-DBLUETOOTH)
-  set(TARGET_SRC
-    ${TARGET_SRC}
-    ../common/arm/stm32/bluetooth_driver.cpp
-    )
+  set(FIRMWARE_SRC
+    ${FIRMWARE_SRC}
+    targets/common/arm/stm32/bluetooth_driver.cpp)
   set(SRC
     ${SRC}
-    bluetooth.cpp
-    )
+    bluetooth.cpp)
   if(NOT PCB STREQUAL X9E)
     # Bluetooth on X9E is compatible with almost nothing
     add_definitions(-DHARDWARE_TRAINER_BLUETOOTH)
@@ -418,8 +551,6 @@ endif()
 
 set(HSE_VALUE 12000000)
 set(SDCARD YES)
-set(STORAGE EEPROM)
-set(STORAGE_FORMAT RLC)
 set(TARGET_DIR taranis)
 set(PPM_LIMITS_SYMETRICAL YES)
 
@@ -428,8 +559,12 @@ if(SPLASH STREQUAL OFF)
 endif()
 
 add_definitions(-DPCBTARANIS)
-add_definitions(-DAUDIO -DVOICE -DRTCLOCK)
-add_definitions(-DSBUS_TRAINER)
+add_definitions(-DAUDIO -DVOICE )
+
+if(USE_RTC_CLOCK)
+  add_definitions(-DRTCLOCK)
+endif()
+
 
 set(SRC
   ${SRC}
@@ -454,80 +589,44 @@ if(STATUS_LEDS)
   set(LED_DRIVER led_driver.cpp)
 endif()
 
-set(SRC
-  ${SRC}
-  sbus.cpp
-  )
-
-set(TARGET_SRC
-  ${TARGET_SRC}
+set(FIRMWARE_TARGET_SRC
+  ${FIRMWARE_TARGET_SRC}
   ${LED_DRIVER}
-  backlight_driver.cpp
-  trainer_driver.cpp
-  ../common/arm/stm32/timers_driver.cpp
-  ../common/arm/stm32/audio_dac_driver.cpp
-  )
-
-set(FIRMWARE_TARGET_SRC
-  ${FIRMWARE_TARGET_SRC}
-  ../common/arm/stm32/stm32_hal_adc.cpp
-  ../../hal/adc_driver.cpp
-  ../common/arm/stm32/heartbeat_driver.cpp
-  ../common/arm/stm32/mixer_scheduler_driver.cpp
-  )
-
-if(PCB STREQUAL XLITE OR PCB STREQUAL XLITES)
-  set(TARGET_SRC
-    ${TARGET_SRC}
-    ../common/arm/stm32/sticks_pwm_driver.cpp
-    )
-endif()
-
-set(FIRMWARE_TARGET_SRC
-  ${FIRMWARE_TARGET_SRC}
   ${LCD_DRIVER}
   board.cpp
-  i2c_driver.cpp
-  ../common/arm/stm32/pwr_driver.cpp
-  ../common/arm/stm32/heartbeat_driver.cpp
-  ../common/arm/loadboot.cpp
+  volume_i2c.cpp
+  eeprom_driver.cpp
+  backlight_driver.cpp
+  )
+
+if(PCB STREQUAL XLITE OR PCB STREQUAL XLITES OR PCBREV STREQUAL COMMANDO8)
+  set(FIRMWARE_SRC
+    ${FIRMWARE_SRC}
+    targets/common/arm/stm32/sticks_pwm_driver.cpp)
+endif()
+
+set(FIRMWARE_SRC
+  ${FIRMWARE_SRC}
+  hal/adc_driver.cpp
+  targets/common/arm/loadboot.cpp
+  boards/generic_stm32/module_ports.cpp
+  boards/generic_stm32/aux_ports.cpp
+  boards/generic_stm32/sport_update.cpp
+  boards/generic_stm32/intmodule_heartbeat.cpp
+  targets/common/arm/stm32/stm32_hal_adc.cpp
+  targets/common/arm/stm32/heartbeat_driver.cpp
+  targets/common/arm/stm32/mixer_scheduler_driver.cpp
+  targets/common/arm/stm32/timers_driver.cpp
+  targets/common/arm/stm32/audio_dac_driver.cpp
+  targets/common/arm/stm32/pwr_driver.cpp
+  targets/common/arm/stm32/stm32_exti_driver.cpp
+  targets/common/arm/stm32/stm32_pulse_driver.cpp
+  targets/common/arm/stm32/stm32_usart_driver.cpp
+  targets/common/arm/stm32/trainer_driver.cpp
   )
 
 if(LCD_DUAL_BUFFER)
   add_definitions(-DLCD_DUAL_BUFFER)
-endif()
-
-if(INTERNAL_MODULE_PXX1)
-  add_definitions(-DHARDWARE_INTERNAL_MODULE)
-  add_definitions(-DINTERNAL_MODULE_PXX1)
-endif()
-
-if(INTERNAL_MODULE_PXX2)
-  set(PXX2 ON)
-  add_definitions(-DHARDWARE_INTERNAL_MODULE)
-  add_definitions(-DINTERNAL_MODULE_PXX2)
-endif()
-
-if(INTERNAL_MODULE_MULTI)
-  add_definitions(-DHARDWARE_INTERNAL_MODULE)
-  add_definitions(-DINTERNAL_MODULE_MULTI)
-  set(TARGET_SRC
-    ${TARGET_SRC}
-    ../common/arm/stm32/intmodule_serial_driver.cpp
-    )
-endif()
-
-if(INTERNAL_MODULE_PPM)
-  add_definitions(-DHARDWARE_INTERNAL_MODULE)
-  add_definitions(-DINTERNAL_MODULE_PPM)
-endif()
-
-if(EXTERNAL_MODULE)
-  set(TARGET_SRC
-    ${TARGET_SRC}
-    extmodule_driver.cpp
-    )
-  add_definitions(-DHARDWARE_EXTERNAL_MODULE)
 endif()
 
 set(RADIO_DEPENDENCIES ${RADIO_DEPENDENCIES} ${BITMAPS_TARGET})

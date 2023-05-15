@@ -1,0 +1,482 @@
+/*
+ * Copyright (C) EdgeTX
+ *
+ * Based on code named
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
+ *   er9x - http://code.google.com/p/er9x
+ *   gruvin9x - http://code.google.com/p/gruvin9x
+ *
+ * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+#include "theme_manager.h"
+#include "view_main.h"
+
+#include "../../storage/yaml/yaml_tree_walker.h"
+#include "../../storage/yaml/yaml_bits.h"
+#include "../../storage/sdcard_common.h"
+
+#define SET_DIRTY() storageDirty(EE_GENERAL)
+
+#define MAX_FILES 9
+
+constexpr const char *RGBSTRING = "RGB(";
+
+ThemePersistance themePersistance;
+
+// prototype for SD card function to read a YAML file
+// TODO: should this be in sdcard header file?
+enum class ChecksumResult;
+extern const char* readYamlFile(const char* fullpath, const YamlParserCalls* calls, void* parser_ctx, ChecksumResult* checksum_result);
+
+static uint32_t r_color(const YamlNode* node, const char* val, uint8_t val_len)
+{
+  if ((strncmp(val, RGBSTRING, strlen(RGBSTRING)) == 0) && (val[val_len - 1] == ')')) {
+    int r, g, b;
+    int numTokens = sscanf(val, "RGB(%d,%d,%d)", &r, &g, &b);
+
+    if (numTokens == 3)
+      return RGB(r, g, b);
+
+  } else if (val_len > 2 && val[0] == '0' && (val[1] == 'x' || val[1] == 'X')) {
+    val += 2; val_len -= 2;
+
+    auto rgb24 = yaml_hex2uint(val, val_len);
+    return RGB((rgb24 & 0xFF0000) >> 16, (rgb24 & 0xFF00) >> 8, rgb24 & 0xFF);
+  }
+
+  TRACE("Theme: Invalid color value");
+  return 0;
+}
+
+static bool w_color(const YamlNode* node, uint32_t val, yaml_writer_func wf,
+                    void* opaque)
+{
+  uint32_t color = (uint32_t)GET_RED(val) << 16 |
+                   (uint32_t)GET_GREEN(val) << 8 |
+                   (uint32_t)GET_BLUE(val);
+
+  if (!wf(opaque, "0x", 2)) return false;
+  return wf(opaque, yaml_rgb2hex(color), 3 * 2);
+}
+
+PACK(struct YAMLThemeSummary
+{
+  char name[SELECTED_THEME_NAME_LEN + 1];
+  char author[AUTHOR_LENGTH + 1];
+  char info[INFO_LENGTH+1];
+});
+
+PACK(struct YAMLThemeColors
+{
+  uint32_t colors[COLOR_COUNT - 2];     // We don't use DEFAULT or CUSTOM
+});
+
+PACK(struct YAMLTheme
+{
+  struct YAMLThemeSummary summary;
+  struct YAMLThemeColors colors;
+  
+  YAMLTheme() {
+    memset(this, 0, sizeof(YAMLTheme));
+  }
+});
+
+static const struct YamlNode struct_YAMLThemeSummary[] = {
+  YAML_STRING("name", (SELECTED_THEME_NAME_LEN + 1)),
+  YAML_STRING("author", (AUTHOR_LENGTH + 1)),
+  YAML_STRING("info", (INFO_LENGTH + 1)),
+  YAML_END
+};
+
+static const struct YamlNode struct_YAMLThemeColors[] = {
+  YAML_UNSIGNED_CUST( "PRIMARY1", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "PRIMARY2", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "PRIMARY3", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "SECONDARY1", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "SECONDARY2", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "SECONDARY3", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "FOCUS", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "EDIT", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "ACTIVE", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "WARNING", 32, r_color, w_color ),
+  YAML_UNSIGNED_CUST( "DISABLED", 32, r_color, w_color ),
+  YAML_END
+};
+
+// This hack is required to ensure the YAML file written is backward compatible with
+// the old parser. Otherwise older versions of EdgeTX will not load the theme files.
+// TODO: Remove this sometime in the future
+static const struct YamlNode w_struct_YAMLTheme[] = {
+  YAML_STRUCT("---\r\nsummary", (SELECTED_THEME_NAME_LEN + AUTHOR_LENGTH + INFO_LENGTH + 3) * 8, struct_YAMLThemeSummary, NULL),
+  YAML_STRUCT("colors", (COLOR_COUNT - 2) * 32, struct_YAMLThemeColors, NULL),
+  YAML_END
+};
+static const struct YamlNode r_struct_YAMLTheme[] = {
+  YAML_STRUCT("summary", (SELECTED_THEME_NAME_LEN + AUTHOR_LENGTH + INFO_LENGTH + 3) * 8, struct_YAMLThemeSummary, NULL),
+  YAML_STRUCT("colors", (COLOR_COUNT - 2) * 32, struct_YAMLThemeColors, NULL),
+  YAML_END
+};
+
+static const char *colorNames[COLOR_COUNT] = {
+    "DEFAULT",    "PRIMARY1",   "PRIMARY2",   "PRIMARY3",
+    "SECONDARY1", "SECONDARY2", "SECONDARY3", "FOCUS",
+    "EDIT",       "ACTIVE",     "WARNING",    "DISABLED", "CUSTOM",
+};
+
+ThemeFile::ThemeFile(std::string themePath, bool loadYAML) :
+  path(themePath)
+{
+  if (loadYAML && path.size()) {
+      deSerialize();
+  }
+
+  auto found = path.rfind('/');
+  if (found != std::string::npos) {
+    int n = 0;
+    while (n < MAX_FILES) {
+      auto baseFileName(path.substr(0, found + 1) + (n != 0 ? "screenshot" + std::to_string(n) : "logo") + ".png");
+      if (isFileAvailable(baseFileName.c_str(), true)) {
+        _imageFileNames.emplace_back(baseFileName);
+      } else {
+        break;
+      }
+
+      n++;
+    }
+  }
+}
+
+ThemeFile& ThemeFile::operator= (const ThemeFile& theme)
+{
+  if (this == &theme)
+    return *this;
+
+  path = theme.path;
+  strAppend(name, theme.name, SELECTED_THEME_NAME_LEN);
+  strAppend(author, theme.author, AUTHOR_LENGTH);
+  strAppend(info, theme.info, INFO_LENGTH);
+  colorList.assign(theme.colorList.begin(), theme.colorList.end());
+  _imageFileNames.assign(theme._imageFileNames.begin(), theme._imageFileNames.end());
+
+  return *this;
+};
+
+std::vector<std::string> ThemeFile::getThemeImageFileNames()
+{
+  return _imageFileNames;
+}
+
+void ThemeFile::serialize()
+{
+  struct YAMLTheme yt;
+  struct YamlNode themeRootNode = YAML_ROOT(w_struct_YAMLTheme);
+
+  strAppend(yt.summary.name, name, SELECTED_THEME_NAME_LEN);
+  strAppend(yt.summary.author, author, AUTHOR_LENGTH);
+  strAppend(yt.summary.info, info, INFO_LENGTH);
+  for (auto colorEntry : colorList) {
+    yt.colors.colors[colorEntry.colorNumber-1] = colorEntry.colorValue;
+  }
+
+  auto err = writeFileYaml(path.c_str(), &themeRootNode, (uint8_t*)&yt, 0);
+  if (err != nullptr) {
+    ALERT(STR_WARNING, err, AU_WARNING1);
+  }
+}
+
+void ThemeFile::deSerialize()
+{
+  struct YAMLTheme yt;
+  struct YamlNode themeRootNode = YAML_ROOT(r_struct_YAMLTheme);
+
+  YamlTreeWalker tree;
+  tree.reset(&themeRootNode, (uint8_t*)&yt);
+  auto err = readYamlFile(path.c_str(), YamlTreeWalker::get_parser_calls(), &tree, nullptr);
+
+  if (err == nullptr) {
+    strAppend(name, yt.summary.name, SELECTED_THEME_NAME_LEN);
+    strAppend(author, yt.summary.author, AUTHOR_LENGTH);
+    strAppend(info, yt.summary.info, INFO_LENGTH);
+    for (int i = 0; i < COLOR_COUNT - 2; i += 1) {
+      colorList.emplace_back(ColorEntry{(LcdColorIndex)(i+1), yt.colors.colors[i]});
+    }
+  } else {
+    ALERT(STR_WARNING, err, AU_WARNING1);
+  }
+}
+
+void ThemeFile::setColor(LcdColorIndex colorIndex, uint32_t color)
+{
+  if (colorIndex >= DEFAULT_COLOR_INDEX && colorIndex < LCD_COLOR_COUNT) {
+    auto colorEntry = std::find(colorList.begin(), colorList.end(), ColorEntry { colorIndex, 0});
+    if (colorEntry != colorList.end())
+      colorEntry->colorValue = color;
+    else
+      colorList.emplace_back(ColorEntry {colorIndex, color});
+  }
+}
+
+void ThemeFile::applyColors()
+{
+  for (auto color: colorList) {
+      lcdColorTable[color.colorNumber] = color.colorValue;
+  }
+}
+
+void ThemeFile::applyBackground()
+{
+  auto instance = OpenTxTheme::instance();
+  std::string backgroundImageFileName(getPath());
+  auto pos = backgroundImageFileName.rfind('/');
+  if (pos != std::string::npos) {
+    auto rootDir = backgroundImageFileName.substr(0, pos + 1);
+    rootDir = rootDir + "background_" + std::to_string(LCD_W) + "x" +
+              std::to_string(LCD_H) + ".png";
+
+    if (isFileAvailable(rootDir.c_str())) {
+      instance->setBackgroundImageFileName((char *)rootDir.c_str());
+    } else {
+      // TODO: This needs to be made user configurable, not
+      // require the file be deleted to remove global background
+      std::string fileName = THEMES_PATH PATH_SEPARATOR "EdgeTX/background.png";
+      if (isFileAvailable(fileName.c_str())) {
+        instance->setBackgroundImageFileName(fileName.c_str());
+      } else {
+        instance->setBackgroundImageFileName("");
+      }
+    }
+  } else {
+    instance->setBackgroundImageFileName("");
+  }
+}
+
+void ThemeFile::applyTheme()
+{
+  applyColors();
+  applyBackground();
+  OpenTxTheme::instance()->update(false);
+
+  // Update views with new theme
+  // Currently, on startup, active theme is loaded after ViewMain is created so ViewMain instance is defined
+  // In case this changes, we call getInstance() here to avoid creating ViewMain
+  if (ViewMain::getInstance())
+    ViewMain::getInstance()->updateFromTheme();
+}
+
+// avoid leaking memory
+void ThemePersistance::clearThemes()
+{
+  for (auto theme: themes) {
+    delete theme;
+  }
+  themes.clear();
+}
+
+void ThemePersistance::scanThemeFolder(char *fullPath)
+{
+  strncat(fullPath, "/theme.yml", FF_MAX_LFN);
+  if (isFileAvailable(fullPath, true)) {
+    TRACE("scanForThemes: found file %s", fullPath);
+    themes.emplace_back(new ThemeFile(fullPath));
+  }
+}
+
+void ThemePersistance::scanForThemes()
+{
+  clearThemes();
+
+  DIR dir;
+  FILINFO fno;
+
+  char fullPath[FF_MAX_LFN + 1];
+
+  strAppend(fullPath, THEMES_PATH, FF_MAX_LFN);
+
+  TRACE("opening directory: %s", fullPath);
+  FRESULT res = f_opendir(&dir, fullPath);  // Open the directory
+  if (res == FR_OK) {
+    TRACE("scanForThemes: open successful");
+    // read all entries
+    bool firstTime = true;
+    for (;;) {
+      res = sdReadDir(&dir, &fno, firstTime);
+
+      if (res != FR_OK || fno.fname[0] == 0)
+        break;  // Break on error or end of dir
+
+      if (strlen((const char *)fno.fname) > SD_SCREEN_FILE_LENGTH) continue;
+      if (fno.fattrib & AM_DIR) {
+        char themePath[FF_MAX_LFN + 1];
+        char *s = strAppend(themePath, fullPath, FF_MAX_LFN);
+        s = strAppend(s, "/", FF_MAX_LFN - (s - themePath));
+        strAppend(s, fno.fname, FF_MAX_LFN - (s - themePath));
+        scanThemeFolder(themePath);
+      }
+    }
+
+    f_closedir(&dir);
+    std::sort(themes.begin(), themes.end(),
+      [](ThemeFile *a, ThemeFile *b) {
+          return strcmp(a->getName(), b->getName()) < 0;
+      });
+  }
+}
+
+void ThemePersistance::loadDefaultTheme()
+{
+  refresh();
+
+  int index = 0;
+  bool found = false;
+
+  // Load theme from 'selectedtheme.txt' file, if not set in radio settings
+  // TODO: remove this sometime in the future
+  if (g_eeGeneral.selectedTheme[0] == 0) {
+    constexpr const char* SELECTED_THEME_FILE = THEMES_PATH "/selectedtheme.txt";
+
+    FIL file;
+    FRESULT status = f_open(&file, SELECTED_THEME_FILE, FA_READ);
+
+    if (status == FR_OK) {
+      char line[256];
+      unsigned int len;
+
+      status = f_read(&file, line, 256, &len);
+      if (status == FR_OK) {
+        line[len] = '\0';
+
+        for (auto theme : themes) {
+          if (theme->getPath() == std::string(line)) {
+            found = true;
+            break;
+          }
+          index++;
+        }
+
+        // Force default if no match for last selected theme
+        if (!found)
+          index = 0;
+      }
+
+      f_close(&file);
+
+      // Delete old file
+      f_unlink(SELECTED_THEME_FILE);
+    }
+
+    // Save selected theme (sets to default if nothing found)
+    setDefaultTheme(index);
+
+    // Reset values (used below);
+    index = 0;
+    found = false;
+  }
+
+  for (auto theme : themes) {
+    if (strncmp(theme->getName(), g_eeGeneral.selectedTheme, SELECTED_THEME_NAME_LEN) == 0) {
+      found = true;
+      break;
+    }
+    index++;
+  }
+
+  // Force default if no match for last selected theme
+  if (!found)
+    index = 0;
+
+  applyTheme(index);
+  setThemeIndex(index);
+}
+
+char ** ThemePersistance::getColorNames()
+{
+  return (char **) colorNames;
+}
+
+bool ThemePersistance::deleteThemeByIndex(int index)
+{
+  // greater than 0 is intentional here.  cant delete default theme.
+  if (index > 0 && index < (int) themes.size()) {
+    ThemeFile* theme = themes[index];
+    
+    char newFile[FF_MAX_LFN + 10];
+    strAppend(newFile, theme->getPath().c_str(), FF_MAX_LFN);
+    strcat(newFile, ".deleted");
+
+    // for now we are just renaming the file so we don't find it
+    FRESULT status = f_rename(theme->getPath().c_str(), newFile);
+    refresh();
+    
+    // make sure currentTheme stays in bounds
+    if (getThemeIndex() >= (int) themes.size())
+      setThemeIndex(themes.size() - 1);
+
+    return status == FR_OK;
+  }
+  return false;
+}
+
+bool ThemePersistance::createNewTheme(std::string name, ThemeFile &theme)
+{
+  char fullPath[FF_MAX_LFN + 1];
+  char *s = strAppend(fullPath, THEMES_PATH, FF_MAX_LFN);
+  s = strAppend(s, "/", FF_MAX_LFN - (s - fullPath));
+  s = strAppend(s, name.c_str(), FF_MAX_LFN - (s - fullPath));
+
+  FRESULT result = f_mkdir(fullPath);
+  if (result != FR_OK) return false;
+  s = strAppend(s, "/", FF_MAX_LFN - (s - fullPath));
+  strAppend(s, "theme.yml", FF_MAX_LFN - (s - fullPath));
+  theme.setPath(fullPath);
+  theme.serialize();
+  return true;
+}
+
+void ThemePersistance::setDefaultTheme(int index)
+{
+  if (index >= 0 && index < (int) themes.size()) {
+    strAppend(g_eeGeneral.selectedTheme, themes[index]->getName(), SELECTED_THEME_NAME_LEN);
+    SET_DIRTY();
+    currentTheme = index;
+  }
+}
+
+class DefaultEdgeTxTheme : public ThemeFile
+{
+  public:
+    DefaultEdgeTxTheme() : ThemeFile(THEMES_PATH"/EdgeTX/", false)
+    {
+      setName("EdgeTX Default");
+      setAuthor("EdgeTX Team");
+      setInfo("Default EdgeTX Color Scheme");
+    
+      // initializze the default color table
+      colorList.emplace_back(ColorEntry { COLOR_THEME_PRIMARY1_INDEX, RGB(0, 0, 0) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_PRIMARY2_INDEX, RGB(255, 255, 255) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_PRIMARY3_INDEX, RGB(12, 63, 102) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_SECONDARY1_INDEX, RGB(18, 94, 153) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_SECONDARY2_INDEX, RGB(182, 224, 242) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_SECONDARY3_INDEX, RGB(228, 238, 242) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_FOCUS_INDEX, RGB(20, 161, 229) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_EDIT_INDEX, RGB(0, 153, 9) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_ACTIVE_INDEX, RGB(255, 222, 0) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_WARNING_INDEX, RGB(224, 0, 0) });
+      colorList.emplace_back(ColorEntry { COLOR_THEME_DISABLED_INDEX, RGB(140, 140, 140) });
+    }
+};
+
+void ThemePersistance::insertDefaultTheme()
+{
+  auto themeFile = new DefaultEdgeTxTheme();
+  themes.insert(themes.begin(), themeFile);
+}

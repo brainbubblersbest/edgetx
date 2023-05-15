@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -46,9 +47,9 @@ class ChannelsViewFooter: public Window {
     // Draw single legend
     coord_t drawChannelsMonitorLegend(BitmapBuffer * dc, coord_t x, const char * s, int color)
     {
-      dc->drawSolidFilledRect(x, 4, LEG_COLORBOX + 2, LEG_COLORBOX + 2, BARGRAPH_BGCOLOR);
+      dc->drawSolidFilledRect(x, 4, LEG_COLORBOX + 2, LEG_COLORBOX + 2, COLOR_THEME_SECONDARY3);
       dc->drawSolidFilledRect(x + 1, 5, LEG_COLORBOX, LEG_COLORBOX, color);
-      dc->drawText(x + 20, 4, s, TEXT_STATUSBAR_COLOR);
+      dc->drawText(x + 20, 4, s, COLOR_THEME_PRIMARY2);
       return x + 25 + getTextWidth(s);
     }
 
@@ -56,21 +57,28 @@ class ChannelsViewFooter: public Window {
     {
       // Draw legend bar
       coord_t x = 10;
-      dc->drawSolidFilledRect(0, 0, width(), height(), TITLE_BGCOLOR);
-      x = drawChannelsMonitorLegend(dc, MENUS_MARGIN_LEFT, STR_MONITOR_OUTPUT_DESC, HIGHLIGHT_COLOR);
-      drawChannelsMonitorLegend(dc, x, STR_MONITOR_MIXER_DESC, FOCUS_BGCOLOR);
+      dc->drawSolidFilledRect(0, 0, width(), height(), COLOR_THEME_SECONDARY1);
+      x = drawChannelsMonitorLegend(dc, MENUS_MARGIN_LEFT, STR_MONITOR_OUTPUT_DESC, COLOR_THEME_ACTIVE);
+      drawChannelsMonitorLegend(dc, x, STR_MONITOR_MIXER_DESC, COLOR_THEME_FOCUS);
     }
 };
 
 void ChannelsViewPage::build(FormWindow * window)
 {
   constexpr coord_t hmargin = 5;
+  window->padAll(0);
 
   // Channels bars
   for (uint8_t chan = pageIndex * 8; chan < 8 + pageIndex * 8; chan++) {
-    coord_t width = window->width() / 2 - hmargin;
-    coord_t xPos = (chan % 8) >= 4 ? width + hmargin : hmargin;
+#if LCD_H > LCD_W
+    coord_t width = window->width() - (hmargin * 2);
+    coord_t xPos = hmargin;
+    coord_t yPos = (chan % 8) * ((window->height() - CHANNEL_VIEW_FOOTER_HEIGHT - 8) / 8);
+#else
+    coord_t width = window->width() / 2 - (hmargin * 2);
+    coord_t xPos = (chan % 8) >= 4 ? width + (hmargin * 2) : hmargin;
     coord_t yPos = (chan % 4) * ((window->height() - CHANNEL_VIEW_FOOTER_HEIGHT - 4) / 4);
+#endif
     new ComboChannelBar(window, {xPos, yPos, width, 3 * BAR_HEIGHT + 1}, chan);
   }
 

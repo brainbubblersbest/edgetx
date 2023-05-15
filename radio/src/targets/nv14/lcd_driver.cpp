@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,26 +19,33 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "opentx_types.h"
+#include "libopenui_config.h"
+#include "lcd.h"
 
-#define LCD_FIRST_LAYER                0
-#define LCD_SECOND_LAYER               1
+static volatile uint8_t _frame_addr_reloaded = 0;
 
-uint8_t LCD_FIRST_FRAME_BUFFER[DISPLAY_BUFFER_SIZE * sizeof(pixel_t)] __SDRAM;
-uint8_t LCD_SECOND_FRAME_BUFFER[DISPLAY_BUFFER_SIZE * sizeof(pixel_t)] __SDRAM;
-uint8_t LCD_BACKUP_FRAME_BUFFER[DISPLAY_BUFFER_SIZE * sizeof(pixel_t)] __SDRAM;
-uint8_t LCD_SCRATCH_FRAME_BUFFER[DISPLAY_BUFFER_SIZE * sizeof(pixel_t)] __SDRAM;
-uint8_t currentLayer = LCD_FIRST_LAYER;
+static void startLcdRefresh(lv_disp_drv_t *disp_drv, uint16_t *buffer,
+                            const rect_t &copy_area)
+{
+  (void)disp_drv;
+  (void)copy_area;
 
-BitmapBuffer lcdBuffer1(BMP_RGB565, LCD_W, LCD_H, (uint16_t *)LCD_FIRST_FRAME_BUFFER);
-BitmapBuffer lcdBuffer2(BMP_RGB565, LCD_W, LCD_H, (uint16_t *)LCD_SECOND_FRAME_BUFFER);
+  LTDC_Layer1->CFBAR = (uint32_t)buffer;
 
-BitmapBuffer * lcdFront = &lcdBuffer1;
-BitmapBuffer * lcd = &lcdBuffer2;
+  // reload shadow registers on vertical blank
+  _frame_addr_reloaded = 0;
+  LTDC->SRCR = LTDC_SRCR_VBR;
+
+  // wait for reload
+  // TODO: replace through some smarter mechanism without busy wait
+  while(_frame_addr_reloaded == 0);
+}
 
 lcdSpiInitFucPtr lcdInitFunction;
 lcdSpiInitFucPtr lcdOffFunction;
 lcdSpiInitFucPtr lcdOnFunction;
+uint32_t lcdPixelClock;
 
 volatile uint8_t LCD_ReadBuffer[24] = { 0, 0 };
 
@@ -622,11 +630,13 @@ void LCD_ILI9481_Off(void) {
 }
 
 unsigned int LCD_ILI9481_ReadID(void) {
+#if 1
+  /* Have a issue here */
+  return 0;
+#else
   int ID = 0;
   int Data;
 
-  /* Have a issue here */
-  return 0;
 
   lcdWriteByte(0, 0xBF);
 
@@ -646,6 +656,7 @@ unsigned int LCD_ILI9481_ReadID(void) {
   lcdWriteData(0x82);
   //lcdWriteData( 0x9b );
   return (ID);
+#endif
 }
 
 void LCD_ILI9486_On(void) {
@@ -977,113 +988,106 @@ void LCD_ST7796S_On(void) {
 }
 
 void LCD_ST7796S_Init(void) {
-  lcdWriteCommand(0XFB);
-  lcdWriteData(0x00);
-
-  lcdWriteCommand(0x11);
   delay_ms(120);
-  lcdWriteCommand(0x13);
 
-  lcdWriteCommand(0xf0);
-  lcdWriteData(0xc3);
-  lcdWriteCommand(0xf0);
-  lcdWriteData(0x96);
+  lcdWriteCommand( 0x11 );
+  delay_ms(120);
+  lcdWriteCommand( 0xF0 );
+  lcdWriteData( 0xC3 );
 
-  lcdWriteCommand(0x36);
+  lcdWriteCommand( 0xF0 );
+  lcdWriteData( 0x96 );
 
-#if defined( LCD_DIRECTION ) && ( LCD_DIRECTION == LCD_VERTICAL )
+  lcdWriteCommand( 0x36 );
+  lcdWriteData( 0x88 );
 
-  lcdWriteData( 0x08 );
+  lcdWriteCommand( 0x3A );
+  lcdWriteData( 0x66 );
 
-#else
-#if defined( LCD_DEBUG ) && ( LCD_DEBUG == ON )
-  lcdWriteData( 0xcc );
-#else
-  lcdWriteData(0xb8);
-#endif
+  //SET RGB STRAT
+  lcdWriteCommand (0xB0 );   //SET HS VS DE CLK 上升还是下降有效
+  lcdWriteData( 0x80 );
 
-#endif
+  lcdWriteCommand( 0xB4 );
+  lcdWriteData( 0x01 );
 
-  lcdWriteCommand(0x3A);
-  lcdWriteData(0x65);
+  lcdWriteCommand( 0xB6 );
+  lcdWriteData( 0x20 );
+  lcdWriteData( 0x02 );
+  lcdWriteData( 0x3B );
+  //SET RGB END
 
-  lcdWriteCommand(0xB4);
-  lcdWriteData(0x01);
+  lcdWriteCommand( 0xB7);
+  lcdWriteData( 0xC6);
 
-  lcdWriteCommand(0xb5);
-  lcdWriteData (VERTICAL_FRONT_PORCH);
-  lcdWriteData(VERTICAL_BACK_PORCH + VERTICAL_SYNC_HEIGHT);
-  lcdWriteData(0x00);
-  lcdWriteData(HORIZONTAL_BACK_PORCH + 4);
+  lcdWriteCommand( 0xB9 );
+  lcdWriteData( 0x02 );
+  lcdWriteData( 0xE0 );
 
-  lcdWriteCommand(0xb6);
-  lcdWriteData(0xe0);
-  lcdWriteData(0x42);
-  lcdWriteData(0x3b);
+  lcdWriteCommand( 0xC0 );
+  lcdWriteData( 0x80 );
+  lcdWriteData( 0x65 );
 
-  lcdWriteCommand(0xB7);
-  lcdWriteData(0x66);
+  lcdWriteCommand( 0xC1 );
+  lcdWriteData( 0x0D );
 
-  lcdWriteCommand(0xe8);
-  lcdWriteData(0x40);
-  lcdWriteData(0x8a);
-  lcdWriteData(0x00);
-  lcdWriteData(0x00);
-  lcdWriteData(0x29);
-  lcdWriteData(0x19);
-  lcdWriteData(0xa5);
-  lcdWriteData(0x33);
+  lcdWriteCommand( 0xC2 );
+  lcdWriteData( 0xA7 );
 
-  lcdWriteCommand(0xc1);
-  lcdWriteData(0x06);
+  lcdWriteCommand( 0xC5 );
+  lcdWriteData( 0x14 );
 
-  lcdWriteCommand(0xc2);
-  lcdWriteData(0xa7);
+  lcdWriteCommand( 0xE8 );
+  lcdWriteData( 0x40 );
+  lcdWriteData( 0x8A );
+  lcdWriteData( 0x00 );
+  lcdWriteData( 0x00 );
+  lcdWriteData( 0x29 );
+  lcdWriteData( 0x19 );
+  lcdWriteData( 0xA5 );
+  lcdWriteData( 0x33 );
 
-  lcdWriteCommand(0xc5);
-  lcdWriteData(0x18);
+  lcdWriteCommand( 0xE0 );
+  lcdWriteData( 0xD0 );
+  lcdWriteData( 0x00 );
+  lcdWriteData( 0x04 );
+  lcdWriteData( 0x05 );
+  lcdWriteData( 0x04 );
+  lcdWriteData( 0x21 );
+  lcdWriteData( 0x25 );
+  lcdWriteData( 0x43 );
+  lcdWriteData( 0x3F );
+  lcdWriteData( 0x37 );
+  lcdWriteData( 0x13 );
+  lcdWriteData( 0x13 );
+  lcdWriteData( 0x29 );
+  lcdWriteData( 0x32 );
 
-  lcdWriteCommand(0xe0); //Positive Voltage Gamma Control
-  lcdWriteData(0xf0);
-  lcdWriteData(0x09);
-  lcdWriteData(0x0b);
-  lcdWriteData(0x06);
-  lcdWriteData(0x04);
-  lcdWriteData(0x15);
-  lcdWriteData(0x2f);
-  lcdWriteData(0x54);
-  lcdWriteData(0x42);
-  lcdWriteData(0x3c);
-  lcdWriteData(0x17);
-  lcdWriteData(0x14);
-  lcdWriteData(0x18);
-  lcdWriteData(0x1b);
+  lcdWriteCommand( 0xE1 );
+  lcdWriteData( 0xD0 );
+  lcdWriteData( 0x04 );
+  lcdWriteData( 0x06 );
+  lcdWriteData( 0x09 );
+  lcdWriteData( 0x06 );
+  lcdWriteData( 0x03 );
+  lcdWriteData( 0x25 );
+  lcdWriteData( 0x32 );
+  lcdWriteData( 0x3E );
+  lcdWriteData( 0x18 );
+  lcdWriteData( 0x15 );
+  lcdWriteData( 0x15 );
+  lcdWriteData( 0x2B );
+  lcdWriteData( 0x30 );
 
-  lcdWriteCommand(0xe1); //Negative Voltage Gamma Control
-  lcdWriteData(0xf0);
-  lcdWriteData(0x09);
-  lcdWriteData(0x0b);
-  lcdWriteData(0x06);
-  lcdWriteData(0x04);
-  lcdWriteData(0x03);
-  lcdWriteData(0x2d);
-  lcdWriteData(0x43);
-  lcdWriteData(0x42);
-  lcdWriteData(0x3b);
-  lcdWriteData(0x16);
-  lcdWriteData(0x14);
-  lcdWriteData(0x17);
-  lcdWriteData(0x1b);
+  lcdWriteCommand( 0xF0 );
+  lcdWriteData( 0x3C );
 
-  lcdWriteCommand(0xf0);
-  lcdWriteData(0x3c);
-  lcdWriteCommand(0xf0);
-  lcdWriteData(0x69);
+  lcdWriteCommand( 0xF0 );
+  lcdWriteData( 0x69 );
 
-  delay_ms(5);
-  lcdWriteCommand(0x28);
-  //lcdWriteCommand( 0x29 );
-  lcdWriteCommand(0x2C);
+  delay_ms(120);
+
+  lcdWriteCommand( 0x21 );
 
   LCD_ST7796S_On();
 }
@@ -1093,37 +1097,33 @@ void LCD_ST7796S_Off(void) {
 }
 
 unsigned int LCD_ST7796S_ReadID(void) {
-  int ID = 0;
+  unsigned int ID = 0;
 
-  lcdWriteCommand(0XF7);
-  lcdWriteData(0xA9);
-  lcdWriteData(0x51);
-  lcdWriteData(0x2C);
-  lcdWriteData(0x82);
-  lcdWriteCommand(0XB0);
-  lcdWriteData(0X80);
+  lcdWriteCommand( 0XF0 );
+  lcdWriteData( 0XC3 );
+  lcdWriteCommand( 0XF0 );
+  lcdWriteData( 0X96 );
 
-  lcdWriteCommand(0XFB);
-  lcdWriteData(0x10 | 0x00);
-  ID = LCD_ReadRegister(0xd3);
+  lcdWriteCommand( 0XB0 );
+  lcdWriteData( 0X80 );
 
-  lcdWriteCommand(0XFB);
-  lcdWriteData(0x10 | 0x01);
-  ID = LCD_ReadRegister(0xd3);
+  lcdWriteCommand( 0XD3 );
 
-  lcdWriteCommand(0XFB);
-  lcdWriteData(0x10 | 0x02);
-  ID = LCD_ReadRegister(0xd3);
-  ID <<= 8;
-  lcdWriteCommand(0XFB);
-  lcdWriteData(0x10 | 0x03);
-  ID |= LCD_ReadRegister(0xd3);
+  SET_LCD_CLK_OUTPUT();
+  SET_LCD_DATA_INPUT();
+  CLR_LCD_CLK();
+  LCD_DELAY();
+  LCD_DELAY();
+  SET_LCD_CLK();
+  LCD_DELAY();
+  LCD_DELAY();
 
-  lcdWriteCommand(0XFB);
-  lcdWriteData(0x00);
+  LCD_ReadByte();
+  ID += (uint16_t)(LCD_ReadByte())<<8;
+  ID += LCD_ReadByte();
 
-  return (ID);
-}
+   return (ID);
+ }
 
 static void lcdReset() {
   LCD_NRST_HIGH();
@@ -1141,10 +1141,11 @@ void LCD_Init_LTDC() {
 
   /* Configure PLLSAI prescalers for LCD */
   /* PLLSAI_VCO Input = HSE_VALUE/PLL_M = 1 Mhz */
-  /* PLLSAI_VCO Output = PLLSAI_VCO Input * PLLSAI_N = 192 Mhz */
-  /* PLLLCDCLK = PLLSAI_VCO Output/PLL_LTDC = 192/3 = 64 Mhz */
-  /* LTDC clock frequency = PLLLCDCLK / RCC_PLLSAIDivR = 64/4 = 16 Mhz */
-  RCC_PLLSAIConfig(192 * 2 / 3, 6, 3);
+  /* PLLSAI_VCO Output = PLLSAI_VCO Input * lcdPixelclock * 16 = XX Mhz */
+  /* PLLLCDCLK = PLLSAI_VCO Output/PLL_LTDC = PLLSAI_VCO/4 = YY Mhz */
+  /* LTDC clock frequency = PLLLCDCLK / RCC_PLLSAIDivR = YY/4 = lcdPixelClock Mhz */
+  uint32_t clock = (lcdPixelClock*16) / 1000000; // clock*16 in MHz
+  RCC_PLLSAIConfig(clock, 6, 4);
   RCC_LTDCCLKDivConfig (RCC_PLLSAIDivR_Div4);
 
   /* Enable PLLSAI Clock */
@@ -1178,33 +1179,27 @@ void LCD_Init_LTDC() {
   /* Configure accumulated vertical back porch */
   LTDC_InitStruct.LTDC_AccumulatedVBP = VBP;
   /* Configure accumulated active width */
-  LTDC_InitStruct.LTDC_AccumulatedActiveW = LCD_W + HBP;
+  LTDC_InitStruct.LTDC_AccumulatedActiveW = LCD_PHYS_W + HBP;
   /* Configure accumulated active height */
-  LTDC_InitStruct.LTDC_AccumulatedActiveH = LCD_H + VBP;
+  LTDC_InitStruct.LTDC_AccumulatedActiveH = LCD_PHYS_H + VBP;
   /* Configure total width */
-  LTDC_InitStruct.LTDC_TotalWidth = LCD_W + HBP + HFP;
+  LTDC_InitStruct.LTDC_TotalWidth = LCD_PHYS_W + HBP + HFP;
   /* Configure total height */
-  LTDC_InitStruct.LTDC_TotalHeigh = LCD_H + VBP + VFP;
+  LTDC_InitStruct.LTDC_TotalHeigh = LCD_PHYS_H + VBP + VFP;
 
   LTDC_Init(&LTDC_InitStruct);
 
-  //Configure IRQ
-  // LTDC_ITConfig(LTDC_IER_RRIE, ENABLE);
-  // NVIC_InitTypeDef NVIC_InitStructure;
-  // NVIC_InitStructure.NVIC_IRQChannel = LTDC_IRQn;
-  // NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = LTDC_IRQ_PRIO;
-  // NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-  // NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-  // NVIC_Init(&NVIC_InitStructure);
-
-  LTDC_ITConfig(LTDC_IER_LIE, ENABLE);
+  // Configure IRQ (line)
   NVIC_InitTypeDef NVIC_InitStructure;
   NVIC_InitStructure.NVIC_IRQChannel = LTDC_IRQn;
   NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = LTDC_IRQ_PRIO;
-  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0; /* Not used as 4 bits are used for the pre-emption priority. */;
+  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
   NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
   NVIC_Init(&NVIC_InitStructure);
-  LTDC_LIPConfig(LCD_H);
+
+  // Trigger on last line
+  LTDC_LIPConfig(LCD_PHYS_H);
+  LTDC_ITConfig(LTDC_IER_LIE, ENABLE);
 
 #if 0
   DMA2D_ITConfig(DMA2D_CR_TCIE, ENABLE);
@@ -1215,10 +1210,6 @@ void LCD_Init_LTDC() {
   NVIC_Init( &NVIC_InitStructure );
   DMA2D->IFCR = (unsigned long)DMA2D_IFSR_CTCIF;
 #endif
-
-  // Enable LTDC IRQ in NVIC
-  NVIC_EnableIRQ(LTDC_IRQn);
-  NVIC_SetPriority(LTDC_IRQn, 7);
 }
 
 void LCD_LayerInit() {
@@ -1231,9 +1222,9 @@ void LCD_LayerInit() {
    Vertical start   = vertical synchronization + vertical back porch     = 4
    Vertical stop   = Vertical start + window height -1  = 4 + 320 -1      */
   LTDC_Layer_InitStruct.LTDC_HorizontalStart = HBP + 1;
-  LTDC_Layer_InitStruct.LTDC_HorizontalStop = (LCD_W + HBP);
+  LTDC_Layer_InitStruct.LTDC_HorizontalStop = (LCD_PHYS_W + HBP);
   LTDC_Layer_InitStruct.LTDC_VerticalStart = VBP + 1;
-  LTDC_Layer_InitStruct.LTDC_VerticalStop = (LCD_H + VBP);
+  LTDC_Layer_InitStruct.LTDC_VerticalStop = (LCD_PHYS_H + VBP);
 
   /* Pixel Format configuration*/
   LTDC_Layer_InitStruct.LTDC_PixelFormat = LTDC_Pixelformat_RGB565;
@@ -1254,145 +1245,111 @@ void LCD_LayerInit() {
    Active high width         = LCD_W
    number of bytes per pixel = 2    (pixel_format : RGB565)
    */
-  LTDC_Layer_InitStruct.LTDC_CFBLineLength = ((LCD_W * 2) + 3);
+  LTDC_Layer_InitStruct.LTDC_CFBLineLength = ((LCD_PHYS_W * 2) + 3);
   /* the pitch is the increment from the start of one line of pixels to the
    start of the next line in bytes, then :
    Pitch = Active high width x number of bytes per pixel */
-  LTDC_Layer_InitStruct.LTDC_CFBPitch = (LCD_W * 2);
+  LTDC_Layer_InitStruct.LTDC_CFBPitch = (LCD_PHYS_W * 2);
 
   /* Configure the number of lines */
-  LTDC_Layer_InitStruct.LTDC_CFBLineNumber = LCD_H;
+  LTDC_Layer_InitStruct.LTDC_CFBLineNumber = LCD_PHYS_H;
 
   /* Start Address configuration : the LCD Frame buffer is defined on SDRAM w/ Offset */
-  LTDC_Layer_InitStruct.LTDC_CFBStartAdress = (uint32_t) LCD_FIRST_FRAME_BUFFER;
+  uint32_t layer_address = (uint32_t)lcdFront->getData();
+  LTDC_Layer_InitStruct.LTDC_CFBStartAdress = layer_address;
 
   /* Initialize LTDC layer 1 */
   LTDC_LayerInit(LTDC_Layer1, &LTDC_Layer_InitStruct);
 
-#if defined(LTDC_DOUBLELAYER)
-   /* Configure Layer 2 */
-  LTDC_Layer_InitStruct.LTDC_BlendingFactor_1 = LTDC_BlendingFactor1_PAxCA;
-  LTDC_Layer_InitStruct.LTDC_BlendingFactor_2 = LTDC_BlendingFactor2_PAxCA;
-
-  /* Start Address configuration : the LCD Frame buffer is defined on SDRAM w/ Offset */
-  LTDC_Layer_InitStruct.LTDC_CFBStartAdress = (uint32_t) LCD_SECOND_FRAME_BUFFER;
-      
-  /* Initialize LTDC layer 2 */
-  LTDC_LayerInit(LTDC_Layer2, &LTDC_Layer_InitStruct);
-#endif
   /* LTDC configuration reload */
   LTDC_ReloadConfig(LTDC_IMReload);
 
   LTDC_LayerCmd(LTDC_Layer1, ENABLE);
   LTDC_LayerAlpha(LTDC_Layer1, 255);
 
-#if defined(LTDC_DOUBLELAYER)
-  LTDC_LayerCmd(LTDC_Layer2, ENABLE);
-  LTDC_LayerAlpha(LTDC_Layer2, 0);
-#endif
-
   LTDC_ReloadConfig(LTDC_IMReload);
+
   /* dithering activation */
   LTDC_DitherCmd(ENABLE);
 }
 
-extern void loadFonts();
+const char* boardLcdType = "";
 
-void LCD_SetLayer(uint32_t layer)
+void lcdInit(void)
 {
-  if (layer == LCD_FIRST_LAYER) {
-    lcdFront = &lcdBuffer1;
-    lcd = &lcdBuffer2;
-  }
-  else {
-    lcdFront = &lcdBuffer2;
-    lcd = &lcdBuffer1;
-  }
-  currentLayer = layer;
-}
-
-void lcdInit(void) {
-  // Clear buffers first
-  memset(LCD_FIRST_FRAME_BUFFER, 0, sizeof(LCD_FIRST_FRAME_BUFFER));
-  memset(LCD_SECOND_FRAME_BUFFER, 0, sizeof(LCD_SECOND_FRAME_BUFFER));
-
-  loadFonts();
   /* Configure the LCD SPI+RESET pins */
   lcdSpiConfig();
 
+  // TODO: init lVGL
+  
   /* Reset the LCD --------------------------------------------------------*/
   lcdReset();
 
   /* Configure the LCD Control pins */
   LCD_AF_GPIOConfig();
-  
-  /* Send LCD initializaiton commands */
+
+  /* Send LCD initialization commands */
   if (LCD_ILI9481_ReadID() == LCD_ILI9481_ID) {
     TRACE("LCD INIT: ILI9481");
+    boardLcdType = "ILI9481";
     lcdInitFunction = LCD_ILI9481_Init;
     lcdOffFunction = LCD_ILI9481_Off;
     lcdOnFunction = LCD_ILI9481_On;
+    lcdPixelClock = 12000000;
   } else if (LCD_ILI9486_ReadID() == LCD_ILI9486_ID) {
     TRACE("LCD INIT: ILI9486");
+    boardLcdType = "ILI9486";
     lcdInitFunction = LCD_ILI9486_Init;
     lcdOffFunction = LCD_ILI9486_Off;
     lcdOnFunction = LCD_ILI9486_On;
+    lcdPixelClock = 12000000;
   } else if (LCD_ILI9488_ReadID() == LCD_ILI9488_ID) {
     TRACE("LCD INIT: ILI9488");
+    boardLcdType = "ILI9488";
     lcdInitFunction = LCD_ILI9488_Init;
     lcdOffFunction = LCD_ILI9488_Off;
     lcdOnFunction = LCD_ILI9488_On;
+    lcdPixelClock = 12000000;
   } else if (LCD_HX8357D_ReadID() == LCD_HX8357D_ID) {
+    TRACE("LCD INIT: HX8357D");
+    boardLcdType = "HX8357D";
     lcdInitFunction = LCD_HX8357D_Init;
     lcdOffFunction = LCD_HX8357D_Off;
     lcdOnFunction = LCD_HX8357D_On;
-    TRACE("LCD INIT: HX8357D");
-  } else { //if (LCD_ST7796S_ReadID() == LCD_ST7796S_ID)
-    /* Default is ST7796S */
+    lcdPixelClock = 12000000;
+  } else { /* if (LCD_ST7796S_ReadID() == LCD_ST7796S_ID) { */ // ST7796S detection is unreliable
     TRACE("LCD INIT (default): ST7796S");
+    boardLcdType = "ST7796S";
     lcdInitFunction = LCD_ST7796S_Init;
     lcdOffFunction = LCD_ST7796S_Off;
     lcdOnFunction = LCD_ST7796S_On;
+    lcdPixelClock = 10000000;
+/*  } else {
+    TRACE("LCD INIT: unknown LCD controller");
+    boardLcdType = "unknown";*/
   }
 
   lcdInitFunction();
-  
+
   LCD_Init_LTDC();
   LCD_LayerInit();
   LTDC_Cmd(ENABLE);
   LTDC_ReloadConfig(LTDC_IMReload);
+
+  lcdSetFlushCb(startLcdRefresh);
 }
 
-void DMAFillRect(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
+void DMAWait()
 {
-  DMA2D_DeInit();
-
-  DMA2D_InitTypeDef DMA2D_InitStruct;
-  DMA2D_InitStruct.DMA2D_Mode = DMA2D_R2M;
-  DMA2D_InitStruct.DMA2D_CMode = DMA2D_RGB565;
-  DMA2D_InitStruct.DMA2D_OutputGreen = (0x07E0 & color) >> 5;
-  DMA2D_InitStruct.DMA2D_OutputBlue = 0x001F & color;
-  DMA2D_InitStruct.DMA2D_OutputRed = (0xF800 & color) >> 11;
-  DMA2D_InitStruct.DMA2D_OutputAlpha = 0x0F;
-  DMA2D_InitStruct.DMA2D_OutputMemoryAdd = CONVERT_PTR_UINT(dest) + 2*(destw*y + x);
-  DMA2D_InitStruct.DMA2D_OutputOffset = (destw - w);
-  DMA2D_InitStruct.DMA2D_NumberOfLine = h;
-  DMA2D_InitStruct.DMA2D_PixelPerLine = w;
-  DMA2D_Init(&DMA2D_InitStruct);
-
-  /* Start Transfer */
-  DMA2D_StartTransfer();
-
-  /* Check configuration error */
-  if ((DMA2D_GetFlagStatus(DMA2D_FLAG_CE) == SET) || (DMA2D_GetFlagStatus(DMA2D_FLAG_TE) == SET))
-    return; // Exit if configuration or transfer error
+  while(DMA2D->CR & DMA2D_CR_START);
+}
   
-  /* Wait for CTC Flag activation */
-  while (DMA2D_GetFlagStatus(DMA2D_FLAG_TC) == RESET);
-}
-
-void DMACopyBitmap(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t x, uint16_t y, const uint16_t * src, uint16_t srcw, uint16_t srch, uint16_t srcx, uint16_t srcy, uint16_t w, uint16_t h)
+void DMACopyBitmap(uint16_t *dest, uint16_t destw, uint16_t desth, uint16_t x,
+                   uint16_t y, const uint16_t *src, uint16_t srcw,
+                   uint16_t srch, uint16_t srcx, uint16_t srcy, uint16_t w,
+                   uint16_t h)
 {
+  DMAWait();
   DMA2D_DeInit();
 
   DMA2D_InitTypeDef DMA2D_InitStruct;
@@ -1419,17 +1376,14 @@ void DMACopyBitmap(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t x, 
 
   /* Start Transfer */
   DMA2D_StartTransfer();
-
-  /* Check configuration error */
-  if ((DMA2D_GetFlagStatus(DMA2D_FLAG_CE) == SET) || (DMA2D_GetFlagStatus(DMA2D_FLAG_TE) == SET))
-    return; // Exit if configuration or transfer error
-
-  /* Wait for CTC Flag activation */
-  while (DMA2D_GetFlagStatus(DMA2D_FLAG_TC) == RESET);
 }
 
-void DMACopyAlphaBitmap(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t x, uint16_t y, const uint16_t * src, uint16_t srcw, uint16_t srch, uint16_t srcx, uint16_t srcy, uint16_t w, uint16_t h)
+void DMACopyAlphaBitmap(uint16_t *dest, uint16_t destw, uint16_t desth,
+                        uint16_t x, uint16_t y, const uint16_t *src,
+                        uint16_t srcw, uint16_t srch, uint16_t srcx,
+                        uint16_t srcy, uint16_t w, uint16_t h)
 {
+  DMAWait();
   DMA2D_DeInit();
 
   DMA2D_InitTypeDef DMA2D_InitStruct;
@@ -1465,18 +1419,15 @@ void DMACopyAlphaBitmap(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_
 
   /* Start Transfer */
   DMA2D_StartTransfer();
-
-  /* Check configuration error */
-  if ((DMA2D_GetFlagStatus(DMA2D_FLAG_CE) == SET) || (DMA2D_GetFlagStatus(DMA2D_FLAG_TE) == SET))
-    return; // Exit if configuration or transfer error
-
-  /* Wait for CTC Flag activation */
-  while (DMA2D_GetFlagStatus(DMA2D_FLAG_TC) == RESET);
 }
 
 // same as DMACopyAlphaBitmap(), but with an 8 bit mask for each pixel (used by fonts)
-void DMACopyAlphaMask(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t x, uint16_t y, const uint8_t * src, uint16_t srcw, uint16_t srch, uint16_t srcx, uint16_t srcy, uint16_t w, uint16_t h, uint16_t bg_color)
+void DMACopyAlphaMask(uint16_t *dest, uint16_t destw, uint16_t desth,
+                      uint16_t x, uint16_t y, const uint8_t *src, uint16_t srcw,
+                      uint16_t srch, uint16_t srcx, uint16_t srcy, uint16_t w,
+                      uint16_t h, uint16_t bg_color)
 {
+  DMAWait();
   DMA2D_DeInit();
 
   DMA2D_InitTypeDef DMA2D_InitStruct;
@@ -1502,7 +1453,7 @@ void DMACopyAlphaMask(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t 
   DMA2D_FG_InitStruct.DMA2D_FGC_RED   = GET_RED(bg_color);   // 8 bit red
   DMA2D_FG_InitStruct.DMA2D_FGC_GREEN = GET_GREEN(bg_color); // 8 bit green
   DMA2D_FG_InitStruct.DMA2D_FGC_BLUE  = GET_BLUE(bg_color);  // 8 bit blue
-  
+
   DMA2D_FGConfig(&DMA2D_FG_InitStruct);
 
   DMA2D_BG_InitTypeDef DMA2D_BG_InitStruct;
@@ -1516,17 +1467,11 @@ void DMACopyAlphaMask(uint16_t * dest, uint16_t destw, uint16_t desth, uint16_t 
 
   /* Start Transfer */
   DMA2D_StartTransfer();
-
-  /* Check configuration error */
-  if ((DMA2D_GetFlagStatus(DMA2D_FLAG_CE) == SET) || (DMA2D_GetFlagStatus(DMA2D_FLAG_TE) == SET))
-    return; // Exit if configuration or transfer error
- 
-  /* Wait for CTC Flag activation */
-  while (DMA2D_GetFlagStatus(DMA2D_FLAG_TC) == RESET);
 }
 
 void DMABitmapConvert(uint16_t * dest, const uint8_t * src, uint16_t w, uint16_t h, uint32_t format)
 {
+  DMAWait();
   DMA2D_DeInit();
 
   DMA2D_InitTypeDef DMA2D_InitStruct;
@@ -1553,103 +1498,11 @@ void DMABitmapConvert(uint16_t * dest, const uint8_t * src, uint16_t w, uint16_t
 
   /* Start Transfer */
   DMA2D_StartTransfer();
-
-  /* Check configuration error */
-  if ((DMA2D_GetFlagStatus(DMA2D_FLAG_CE) == SET) || (DMA2D_GetFlagStatus(DMA2D_FLAG_TE) == SET))
-    return; // Exit if configuration or transfer error
-
-  /* Wait for CTC Flag activation */
-  while (DMA2D_GetFlagStatus(DMA2D_FLAG_TC) == RESET);
 }
-
-void lcdCopy(void * dest, void * src)
-{
-  DMA2D_DeInit();
-
-  DMA2D_InitTypeDef DMA2D_InitStruct;
-  DMA2D_InitStruct.DMA2D_Mode = DMA2D_M2M;
-  DMA2D_InitStruct.DMA2D_CMode = DMA2D_RGB565;
-  DMA2D_InitStruct.DMA2D_OutputMemoryAdd = CONVERT_PTR_UINT(dest);
-  DMA2D_InitStruct.DMA2D_OutputGreen = 0;
-  DMA2D_InitStruct.DMA2D_OutputBlue = 0;
-  DMA2D_InitStruct.DMA2D_OutputRed = 0;
-  DMA2D_InitStruct.DMA2D_OutputAlpha = 0;
-  DMA2D_InitStruct.DMA2D_OutputOffset = 0;
-  DMA2D_InitStruct.DMA2D_NumberOfLine = LCD_H;
-  DMA2D_InitStruct.DMA2D_PixelPerLine = LCD_W;
-  DMA2D_Init(&DMA2D_InitStruct);
-
-  DMA2D_FG_InitTypeDef DMA2D_FG_InitStruct;
-  DMA2D_FG_StructInit(&DMA2D_FG_InitStruct);
-  DMA2D_FG_InitStruct.DMA2D_FGMA = CONVERT_PTR_UINT(src);
-  DMA2D_FG_InitStruct.DMA2D_FGO = 0;
-  DMA2D_FG_InitStruct.DMA2D_FGCM = CM_RGB565;
-  DMA2D_FG_InitStruct.DMA2D_FGPFC_ALPHA_MODE = NO_MODIF_ALPHA_VALUE;
-  DMA2D_FG_InitStruct.DMA2D_FGPFC_ALPHA_VALUE = 0;
-  DMA2D_FGConfig(&DMA2D_FG_InitStruct);
-
-  /* Start Transfer */
-  DMA2D_StartTransfer();
-
-  /* Check configuration error */
-  if ((DMA2D_GetFlagStatus(DMA2D_FLAG_CE) == SET) || (DMA2D_GetFlagStatus(DMA2D_FLAG_TE) == SET))
-    return; // Exit if configuration or transfer error
-  
-  /* Wait for CTC Flag activation */
-  while (DMA2D_GetFlagStatus(DMA2D_FLAG_TC) == RESET);
-}
-
-void lcdStoreBackupBuffer()
-{
-  lcdCopy(LCD_BACKUP_FRAME_BUFFER, lcd->getData());
-}
-
-int lcdRestoreBackupBuffer()
-{
-  lcdCopy(lcd->getData(), LCD_BACKUP_FRAME_BUFFER);
-  return 1;
-}
-
-uint16_t* lcdGetBackupBuffer()
-{
-  return (uint16_t*)LCD_BACKUP_FRAME_BUFFER;
-}
-
-uint16_t* lcdGetScratchBuffer()
-{
-  return (uint16_t*)LCD_SCRATCH_FRAME_BUFFER;
-}
-
-//static volatile uint8_t refreshRequested = 0;
-static volatile uint8_t _frameBufferAddressReloaded = 0;
 
 extern "C" void LTDC_IRQHandler(void)
 {
-  LTDC_ClearFlag(LTDC_ICR_CLIF);
-  _frameBufferAddressReloaded = 1;
-}
-
-static void lcdSwitchLayers()
-{
-  if (currentLayer == LCD_FIRST_LAYER) {
-    LTDC_Layer1->CFBAR = (uint32_t)LCD_SECOND_FRAME_BUFFER;
-    LCD_SetLayer(LCD_SECOND_LAYER);
-  }
-  else {
-    LTDC_Layer1->CFBAR = (uint32_t)LCD_FIRST_FRAME_BUFFER;
-    LCD_SetLayer(LCD_FIRST_LAYER);
-  }
-
-  // reload shadow registers on vertical blank
-  _frameBufferAddressReloaded = 0;
-  LTDC->SRCR = LTDC_SRCR_VBR;
-
-  // wait for reload
-  // TODO: replace through some smarter mechanism without busy wait
-  while(_frameBufferAddressReloaded == 0);
-}
-
-void lcdRefresh()
-{
-  lcdSwitchLayers();
+  // clear interrupt flag
+  LTDC->ICR = LTDC_ICR_CLIF;
+  _frame_addr_reloaded = 1;
 }

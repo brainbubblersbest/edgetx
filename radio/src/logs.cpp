@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,8 +27,73 @@
 #endif
 
 FIL g_oLogFile __DMA;
-const char * g_logError = nullptr;
-uint8_t logDelay;
+uint8_t logDelay100ms;
+static tmr10ms_t lastLogTime = 0;
+
+#if !defined(SIMU)
+#include <FreeRTOS/include/FreeRTOS.h>
+#include <FreeRTOS/include/timers.h>
+
+#include "tasks/mixer_task.h"
+
+static TimerHandle_t loggingTimer = nullptr;
+static StaticTimer_t loggingTimerBuffer;
+
+static void loggingTimerCb(TimerHandle_t xTimer)
+{
+  (void)xTimer;
+  if (mixerTaskRunning()) {
+    DEBUG_TIMER_START(debugTimerLoggingWakeup);
+    logsWrite();
+    DEBUG_TIMER_STOP(debugTimerLoggingWakeup);
+  }
+}
+
+void loggingTimerStart()
+{
+  if (!loggingTimer) {
+    loggingTimer =
+        xTimerCreateStatic("Logging", logDelay100ms*100 / RTOS_MS_PER_TICK, pdTRUE, (void*)0,
+                           loggingTimerCb, &loggingTimerBuffer);
+  }
+
+  if (loggingTimer) {
+    if( xTimerStart( loggingTimer, 0 ) != pdPASS ) {
+      /* The timer could not be set into the Active state. */
+    }
+  }
+}
+
+void loggingTimerStop()
+{
+  if (loggingTimer) {
+    if( xTimerStop( loggingTimer, 120 / RTOS_MS_PER_TICK ) != pdPASS ) {
+      /* The timer could not be stopped. */
+    }
+    loggingTimer = nullptr;
+  }
+}
+
+void initLoggingTimer() {                                       // called cyclically by main.cpp:perMain()
+  static uint8_t logDelay100msOld = 0;
+
+  if(loggingTimer == nullptr) {                                 // log Timer not running
+    if(isFunctionActive(FUNCTION_LOGS) && logDelay100ms > 0) {  // if SF Logging is active and log rate is valid
+      loggingTimerStart();                                      // start log timer
+    }  
+  } else {                                                      // log timer is already running
+    if(logDelay100msOld != logDelay100ms) {                     // if log rate was changed
+      logDelay100msOld = logDelay100ms;                         // memorize new log rate
+
+      if(logDelay100ms > 0) {
+        if(xTimerChangePeriod( loggingTimer, logDelay100ms*100, 0 ) != pdPASS ) {  // and restart timer with new log rate
+          /* The timer period could not be changed */
+        }
+      }
+    }
+  }
+}
+#endif
 
 void writeHeader();
 
@@ -50,7 +116,9 @@ const char * logsOpen()
 {
   // Determine and set log file filename
   FRESULT result;
-  char filename[sizeof(LOGS_PATH) + LEN_MODEL_NAME + 16]; // /LOGS/modelnamexxxxxx_2013-01-01.log
+
+  // /LOGS/modelnamexxxxxx_YYYY-MM-DD-HHMMSS.log
+  char filename[sizeof(LOGS_PATH) + LEN_MODEL_NAME + 18 + 4 + 1];
 
   if (!sdMounted())
     return STR_NO_SDCARD;
@@ -97,7 +165,7 @@ const char * logsOpen()
   char * tmp = &filename[len];
 
 #if defined(RTCLOCK)
-  tmp = strAppendDate(&filename[len]);
+  tmp = strAppendDate(tmp, true);
 #endif
 
   strcpy(tmp, STR_LOGS_EXT);
@@ -114,8 +182,6 @@ const char * logsOpen()
   return nullptr;
 }
 
-tmr10ms_t lastLogTime = 0;
-
 void logsClose()
 {
   if (sdMounted()) {
@@ -125,8 +191,10 @@ void logsClose()
     }
     lastLogTime = 0;
   }
+  #if !defined(SIMU)
+  loggingTimerStop();
+  #endif
 }
-
 
 void writeHeader()
 {
@@ -148,7 +216,7 @@ void writeHeader()
         if (unit == UNIT_CELLS ) unit = UNIT_VOLTS;
         if (UNIT_RAW < unit && unit < UNIT_FIRST_VIRTUAL) {
           strcat(label, "(");
-          strncat(label, STR_VTELEMUNIT+1+3*unit, 3);
+          strncat(label, STR_VTELEMUNIT[unit], 3);
           strcat(label, ")");
         }
         strcat(label, ",");
@@ -159,8 +227,9 @@ void writeHeader()
 
 #if defined(PCBFRSKY) || defined(PCBNV14)
   for (uint8_t i=1; i<NUM_STICKS+NUM_POTS+NUM_SLIDERS+1; i++) {
-    const char * p = STR_VSRCRAW + i * STR_VSRCRAW[0] + 2;
-    for (uint8_t j=0; j<STR_VSRCRAW[0]-1; ++j) {
+    const char * p = STR_VSRCRAW[i] + 2;
+    size_t len = strlen(p);
+    for (uint8_t j=0; j<len; ++j) {
       if (!*p) break;
       f_putc(*p, &g_oLogFile);
       ++p;
@@ -179,6 +248,10 @@ void writeHeader()
     }
   }
   f_puts("LSW,", &g_oLogFile);
+  
+  for (uint8_t channel = 0; channel < MAX_OUTPUT_CHANNELS; channel++) {
+    f_printf(&g_oLogFile, "CH%d(us),", channel+1);
+  }
 #else
   f_puts("Rud,Ele,Thr,Ail,P1,P2,P3,THR,RUD,ELE,3POS,AIL,GEA,TRN,", &g_oLogFile);
 #endif
@@ -203,10 +276,14 @@ void logsWrite()
     return;
   }
 
-  if (isFunctionActive(FUNCTION_LOGS) && logDelay > 0) {
-    tmr10ms_t tmr10ms = get_tmr10ms();
-    if (lastLogTime == 0 || (tmr10ms_t)(tmr10ms - lastLogTime) >= (tmr10ms_t)logDelay*10) {
+  if (isFunctionActive(FUNCTION_LOGS) && logDelay100ms > 0) {
+    #if defined(SIMU) || !defined(RTCLOCK)
+    tmr10ms_t tmr10ms = get_tmr10ms();                                        // tmr10ms works in 10ms increments
+    if (lastLogTime == 0 || (tmr10ms_t)(tmr10ms - lastLogTime) >= (tmr10ms_t)(logDelay100ms*10)-1) {
       lastLogTime = tmr10ms;
+    #else
+    {
+    #endif
 
       if (!g_oLogFile.obj.fs) {
         const char * result = logsOpen();
@@ -254,6 +331,9 @@ void logsWrite()
             else if (sensor.unit == UNIT_DATETIME) {
               f_printf(&g_oLogFile, "%4d-%02d-%02d %02d:%02d:%02d,", telemetryItem.datetime.year, telemetryItem.datetime.month, telemetryItem.datetime.day, telemetryItem.datetime.hour, telemetryItem.datetime.min, telemetryItem.datetime.sec);
             }
+            else if (sensor.unit == UNIT_TEXT) {
+              f_printf(&g_oLogFile, "\"%s\",", telemetryItem.text);
+            }
             else if (sensor.prec == 2) {
               div_t qr = div((int)telemetryItem.value, 100);
               if (telemetryItem.value < 0) f_printf(&g_oLogFile, "-");
@@ -282,6 +362,10 @@ void logsWrite()
         }
       }
       f_printf(&g_oLogFile, "0x%08X%08X,", getLogicalSwitchesStates(32), getLogicalSwitchesStates(0));
+
+      for (uint8_t channel = 0; channel < MAX_OUTPUT_CHANNELS; channel++) {
+        f_printf(&g_oLogFile, "%d,", PPM_CENTER+channelOutputs[channel]/2); // in us
+      }
 #else
       f_printf(&g_oLogFile, "%d,%d,%d,%d,%d,%d,%d,",
           GET_2POS_STATE(THR),

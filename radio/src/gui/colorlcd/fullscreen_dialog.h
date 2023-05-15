@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -31,7 +32,9 @@ enum DialogType {
   WARNING_TYPE_INFO
 };
 
-class FullScreenDialog : public FormGroup
+class StaticText;
+
+class FullScreenDialog : public Window
 {
   public:
     FullScreenDialog(uint8_t type, std::string title, std::string message = "",
@@ -53,13 +56,8 @@ class FullScreenDialog : public FormGroup
 
     void paint(BitmapBuffer * dc) override;
 
-#if defined(HARDWARE_KEYS)
     void onEvent(event_t event) override;
-#endif
-
-#if defined(HARDWARE_TOUCH)
-    bool onTouchEnd(coord_t x, coord_t y) override;
-#endif
+    void onCancel() override;
 
     void deleteLater(bool detach = true, bool trash = true) override;
 
@@ -70,8 +68,9 @@ class FullScreenDialog : public FormGroup
       closeCondition = std::move(handler);
     }
 
-    void runForever();
-    void runForeverNoPwrCheck();
+    void runForever(bool checkPwr = true);
+
+    void closeDialog();
 
   protected:
     uint8_t type;
@@ -81,6 +80,12 @@ class FullScreenDialog : public FormGroup
     bool running = false;
     std::function<bool(void)> closeCondition;
     std::function<void(void)> confirmHandler;
+    bool loaded = false;
+    StaticText* messageLabel;
+
+    virtual void init();
+
+    static void long_pressed(lv_event_t* e);
 };
 
 #endif // _FULLSCREEN_DIALOG_H_

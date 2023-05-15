@@ -18,8 +18,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef MODULEDATA_H
-#define MODULEDATA_H
+#pragma once
 
 #include "constants.h"
 
@@ -27,6 +26,31 @@
 
 class Firmware;
 class RadioDataConversionState;
+class AbstractStaticItemModel;
+class GeneralSettings;
+
+// from radio/src/pulses/module_constants.h
+enum ModuleType {
+  MODULE_TYPE_NONE = 0,
+  MODULE_TYPE_PPM,
+  MODULE_TYPE_XJT_PXX1,
+  MODULE_TYPE_ISRM_PXX2,
+  MODULE_TYPE_DSM2,
+  MODULE_TYPE_CROSSFIRE,
+  MODULE_TYPE_MULTIMODULE,
+  MODULE_TYPE_R9M_PXX1,  // R9M
+  MODULE_TYPE_R9M_PXX2,  // R9M ACCESS
+  MODULE_TYPE_R9M_LITE_PXX1,  //R9MLite
+  MODULE_TYPE_R9M_LITE_PXX2,  //R9MLP
+  MODULE_TYPE_GHOST,     // Replaces MODULE_TYPE_R9M_LITE_PRO_PXX1 which doesn't exist
+  MODULE_TYPE_R9M_LITE_PRO_PXX2,
+  MODULE_TYPE_SBUS,
+  MODULE_TYPE_XJT_LITE_PXX2,
+  MODULE_TYPE_FLYSKY, //no more protocols possible because of 4 bits value
+  MODULE_TYPE_LEMON_DSMP,
+  MODULE_TYPE_COUNT,
+  MODULE_TYPE_MAX = MODULE_TYPE_COUNT - 1
+};
 
 enum PulsesProtocol {
   PULSES_OFF,
@@ -60,6 +84,7 @@ enum PulsesProtocol {
   PULSES_XJT_LITE_LR12,
   PULSES_AFHDS3,
   PULSES_GHOST,
+  PULSES_LEMON_DSMP,
   PULSES_PROTOCOL_LAST
 };
 
@@ -143,15 +168,19 @@ enum MultiModuleRFProtocols {
   MODULE_SUBTYPE_MULTI_MLINK,
   MODULE_SUBTYPE_MULTI_WFLY2,
   MODULE_SUBTYPE_MULTI_E016HV2,
-  MODULE_SUBTYPE_MULTI_LAST = MODULE_SUBTYPE_MULTI_E016HV2
-};
-
-enum TrainerProtocol {
-  TRAINER_MASTER_JACK,
-  TRAINER_SLAVE_JACK,
-  TRAINER_MASTER_SBUS_MODULE,
-  TRAINER_MASTER_CPPM_MODULE,
-  TRAINER_MASTER_SBUS_BATT_COMPARTMENT
+  MODULE_SUBTYPE_MULTI_E010R5,
+  MODULE_SUBTYPE_MULTI_LOLI,
+  MODULE_SUBTYPE_MULTI_E129,
+  MODULE_SUBTYPE_MULTI_JOYSWAY,
+  MODULE_SUBTYPE_MULTI_E016H,
+  MODULE_SUBTYPE_MULTI_CONFIG,
+  MODULE_SUBTYPE_MULTI_IKEAANSLUTA,
+  MODULE_SUBTYPE_MULTI_WILLIFM,
+  MODULE_SUBTYPE_MULTI_LOSI,
+  MODULE_SUBTYPE_MULTI_MOULDKG,
+  MODULE_SUBTYPE_MULTI_XERALL,
+  MODULE_SUBTYPE_MULTI_MT99XX2,
+  MODULE_SUBTYPE_MULTI_LAST = MODULE_SUBTYPE_MULTI_MT99XX2
 };
 
 enum ModuleSubtypeR9M {
@@ -212,11 +241,24 @@ class ModuleData {
       int antennaMode;       // false = internal antenna, true = external antenna
     } pxx;
 
+    struct GHOST {
+      bool raw12bits;
+      unsigned int telemetryBaudrate;
+    } ghost;
+
+    struct CRSF {
+      unsigned int telemetryBaudrate;
+    } crsf;
+
     struct Access {
       unsigned int receivers;
       char         receiverName[PXX2_MAX_RECEIVERS_PER_MODULE][PXX2_LEN_RX_NAME+1];
       unsigned int racingMode;
     } access;
+
+    struct DSMP {
+      unsigned int flags;
+    } dsmp;
 
     void clear() { memset(this, 0, sizeof(ModuleData)); }
     void convert(RadioDataConversionState & cstate);
@@ -227,10 +269,16 @@ class ModuleData {
     QString subTypeToString(int type = -1) const;
     QString powerValueToString(Firmware * fw) const;
     static QString indexToString(int index, Firmware * fw);
-    static QString protocolToString(unsigned protocol);
+    static QString protocolToString(unsigned int protocol);
     static QStringList powerValueStrings(enum PulsesProtocol protocol, int subType, Firmware * fw);
     bool hasFailsafes(Firmware * fw) const;
     int getMaxChannelCount();
+    static int getTypeFromProtocol(unsigned int protocol);
+    static int getSubTypeFromProtocol(unsigned int protocol);
+    static QString typeToString(int type);
+    static AbstractStaticItemModel * internalModuleItemModel(int board = -1);
+    static bool isProtocolAvailable(int moduleidx, unsigned int  protocol, GeneralSettings & generalSettings);
+    static AbstractStaticItemModel * protocolItemModel(GeneralSettings & settings);
+    static AbstractStaticItemModel * telemetryBaudrateItemModel(unsigned int  protocol);
+    static bool isAvailable(PulsesProtocol proto, int port = 0);  //  moved from OpenTxFirmware EdgeTX v2.9 - TODO remove and use isProtocolAvailable
 };
-
-#endif // MODULEDATA_H

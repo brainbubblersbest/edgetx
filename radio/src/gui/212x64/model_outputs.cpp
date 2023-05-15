@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -53,7 +54,6 @@ enum LimitsItems {
   #define LIMITS_CURVE_POS        32*FW-3
 #endif
 
-#define LIMITS_MIN_MAX_OFFSET 1000
 #define CONVERT_US_MIN_MAX(x) (((x)*1280)/250)
 
 #if defined(PPM_UNIT_US)
@@ -234,7 +234,8 @@ void menuModelLimits(event_t event)
 
 #if defined(PPM_LIMITS_SYMETRICAL)
         case ITEM_LIMITS_SYMETRICAL:
-          lcdDrawChar(LCD_W-FW-MENUS_SCROLLBAR_WIDTH, y, ld->symetrical ? '=' : '\206', attr);
+          lcdDrawSizedText(LCD_W - FW - MENUS_SCROLLBAR_WIDTH, y,
+                           ld->symetrical ? "=" : STR_CHAR_DELTA, 2, attr);
           if (active) {
             CHECK_INCDEC_MODELVAR_ZERO(event, ld->symetrical, 1);
           }

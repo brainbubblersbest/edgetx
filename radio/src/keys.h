@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -32,7 +33,7 @@ constexpr event_t EVT_ENTRY_UP =       0x1002;
 constexpr event_t EVT_ROTARY_LEFT =    0x1003;
 constexpr event_t EVT_ROTARY_RIGHT =   0x1004;
 
-#if defined(PCBHORUS) || defined (PCBNV14)
+#if defined(COLORLCD)
 constexpr event_t _MSK_KEY_BREAK =     0x0200;
 constexpr event_t _MSK_KEY_REPT =      0x0400;
 constexpr event_t _MSK_KEY_FIRST =     0x0600;
@@ -46,7 +47,7 @@ constexpr event_t _MSK_KEY_LONG =      0x0080;
 constexpr event_t _MSK_KEY_FLAGS =     0x00E0;
 #endif
 
-#if defined(HARDWARE_TOUCH)
+#if defined(COLORLCD)
 constexpr event_t _MSK_VIRTUAL_KEY =   0x2000;
 
 constexpr event_t EVT_VIRTUAL_KEY(uint8_t key)
@@ -150,7 +151,7 @@ inline bool IS_KEY_EVT(event_t evt, uint8_t key)
   #define EVT_ROTARY_LONG              EVT_KEY_LONG(KEY_ENTER)
   #define IS_NEXT_EVENT(event)         (event==EVT_KEY_FIRST(KEY_DOWN) || event==EVT_KEY_REPT(KEY_DOWN))
   #define IS_PREVIOUS_EVENT(event)     (event==EVT_KEY_FIRST(KEY_UP) || event==EVT_KEY_REPT(KEY_UP))
-#elif defined(RADIO_T8)
+#elif defined(RADIO_T8) || defined(RADIO_COMMANDO8)
   #define EVT_ROTARY_BREAK             EVT_KEY_BREAK(KEY_ENTER)
   #define EVT_ROTARY_LONG              EVT_KEY_LONG(KEY_ENTER)
   #define IS_NEXT_EVENT(event)         (event==EVT_KEY_FIRST(KEY_DOWN) || event==EVT_KEY_REPT(KEY_DOWN))
@@ -197,10 +198,19 @@ void killEvents(event_t event);
 void killAllEvents();
 bool waitKeysReleased();
 event_t getEvent(bool trim=false);
+bool isEvent();
 bool keyDown();
 
 #if defined(ROTARY_ENCODER_NAVIGATION)
 extern uint8_t rotencSpeed;
 #endif
+
+struct InactivityData
+{
+  uint16_t counter;
+  uint8_t  sum;
+};
+
+extern InactivityData inactivity;
 
 #endif // _KEYS_H_

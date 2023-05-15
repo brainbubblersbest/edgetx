@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "board.h"
 
 uint32_t readKeys()
 {
@@ -139,30 +140,6 @@ bool keyDown()
   return readKeys() || readTrims();
 }
 
-/* TODO common to ARM */
-void readKeysAndTrims()
-{
-  uint8_t index = 0;
-  uint32_t keys_input = readKeys();
-  for (unsigned i = 1; i != unsigned(1 << TRM_BASE); i <<= 1) {
-    keys[index++].input(keys_input & i);
-  }
-
-  uint32_t trims_input = readTrims();
-  for (uint8_t i = 1; i != uint8_t(1 << 8); i <<= 1) {
-    keys[index++].input(trims_input & i);
-  }
-
-#if defined(PWR_BUTTON_PRESS)
-  if ((keys_input || trims_input || pwrPressed()) && (g_eeGeneral.backlightMode & e_backlight_mode_keys)) {
-#else
-  if ((keys_input || trims_input) && (g_eeGeneral.backlightMode & e_backlight_mode_keys)) {
-#endif
-    // on keypress turn the light on
-    resetBacklightTimeout();
-  }
-}
-
 #if defined(PCBX9E)
   #define ADD_2POS_CASE(x) \
     case SW_S ## x ## 2: \
@@ -199,17 +176,19 @@ void readKeysAndTrims()
     break
 
 #if !defined(BOOT)
+#include "opentx.h"
+
 uint32_t switchState(uint8_t index)
 {
   uint32_t xxx = 0;
 
   switch (index) {
 
-#if defined(RADIO_TX12) || defined(RADIO_T8)
+#if defined(RADIO_TX12) || defined(RADIO_TX12MK2) || defined(RADIO_BOXER) || defined(RADIO_ZORRO) || defined(RADIO_T8) || defined(RADIO_COMMANDO8)
     ADD_2POS_CASE(A);
     ADD_3POS_CASE(B, 1);
     ADD_3POS_CASE(C, 2);
-#elif defined(RADIO_TLITE)
+#elif defined(RADIO_TLITE) || defined(RADIO_TPRO) || defined(RADIO_LR3PRO)
     ADD_3POS_CASE(A, 0);
     ADD_3POS_CASE(B, 1);
     ADD_2POS_CASE(C);
@@ -241,17 +220,44 @@ uint32_t switchState(uint8_t index)
     ADD_2POS_CASE(H);
     ADD_2POS_CASE(I);
     // no SWJ on XLITE
-#elif defined(RADIO_TX12)
+#elif defined(RADIO_ZORRO)
+    ADD_2POS_CASE(D);
+    ADD_2POS_CASE(E);
+    ADD_2POS_CASE(F);
+    ADD_2POS_CASE(G);
+    ADD_2POS_CASE(H);
+#elif defined(RADIO_TX12MK2)
     ADD_2POS_CASE(D);
     ADD_3POS_CASE(E, 4);
     ADD_3POS_CASE(F, 5);
-#elif defined(RADIO_T8)
+#elif defined(RADIO_BOXER)
     ADD_2POS_CASE(D);
-#elif defined(RADIO_TLITE)
+    ADD_2POS_CASE(E);
+    ADD_2POS_CASE(F);
+#elif defined(RADIO_TX12) || defined(RADIO_ZORRO)
+    ADD_2POS_CASE(D);
+    ADD_3POS_CASE(E, 4);
+    ADD_3POS_CASE(F, 5);
+    ADD_2POS_CASE(I);
+    ADD_2POS_CASE(J);
+#elif defined(RADIO_T8) || defined(RADIO_COMMANDO8)
+    ADD_2POS_CASE(D);
+#elif defined(RADIO_TLITE) || defined(RADIO_LR3PRO)
     // Only 4 switches
+#elif defined(RADIO_TPRO)
+    ADD_2POS_CASE(E);
+    ADD_2POS_CASE(F);
+    ADD_2POS_CASE(G);
+    ADD_2POS_CASE(H);
+    ADD_2POS_CASE(I);
+    ADD_2POS_CASE(J);
 #elif defined(PCBX7)
     ADD_3POS_CASE(D, 3);
+#if defined(RADIO_T12)
+    ADD_2POS_CASE(G);
+#else
     ADD_2POS_CASE(F);
+#endif
     ADD_2POS_CASE(H);
     ADD_2POS_CASE(I);
     ADD_2POS_CASE(J);

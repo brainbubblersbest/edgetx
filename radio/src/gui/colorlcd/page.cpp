@@ -1,20 +1,22 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
- * Source:
- *  https://github.com/opentx/libopenui
+ * Based on code named
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
+ *   er9x - http://code.google.com/p/er9x
+ *   gruvin9x - http://code.google.com/p/gruvin9x
  *
- * This file is a part of libopenui library.
+ * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include "page.h"
@@ -25,30 +27,52 @@
 PageHeader::PageHeader(Page * parent, uint8_t icon):
   FormGroup(parent, { 0, 0, LCD_W, MENU_HEADER_HEIGHT }, OPAQUE),
   icon(icon)
-#if defined(HARDWARE_TOUCH)
-  , back(this, { 0, 0, MENU_HEADER_BUTTON_WIDTH, MENU_HEADER_BUTTON_WIDTH },
-       [=]() -> uint8_t {
-         parent->deleteLater();
-         return 0;
-       }, NO_FOCUS | FORM_NO_BORDER)
-#endif
 {
+#if defined(HARDWARE_TOUCH)
+  new Button(this, { 0, 0, MENU_HEADER_BACK_BUTTON_WIDTH, MENU_HEADER_BACK_BUTTON_HEIGHT },
+             [=]() -> uint8_t {
+               parent->onCancel();
+               return 0;
+             }, NO_FOCUS | FORM_NO_BORDER);
+#endif
+  title = new StaticText(this,
+                         {PAGE_TITLE_LEFT, PAGE_TITLE_TOP,
+                          LCD_W - PAGE_TITLE_LEFT, PAGE_LINE_HEIGHT},
+                         "", 0, COLOR_THEME_PRIMARY2);
+}
+
+StaticText* PageHeader::setTitle2(std::string txt)
+{
+  if (title2 == nullptr) {
+    title2 = new StaticText(this, 
+                            {PAGE_TITLE_LEFT, PAGE_TITLE_TOP + PAGE_LINE_HEIGHT,
+                             LCD_W - PAGE_TITLE_LEFT, PAGE_LINE_HEIGHT},
+                             "", 0, COLOR_THEME_PRIMARY2);
+  }
+  title2->setText(std::move(txt));
+  return title2;
 }
 
 void PageHeader::paint(BitmapBuffer * dc)
 {
   OpenTxTheme::instance()->drawPageHeaderBackground(dc, getIcon(), "");
   dc->drawSolidFilledRect(MENU_HEADER_HEIGHT, 0, LCD_W - MENU_HEADER_HEIGHT,
-                          MENU_HEADER_HEIGHT, HEADER_COLOR);
+                          MENU_HEADER_HEIGHT, COLOR_THEME_SECONDARY1);
+}
+
+static constexpr rect_t _get_body_rect()
+{
+  return { 0, MENU_HEADER_HEIGHT, LCD_W, LCD_H - MENU_HEADER_HEIGHT };
 }
 
 Page::Page(unsigned icon):
-  Window(MainWindow::instance(), {0, 0, LCD_W, LCD_H}, OPAQUE),
+  Window(Layer::back(), {0, 0, LCD_W, LCD_H}, OPAQUE),
   header(this, icon),
-  body(this, { 0, MENU_HEADER_HEIGHT, LCD_W, LCD_H - MENU_HEADER_HEIGHT }, FORM_FORWARD_FOCUS)
+  body(this, _get_body_rect(), FORM_FORWARD_FOCUS)
 {
   Layer::push(this);
-  clearFocus();
+
+  lv_obj_set_style_bg_color(lvobj, makeLvColor(COLOR_THEME_SECONDARY3), 0);
 }
 
 void Page::deleteLater(bool detach, bool trash)
@@ -57,36 +81,20 @@ void Page::deleteLater(bool detach, bool trash)
 
   header.deleteLater(true, false);
   body.deleteLater(true, false);
-
-#if defined(HARDWARE_TOUCH)
-  Keyboard::hide();
-#endif
-
   Window::deleteLater(detach, trash);
 }
 
-void Page::paint(BitmapBuffer * dc)
+void Page::onCancel()
 {
-  dc->clear(DEFAULT_BGCOLOR);
+  deleteLater();
 }
 
-#if defined(HARDWARE_KEYS)
-void Page::onEvent(event_t event)
-{
-  TRACE_WINDOWS("%s received event 0x%X", getWindowDebugString().c_str(), event);
-
-  if (event == EVT_KEY_LONG(KEY_EXIT) || event == EVT_KEY_BREAK(KEY_EXIT)) {
-    killEvents(event);
-    deleteLater();
-  }
-}
-#endif
-
-#if defined(HARDWARE_TOUCH)
-bool Page::onTouchEnd(coord_t x, coord_t y)
+void Page::onClicked()
 {
   Keyboard::hide();
-  Window::onTouchEnd(x, y);
-  return true;
 }
-#endif
+
+void Page::onEvent(event_t event)
+{
+  // block event bubbling
+}

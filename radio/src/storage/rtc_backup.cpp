@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,7 +24,7 @@
 
 namespace Backup {
 #define BACKUP
-#include "datastructs.h"
+#include "datastructs_private.h"
 PACK(struct RamBackupUncompressed {
   ModelData model;
   RadioData radio;
@@ -31,7 +32,7 @@ PACK(struct RamBackupUncompressed {
 #undef BACKUP
 };
 
-#include "datacopy.cpp"
+#include "datacopy.inc"
 
 Backup::RamBackupUncompressed ramBackupUncompressed __DMA;
 
@@ -46,8 +47,13 @@ void rambackupWrite()
 {
   copyRadioData(&ramBackupUncompressed.radio, &g_eeGeneral);
   copyModelData(&ramBackupUncompressed.model, &g_model);
-  ramBackup->size = compress(ramBackup->data, sizeof(ramBackup->data), (const uint8_t *)&ramBackupUncompressed, sizeof(ramBackupUncompressed));
-  TRACE("RamBackupWrite sdsize=%d backupsize=%d rlcsize=%d", sizeof(ModelData)+sizeof(RadioData), sizeof(Backup::RamBackupUncompressed), ramBackup->size);
+  ramBackup->size = compress(ramBackup->data, sizeof(ramBackup->data),
+                             (const uint8_t *)&ramBackupUncompressed,
+                             sizeof(ramBackupUncompressed));
+
+  TRACE("RamBackupWrite sdsize=%d backupsize=%d rlcsize=%d",
+        sizeof(ModelData) + sizeof(RadioData),
+        sizeof(Backup::RamBackupUncompressed), ramBackup->size);
 }
 
 bool rambackupRestore()

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,6 +20,9 @@
  */
 
 #include "opentx.h"
+#include "lcd.h"
+#include "theme_manager.h"
+#include "libopenui.h"
 
 coord_t drawStringWithIndex(BitmapBuffer * dc, coord_t x, coord_t y, const char * str, int idx, LcdFlags flags, const char * prefix, const char * suffix)
 {
@@ -33,25 +37,30 @@ coord_t drawStringWithIndex(BitmapBuffer * dc, coord_t x, coord_t y, const char 
 
 void drawStatusText(BitmapBuffer * dc, const char * text)
 {
-  dc->drawText(MENUS_MARGIN_LEFT, MENU_FOOTER_TOP, text, TEXT_STATUSBAR_COLOR);
+  dc->drawText(MENUS_MARGIN_LEFT, MENU_FOOTER_TOP, text, COLOR_THEME_PRIMARY2);
 }
 
 void drawVerticalScrollbar(BitmapBuffer * dc, coord_t x, coord_t y, coord_t h, uint16_t offset, uint16_t count, uint8_t visible)
 {
   if (visible < count) {
-    dc->drawSolidVerticalLine(x, y, h, LINE_COLOR);
+    dc->drawSolidVerticalLine(x, y, h, COLOR_THEME_PRIMARY3);
     coord_t yofs = (h*offset + count/2) / count;
     coord_t yhgt = (h*visible + count/2) / count;
     if (yhgt + yofs > h)
       yhgt = h - yofs;
-    dc->drawSolidFilledRect(x-1, y + yofs, 3, yhgt, CHECKBOX_COLOR);
+    dc->drawSolidFilledRect(x-1, y + yofs, 3, yhgt, COLOR_THEME_FOCUS);
   }
 }
+
+const uint8_t _LBM_TRIM_SHADOW[] = {
+#include "mask_trim_shadow.lbm"
+};
+STATIC_LZ4_BITMAP(LBM_TRIM_SHADOW);
 
 void drawTrimSquare(BitmapBuffer * dc, coord_t x, coord_t y, LcdFlags color)
 {
   dc->drawSolidFilledRect(x, y, 15, 15, color);
-  dc->drawBitmapPattern(x, y, LBM_TRIM_SHADOW, TRIM_SHADOW_COLOR);
+  dc->drawBitmapPattern(x, y, LBM_TRIM_SHADOW, COLOR_THEME_PRIMARY1);
 }
 
 void drawGVarValue(BitmapBuffer * dc, coord_t x, coord_t y, uint8_t gvar, gvar_t value, LcdFlags flags)
@@ -63,116 +72,142 @@ void drawGVarValue(BitmapBuffer * dc, coord_t x, coord_t y, uint8_t gvar, gvar_t
   drawValueWithUnit(dc, x, y, value, g_model.gvars[gvar].unit ? UNIT_PERCENT : UNIT_RAW, flags);
 }
 
-void drawValueOrGVar(BitmapBuffer * dc, coord_t x, coord_t y, gvar_t value, gvar_t vmin, gvar_t vmax, LcdFlags flags)
+void drawValueOrGVar(BitmapBuffer* dc, coord_t x, coord_t y, gvar_t value,
+                     gvar_t vmin, gvar_t vmax, LcdFlags flags,
+                     const char* suffix, gvar_t offset)
 {
   if (GV_IS_GV_VALUE(value, vmin, vmax)) {
     int index = GV_INDEX_CALC_DELTA(value, GV_GET_GV1_VALUE(vmin, vmax));
     dc->drawText(x, y, getGVarString(index), flags);
-  }
-  else {
-    dc->drawNumber(x, y, value, flags, 0, nullptr, "%");
+  } else {
+    dc->drawNumber(x, y, value + offset, flags, 0, nullptr, suffix);
   }
 }
 
-constexpr LcdFlags splash_background_color =
-  COLOR2FLAGS(((0xC >> 3) << 11) | ((0x3F >> 2) << 5) | (0x66 >> 3));
-
 void drawSleepBitmap()
 {
-  lcd->reset();
-  lcd->clear();
+  LcdFlags fgColor;
+  LcdFlags bgColor;
+
+  if (ThemePersistance::instance()->isDefaultTheme()) {
+    fgColor = COLOR2FLAGS(WHITE);
+    bgColor = COLOR2FLAGS(BLACK);
+  } else {
+    fgColor = COLOR_THEME_PRIMARY2;
+    bgColor = COLOR_THEME_SECONDARY1;
+  }
+
+  lcdInitDirectDrawing();
+  lcd->clear(bgColor);
 
   const BitmapBuffer* bitmap = OpenTxTheme::instance()->shutdown;
   if (bitmap) {
-    lcd->drawMask((LCD_W-bitmap->width())/2, (LCD_H-bitmap->height())/2,
-                  bitmap, splash_background_color);
+    lcd->drawMask((LCD_W - bitmap->width()) / 2, (LCD_H - bitmap->height()) / 2,
+                  bitmap, fgColor);
   }
 
   lcdRefresh();
 }
 
-#define SHUTDOWN_CIRCLE_DIAMETER       150
+#define SHUTDOWN_CIRCLE_DIAMETER 150
+
+const uint8_t _LBM_SHUTDOWN_CIRCLE[] = {
+#include "mask_shutdown_circle.lbm"
+};
+STATIC_LZ4_BITMAP(LBM_SHUTDOWN_CIRCLE);
 
 void drawShutdownAnimation(uint32_t duration, uint32_t totalDuration,
                            const char* message)
 {
-  if (totalDuration == 0)
-    return;
+  if (totalDuration == 0) return;
 
-  static const BitmapBuffer * shutdown = OpenTxTheme::instance()->shutdown;
+  LcdFlags fgColor;
+  LcdFlags bgColor;
 
-  lcd->reset();
-  lcd->clear(splash_background_color);
-  
+  if (ThemePersistance::instance()->isDefaultTheme()) {
+    fgColor = COLOR2FLAGS(WHITE);
+    bgColor = COLOR2FLAGS(BLACK);
+  } else {
+    fgColor = COLOR_THEME_PRIMARY2;
+    bgColor = COLOR_THEME_SECONDARY1;
+  }
+
+  static const BitmapBuffer* shutdown = OpenTxTheme::instance()->shutdown;
+
+  lcdInitDirectDrawing();
+  lcd->clear(bgColor);
+
   if (shutdown) {
     lcd->drawMask((LCD_W - shutdown->width()) / 2,
-                  (LCD_H - shutdown->height()) / 2, shutdown,
-                  COLOR2FLAGS(WHITE));
+                  (LCD_H - shutdown->height()) / 2, shutdown, fgColor);
 
     int quarter = duration / (totalDuration / 5);
     if (quarter >= 1)
       lcd->drawBitmapPattern(LCD_W / 2, (LCD_H - SHUTDOWN_CIRCLE_DIAMETER) / 2,
-                             LBM_SHUTDOWN_CIRCLE, COLOR2FLAGS(WHITE), 0,
+                             LBM_SHUTDOWN_CIRCLE, fgColor, 0,
                              SHUTDOWN_CIRCLE_DIAMETER / 2);
     if (quarter >= 2)
-      lcd->drawBitmapPattern(LCD_W / 2, LCD_H / 2, LBM_SHUTDOWN_CIRCLE,
-                             COLOR2FLAGS(WHITE), SHUTDOWN_CIRCLE_DIAMETER / 2,
+      lcd->drawBitmapPattern(LCD_W / 2, LCD_H / 2, LBM_SHUTDOWN_CIRCLE, fgColor,
+                             SHUTDOWN_CIRCLE_DIAMETER / 2,
                              SHUTDOWN_CIRCLE_DIAMETER / 2);
     if (quarter >= 3)
       lcd->drawBitmapPattern((LCD_W - SHUTDOWN_CIRCLE_DIAMETER) / 2, LCD_H / 2,
-                             LBM_SHUTDOWN_CIRCLE, COLOR2FLAGS(WHITE),
+                             LBM_SHUTDOWN_CIRCLE, fgColor,
                              SHUTDOWN_CIRCLE_DIAMETER,
                              SHUTDOWN_CIRCLE_DIAMETER / 2);
     if (quarter >= 4)
-      lcd->drawBitmapPattern((LCD_W - SHUTDOWN_CIRCLE_DIAMETER) / 2,
-                             (LCD_H - SHUTDOWN_CIRCLE_DIAMETER) / 2,
-                             LBM_SHUTDOWN_CIRCLE, COLOR2FLAGS(WHITE),
-                             SHUTDOWN_CIRCLE_DIAMETER * 3 / 2,
-                             SHUTDOWN_CIRCLE_DIAMETER / 2);
+      lcd->drawBitmapPattern(
+          (LCD_W - SHUTDOWN_CIRCLE_DIAMETER) / 2,
+          (LCD_H - SHUTDOWN_CIRCLE_DIAMETER) / 2, LBM_SHUTDOWN_CIRCLE, fgColor,
+          SHUTDOWN_CIRCLE_DIAMETER * 3 / 2, SHUTDOWN_CIRCLE_DIAMETER / 2);
   } else {
-    //lcd->clear();
     int quarter = duration / (totalDuration / 5);
     for (int i = 1; i <= 4; i++) {
       if (quarter >= i) {
         lcd->drawSolidFilledRect(LCD_W / 2 - 70 + 24 * i, LCD_H / 2 - 10, 20,
-                                 20, COLOR2FLAGS(WHITE));
+                                 20, fgColor);
       }
     }
   }
-
-  WDG_RESET();
   lcdRefresh();
+
+  // invalidate screen to enable quick return
+  // to normal display routine
+  lv_obj_invalidate(lv_scr_act());
 }
 
 void drawFatalErrorScreen(const char * message)
 {
-  lcd->reset();
+  backlightEnable(100);
+  lcdInitDirectDrawing();
   lcd->clear(COLOR2FLAGS(BLACK));
   lcd->drawText(LCD_W/2, LCD_H/2-20, message, FONT(XL)|CENTERED|COLOR2FLAGS(WHITE));
-
-  WDG_RESET();
   lcdRefresh();
+
+  // invalidate screen to enable quick return
+  // to normal display routine
+  lv_obj_invalidate(lv_scr_act());
 }
 
 void runFatalErrorScreen(const char * message)
 {
-  while (true) {
-    backlightEnable(100);
-    drawFatalErrorScreen(message);
+  lcdInitDisplayDriver();
 
-    uint8_t refresh = false;
+  while (true) {
+    drawFatalErrorScreen(message);
+    WDG_RESET();
+
+    // loop as long as PWR button is pressed
     while (true) {
       uint32_t pwr_check = pwrCheck();
       if (pwr_check == e_power_off) {
         boardOff();
         return;  // only happens in SIMU, required for proper shutdown
       }
-      else if (pwr_check == e_power_press) {
-        refresh = true;
-      }
-      else if (pwr_check == e_power_on && refresh) {
+      else if (pwr_check == e_power_on) {
         break;
       }
+      WDG_RESET();
     }
   }
 }
@@ -183,12 +218,12 @@ void drawCurveRef(BitmapBuffer * dc, coord_t x, coord_t y, const CurveRef & curv
     switch (curve.type) {
       case CURVE_REF_DIFF:
         x = dc->drawText(x, y, "D", flags);
-        drawValueOrGVar(dc, x, y + 2, curve.value, -100, 100, LEFT | FONT(XS) | flags);
+        drawValueOrGVar(dc, x, y, curve.value, -100, 100, LEFT | flags);
         break;
 
       case CURVE_REF_EXPO:
         x = dc->drawText(x, y, "E", flags);
-        drawValueOrGVar(dc, x, y + 2, curve.value, -100, 100, LEFT | FONT(XS) | flags);
+        drawValueOrGVar(dc, x, y, curve.value, -100, 100, LEFT | flags);
         break;
 
       case CURVE_REF_FUNC:
@@ -204,8 +239,7 @@ void drawCurveRef(BitmapBuffer * dc, coord_t x, coord_t y, const CurveRef & curv
 
 void drawStickName(BitmapBuffer * dc, coord_t x, coord_t y, uint8_t idx, LcdFlags att)
 {
-  uint8_t length = STR_VSRCRAW[0];
-  dc->drawSizedText(x, y, STR_VSRCRAW+2+length*(idx+1), length-1, att);
+  dc->drawText(x, y, STR_VSRCRAW[idx]+1, att);
 }
 
 void drawModelName(BitmapBuffer * dc, coord_t x, coord_t y, char * name, uint8_t id, LcdFlags att)
@@ -290,10 +324,10 @@ void drawDate(BitmapBuffer * dc, coord_t x, coord_t y, TelemetryItem & telemetry
 
 coord_t drawGPSCoord(BitmapBuffer * dc, coord_t x, coord_t y, int32_t value, const char * direction, LcdFlags flags, bool seconds=true)
 {
-  char s[32];
+  char s[32] = {};
   uint32_t absvalue = abs(value);
   char * tmp = strAppendUnsigned(s, absvalue / 1000000);
-  *tmp++ = '@';
+  tmp = strAppend(tmp, "°");
   absvalue = absvalue % 1000000;
   absvalue *= 60;
   if (g_eeGeneral.gpsFormat == 0 || !seconds) {
@@ -342,7 +376,8 @@ void drawGPSSensorValue(BitmapBuffer * dc, coord_t x, coord_t y, TelemetryItem &
   drawGPSPosition(dc, x, y, telemetryItem.gps.longitude, telemetryItem.gps.latitude, flags);
 }
 
-void drawSensorCustomValue(BitmapBuffer * dc, coord_t x, coord_t y, uint8_t sensor, int32_t value, LcdFlags flags)
+void drawSensorCustomValue(BitmapBuffer* dc, coord_t x, coord_t y,
+                           uint8_t sensor, int32_t value, LcdFlags flags)
 {
   if (sensor >= MAX_TELEMETRY_SENSORS) {
     // Lua luaLcdDrawChannel() can call us with a bad value
@@ -358,74 +393,25 @@ void drawSensorCustomValue(BitmapBuffer * dc, coord_t x, coord_t y, uint8_t sens
   else if (telemetrySensor.unit == UNIT_GPS) {
     drawGPSSensorValue(dc, x, y, telemetryItem, flags);
   }
-  else if (telemetrySensor.unit == UNIT_BITFIELD) {
-    if (IS_FRSKY_SPORT_PROTOCOL()) {
-      if (telemetrySensor.id >= RBOX_STATE_FIRST_ID && telemetrySensor.id <= RBOX_STATE_LAST_ID) {
-        if (telemetrySensor.subId == 0) {
-          if (value == 0) {
-            dc->drawText(x, y, "OK", flags);
-          }
-          else {
-            for (uint8_t i=0; i<16; i++) {
-              if (value & (1 << i)) {
-                char s[] = "CH__ KO";
-                strAppendUnsigned(&s[2], i+1, 2);
-                dc->drawText(x, flags & FONT(XL) ? y+1 : y, s, flags & ~FONT(XL));
-                break;
-              }
-            }
-          }
-        }
-        else {
-          if (value == 0) {
-            dc->drawText(x, flags & FONT(XL) ? y+1 : y, "Rx OK", flags & ~FONT(XL));
-          }
-          else {
-            static const char * const RXS_STATUS[] = {
-              "Rx1 Ovl",
-              "Rx2 Ovl",
-              "SBUS Ovl",
-              "Rx1 FS",
-              "Rx1 LF",
-              "Rx2 FS",
-              "Rx2 LF",
-              "Rx1 Lost",
-              "Rx2 Lost",
-              "Rx1 NS",
-              "Rx2 NS",
-            };
-            for (uint8_t i=0; i<DIM(RXS_STATUS); i++) {
-              if (value & (1<<i)) {
-                dc->drawText(x, flags & FONT(XL) ? y+1 : y, RXS_STATUS[i], flags & ~FONT(XL));
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
   else if (telemetrySensor.unit == UNIT_TEXT) {
-    dc->drawSizedText(x, flags & FONT(XL) ? y+1 : y, telemetryItem.text, sizeof(telemetryItem.text), flags & ~FONT(XL));
-  }
-  else {
+    dc->drawSizedText(x, flags & FONT(XL) ? y + 1 : y, telemetryItem.text,
+                      sizeof(telemetryItem.text), flags & ~FONT(XL));
+  } else {
     if (telemetrySensor.prec > 0) {
       flags |= (telemetrySensor.prec==1 ? PREC1 : PREC2);
     }
-    drawValueWithUnit(dc, x, y, value, telemetrySensor.unit == UNIT_CELLS ? UNIT_VOLTS : telemetrySensor.unit, flags);
+    drawValueWithUnit(dc, x, y, value,
+        telemetrySensor.unit == UNIT_CELLS ? UNIT_VOLTS : telemetrySensor.unit,
+        flags);
   }
 }
-
-// libopemui defines TIMOUR as zero
-#if !TIMHOUR
-#undef TIMEHOUR
-#define TIMEHOUR 0x2000
-#endif
 
 void drawTimer(BitmapBuffer * dc, coord_t x, coord_t y, int32_t tme, LcdFlags flags)
 {
   char str[LEN_TIMER_STRING];
-  getTimerString(str, tme, (flags & TIMEHOUR) != 0);
+  TimerOptions timerOptions;
+  timerOptions.options = (flags & TIMEHOUR) != 0 ? SHOW_TIME : SHOW_TIMER;
+  getTimerString(str, tme, timerOptions);
   dc->drawText(x, y, str, flags);
 }
 
@@ -501,5 +487,56 @@ void drawHexNumber(BitmapBuffer * dc, coord_t x, coord_t y, uint32_t val, LcdFla
     char c = (val >> i) & 0x0F;
     c += (c >= 10 ? 'A' - 10 : '0');
     x = dc->drawSizedText(x, y, &c, 1, flags);
+  }
+}
+
+void drawTextLines(BitmapBuffer * dc, coord_t left, coord_t top, coord_t width, coord_t height, const char * str, LcdFlags flags)
+{
+  coord_t x = left;
+  coord_t y = top;
+  coord_t line = getFontHeightCondensed(flags & 0xFFFF);
+  coord_t space = getTextWidth(" ", 1, flags);
+  coord_t word;
+  const char * nxt = str;
+  flags &= ~(VCENTERED | CENTERED | RIGHT);
+  
+  while (true) {
+    for (bool done = false; !done; nxt++) {
+      switch (nxt[0]) {        
+        case '-':
+        case '/':
+        case ':':
+        case '(':
+        case '{':
+        case '[':
+          nxt++;
+        case ' ':
+        case '\n':
+        case '\0':
+          done = true;
+      }
+    }
+    nxt--;
+    word = getTextWidth(str, nxt - str, flags);
+    if (x + word > left + width && x > left) {
+      x = left;
+      y += line;
+    }
+    if (y + line > top + height) return;
+    dc->drawSizedText(x, y, str, nxt - str, flags);
+    x += word;
+    switch (nxt[0]) {        
+      case '\0':
+        return;
+      case '\n':
+        x = left;
+        y += line;
+        nxt++;
+        break;
+      case ' ':
+        x += space;
+        nxt++;
+    }
+    str = nxt;
   }
 }

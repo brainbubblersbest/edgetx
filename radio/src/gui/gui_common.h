@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -32,9 +33,11 @@
 #define HIDDEN_ROW                     ((uint8_t)-2)
 
 #if defined(ROTARY_ENCODER_NAVIGATION)
+  #define CASE_ROTARY_ENCODER(x) x,
   #define CASE_EVT_ROTARY_LEFT         case EVT_ROTARY_LEFT:
   #define CASE_EVT_ROTARY_RIGHT        case EVT_ROTARY_RIGHT:
 #else
+  #define CASE_ROTARY_ENCODER(x)
   #define CASE_EVT_ROTARY_LEFT
   #define CASE_EVT_ROTARY_RIGHT
 #endif
@@ -72,7 +75,6 @@ enum SwitchContext
 int circularIncDec(int current, int inc, int min, int max, IsValueAvailable isValueAvailable=nullptr);
 int getFirstAvailable(int min, int max, IsValueAvailable isValueAvailable);
 
-bool isTrimModeAvailable(int mode);
 bool isInputAvailable(int input);
 bool isSourceAvailableInInputs(int source);
 bool isThrottleSourceAvailable(int source);
@@ -85,18 +87,18 @@ bool isSourceAvailableInCustomSwitches(int source);
 bool isSourceAvailableInResetSpecialFunction(int index);
 bool isSourceAvailableInGlobalResetSpecialFunction(int index);
 bool isSwitchAvailable(int swtch, SwitchContext context);
-bool isAuxModeAvailable(int mode);
-bool isAux2ModeAvailable(int mode);
+bool isSerialModeAvailable(uint8_t port_nr, int mode);
+int  hasSerialMode(int mode);
 bool isSwitchAvailableInLogicalSwitches(int swtch);
 bool isSwitchAvailableInCustomFunctions(int swtch);
 bool isSwitchAvailableInMixes(int swtch);
 bool isSwitchAvailableInTimers(int swtch);
-bool isR9MModeAvailable(int mode);
 bool isPxx2IsrmChannelsCountAllowed(int channels);
 bool isModuleUsingSport(uint8_t moduleBay, uint8_t moduleType);
 bool isTrainerUsingModuleBay();
 bool isExternalModuleAvailable(int moduleType);
 bool isInternalModuleAvailable(int moduleType);
+bool isInternalModuleSupported(int moduleType);
 bool isRfProtocolAvailable(int protocol);
 bool isTelemetryProtocolAvailable(int protocol);
 bool isTrainerModeAvailable(int mode);
@@ -142,8 +144,6 @@ void drawSensorCustomValue(coord_t x, coord_t y, uint8_t sensor, int32_t value, 
 void drawSourceCustomValue(coord_t x, coord_t y, source_t channel, int32_t val, LcdFlags flags=0);
 void drawSourceValue(coord_t x, coord_t y, source_t channel, LcdFlags flags=0);
 
-int convertMultiToOtx(int type);
-
 // model_setup Defines that are used in all uis in the same way
 #define IF_INTERNAL_MODULE_ON(x)                  (IS_INTERNAL_MODULE_ENABLED() ? (uint8_t)(x) : HIDDEN_ROW)
 #define IF_MODULE_ON(moduleIndex, x)              (IS_MODULE_ENABLED(moduleIndex) ? (uint8_t)(x) : HIDDEN_ROW)
@@ -159,7 +159,7 @@ inline uint8_t MODULE_BIND_ROWS(int moduleIdx)
     else
       return 2;
   }
-  else if (isModuleXJTD8(moduleIdx) || isModuleSBUS(moduleIdx) || isModuleAFHDS3(moduleIdx)) {
+  else if (isModuleXJTD8(moduleIdx) || isModuleSBUS(moduleIdx) || isModuleAFHDS3(moduleIdx) || isModuleDSMP(moduleIdx)) {
     return 1;
   }
   else if (isModulePPM(moduleIdx) || isModulePXX1(moduleIdx) || isModulePXX2(moduleIdx) || isModuleDSM2(moduleIdx)) {
@@ -178,18 +178,25 @@ inline uint8_t MODULE_CHANNELS_ROWS(int moduleIdx)
   else if (isModuleMultimodule(moduleIdx)) {
     if (IS_RX_MULTI(moduleIdx))
       return HIDDEN_ROW;
-    else if (g_model.moduleData[moduleIdx].getMultiProtocol() == MODULE_SUBTYPE_MULTI_DSM2)
+    else if (g_model.moduleData[moduleIdx].multi.rfProtocol == MODULE_SUBTYPE_MULTI_DSM2)
       return 1;
     else
       return 0;
-  }
-  else if (isModuleDSM2(moduleIdx) || isModuleCrossfire(moduleIdx) || isModuleGhost(moduleIdx) || isModuleSBUS(moduleIdx)) {
+  } else if (isModuleDSM2(moduleIdx) || isModuleCrossfire(moduleIdx) ||
+             isModuleGhost(moduleIdx) || isModuleSBUS(moduleIdx) ||
+             isModuleDSMP(moduleIdx)) {
+    // fixed number of channels
     return 0;
-  }
-  else {
+  } else {
     return 1;
   }
 }
+
+#if defined(EXTERNAL_ANTENNA) && defined(INTERNAL_MODULE_PXX1)
+void onAntennaSwitchConfirm(const char * result);
+void checkExternalAntenna();
+void onAntennaSelection(const char* result);
+#endif
 
 #if defined(PXX2)
 inline bool isRacingModeAllowed()
@@ -225,7 +232,7 @@ inline uint8_t MULTI_DISABLE_CHAN_MAP_ROW_STATIC(uint8_t moduleIdx)
   if (!isModuleMultimodule(moduleIdx))
     return HIDDEN_ROW;
 
-  uint8_t protocol = g_model.moduleData[moduleIdx].getMultiProtocol();
+  uint8_t protocol = g_model.moduleData[moduleIdx].multi.rfProtocol;
   if (protocol < MODULE_SUBTYPE_MULTI_LAST) {
     const mm_protocol_definition * pdef = getMultiProtocolDefinition(protocol);
     if (pdef->disable_ch_mapping)
@@ -259,7 +266,7 @@ inline bool MULTIMODULE_PROTOCOL_KNOWN(uint8_t moduleIdx)
     return false;
   }
 
-  if (g_model.moduleData[moduleIdx].getMultiProtocol() < MODULE_SUBTYPE_MULTI_LAST) {
+  if (g_model.moduleData[moduleIdx].multi.rfProtocol < MODULE_SUBTYPE_MULTI_LAST) {
     return true;
   }
 
@@ -274,21 +281,20 @@ inline bool MULTIMODULE_PROTOCOL_KNOWN(uint8_t moduleIdx)
 inline bool MULTIMODULE_HAS_SUBTYPE(uint8_t moduleIdx)
 {
   MultiModuleStatus &status = getMultiModuleStatus(moduleIdx);
-
-  if (g_model.moduleData[moduleIdx].getMultiProtocol() == MODULE_SUBTYPE_MULTI_FRSKY) {
-    return true;
-  }
+  int proto = g_model.moduleData[moduleIdx].multi.rfProtocol;
 
   if (status.isValid()) {
+    TRACE("(%d) status.protocolSubNbr = %d", proto, status.protocolSubNbr);
     return status.protocolSubNbr > 0;
   }
   else
   {
-    if (g_model.moduleData[moduleIdx].getMultiProtocol() > MODULE_SUBTYPE_MULTI_LAST) {
+    if (proto > MODULE_SUBTYPE_MULTI_LAST) {
       return true;
     }
     else {
-      return getMultiProtocolDefinition(g_model.moduleData[moduleIdx].getMultiProtocol())->subTypeString != nullptr;
+      auto subProto = getMultiProtocolDefinition(proto);
+      return subProto->subTypeString != nullptr;
     }
   }
 }
@@ -307,7 +313,7 @@ inline uint8_t MULTIMODULE_HASOPTIONS(uint8_t moduleIdx)
   if (!isModuleMultimodule(moduleIdx))
     return false;
 
-  uint8_t protocol = g_model.moduleData[moduleIdx].getMultiProtocol();
+  uint8_t protocol = g_model.moduleData[moduleIdx].multi.rfProtocol;
   MultiModuleStatus &status = getMultiModuleStatus(moduleIdx);
 
   if (status.isValid())
@@ -357,6 +363,8 @@ inline uint8_t MODULE_OPTION_ROW(uint8_t moduleIdx) {
     return TITLE_ROW;
   if(isModuleAFHDS3(moduleIdx))
     return HIDDEN_ROW;
+  if(isModuleGhost(moduleIdx))
+    return 0;
   return MULTIMODULE_OPTIONS_ROW(moduleIdx);
 }
 

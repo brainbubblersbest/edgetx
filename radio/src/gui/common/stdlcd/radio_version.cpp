@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -20,6 +21,13 @@
 
 #include "opentx.h"
 #include "options.h"
+#include "hal/module_port.h"
+
+#if defined(CROSSFIRE)
+  #include "mixer_scheduler.h"
+#endif
+
+#include "fw_version.h"
 
 // TODO duplicated code
 #if defined(ROTARY_ENCODER_NAVIGATION)
@@ -89,8 +97,9 @@ void drawPXX2FullVersion(coord_t x, coord_t y, PXX2Version hwVersion, PXX2Versio
 void menuRadioModulesVersion(event_t event)
 {
   if (menuEvent) {
-    moduleState[INTERNAL_MODULE].mode = MODULE_MODE_NORMAL;
-    moduleState[EXTERNAL_MODULE].mode = MODULE_MODE_NORMAL;
+    for (uint8_t i = 0; i < MAX_MODULES; i++) {
+      moduleState[i].mode = MODULE_MODE_NORMAL;
+    }
     return;
   }
 
@@ -101,13 +110,18 @@ void menuRadioModulesVersion(event_t event)
   }
 
   if (event == EVT_ENTRY || get_tmr10ms() >= reusableBuffer.hardwareAndSettings.updateTime) {
-    if (isModulePXX2(INTERNAL_MODULE) && IS_INTERNAL_MODULE_ON()) {
+
+#if defined(HARDWARE_INTERNAL_MODULE)
+    if (isModulePXX2(INTERNAL_MODULE) && modulePortPowered(INTERNAL_MODULE)) {
       moduleState[INTERNAL_MODULE].readModuleInformation(&reusableBuffer.hardwareAndSettings.modules[INTERNAL_MODULE], PXX2_HW_INFO_TX_ID, PXX2_MAX_RECEIVERS_PER_MODULE - 1);
     }
+#endif
 
-    if (isModulePXX2(EXTERNAL_MODULE) && IS_EXTERNAL_MODULE_ON()) {
+#if defined(HARDWARE_EXTERNAL_MODULE)
+    if (isModulePXX2(EXTERNAL_MODULE) && modulePortPowered(EXTERNAL_MODULE)) {
       moduleState[EXTERNAL_MODULE].readModuleInformation(&reusableBuffer.hardwareAndSettings.modules[EXTERNAL_MODULE], PXX2_HW_INFO_TX_ID, PXX2_MAX_RECEIVERS_PER_MODULE - 1);
     }
+#endif
 
     reusableBuffer.hardwareAndSettings.updateTime = get_tmr10ms() + 1000 /* 10s*/;
   }
@@ -117,41 +131,60 @@ void menuRadioModulesVersion(event_t event)
   for (uint8_t module=0; module<NUM_MODULES; module++) {
     // Label
     if (y >= MENU_BODY_TOP && y < MENU_BODY_BOTTOM) {
+#if defined(HARDWARE_INTERNAL_MODULE)
       if (module == INTERNAL_MODULE)
         lcdDrawTextAlignedLeft(y, STR_INTERNAL_MODULE);
-      else if (module == EXTERNAL_MODULE)
+#endif
+#if defined(HARDWARE_EXTERNAL_MODULE)
+      if (module == EXTERNAL_MODULE)
         lcdDrawTextAlignedLeft(y, STR_EXTERNAL_MODULE);
+#endif
     }
     y += FH;
 
     // Module model
     if (y >= MENU_BODY_TOP && y < MENU_BODY_BOTTOM) {
       lcdDrawText(INDENT_WIDTH, y, STR_MODULE);
-      if (module == INTERNAL_MODULE) {
-        if (!IS_INTERNAL_MODULE_ON()) {
-          lcdDrawText(COLUMN2_X, y, STR_OFF);
-          y += FH;
-          continue;
-        }
-        if (!isModulePXX2(INTERNAL_MODULE)) {
-          lcdDrawText(COLUMN2_X, y, STR_NO_INFORMATION);
-          y += FH;
-          continue;
-        }
+      bool module_off = true;
+#if defined(HARDWARE_INTERNAL_MODULE)
+      if (module == INTERNAL_MODULE && modulePortPowered(INTERNAL_MODULE))
+        module_off = false;
+#endif
+#if defined(HARDWARE_EXTERNAL_MODULE)
+      if (module == EXTERNAL_MODULE && modulePortPowered(EXTERNAL_MODULE))
+        module_off = false;
+#endif
+      if (module_off) {
+        lcdDrawText(COLUMN2_X, y, STR_OFF);
+        y += FH;
+        continue;
       }
-      else if (module == EXTERNAL_MODULE) {
-        if (!IS_EXTERNAL_MODULE_ON()) {
-          lcdDrawText(COLUMN2_X, y, STR_OFF);
-          y += FH;
-          continue;
-        }
-        if (!isModulePXX2(EXTERNAL_MODULE)) {
-          lcdDrawText(COLUMN2_X, y, STR_NO_INFORMATION);
-          y += FH;
-          continue;
-        }
+#if defined(MULTIMODULE)
+      if (isModuleMultimodule(module)) {
+        char statusText[64] = "";
+        getMultiModuleStatus(module).getStatusString(statusText);
+        lcdDrawText(COLUMN2_X, y, statusText);
+        y += FH;
+        continue;
       }
-      uint8_t modelId = reusableBuffer.hardwareAndSettings.modules[module].information.modelID;
+#endif
+#if defined(CROSSFIRE)
+      if (isModuleCrossfire(module)) {
+        char statusText[64] = "";
+        sprintf(statusText, "%d Hz %zu Err",
+                1000000 / getMixerSchedulerPeriod(), (size_t)0/*telemetryErrors*/);
+        lcdDrawText(COLUMN2_X, y, statusText);
+        y += FH;
+        continue;
+      }
+#endif
+      if (!isModulePXX2(module)) {
+        lcdDrawText(COLUMN2_X, y, STR_NO_INFORMATION);
+        y += FH;
+        continue;
+      }
+      uint8_t modelId = reusableBuffer.hardwareAndSettings.modules[module]
+                            .information.modelID;
       lcdDrawText(COLUMN2_X, y, getPXX2ModuleName(modelId));
     }
     y += FH;
@@ -237,18 +270,7 @@ void menuRadioVersion(event_t event)
 
   coord_t y = MENU_HEADER_HEIGHT + 2;
   lcdDrawText(FW, y, vers_stamp, SMLSIZE);
-  y += 5 * (FH - 1);
-
-#if defined(COPROCESSOR)
-  lcdDrawText(FW, y, "COPR\037\033: ", SMLSIZE);
-  if (coprocData.valid == 1)
-    lcdDrawNumber(lcdNextPos, y, coprocData.read, SMLSIZE);
-  else
-    lcdDrawText(lcdNextPos, y, "---", SMLSIZE);
-  y += FH - 1;
-#endif
-
-  y += 2;
+  y += 5 * (FH - 1) + 2;
 
 #if defined(PCBTARANIS)
   lcdDrawText(INDENT_WIDTH, y, BUTTON(TR_FIRMWARE_OPTIONS), menuVerticalPosition == ITEM_RADIO_FIRMWARE_OPTIONS ? INVERS : 0);

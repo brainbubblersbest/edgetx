@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,42 +20,33 @@
  */
 
 #include "switch_warn_dialog.h"
+#include "switches.h"
+
+SwitchWarnDialog::SwitchWarnDialog() :
+    FullScreenDialog(WARNING_TYPE_ALERT, STR_SWITCHWARN, "", STR_PRESS_ANY_KEY_TO_SKIP)
+{
+  last_bad_switches = 0xff;
+  bad_pots = 0;
+  last_bad_pots = 0x0;
+  setCloseCondition(std::bind(&SwitchWarnDialog::warningInactive, this));
+}
+
+void SwitchWarnDialog::init()
+{
+  if (!loaded) {
+    FullScreenDialog::init();
+    lv_label_set_long_mode(messageLabel->getLvObj(), LV_LABEL_LONG_DOT);
+  }
+}
 
 bool SwitchWarnDialog::warningInactive()
 {
-  GET_ADC_IF_MIXER_NOT_RUNNING();
-  getMovedSwitch();
-
-  bool warn = false;
-  for (int i = 0; i < NUM_SWITCHES; i++) {
-    if (SWITCH_WARNING_ALLOWED(i)) {
-      unsigned int state = ((states >> (3 * i)) & 0x07);
-      if (state && state - 1 != ((switches_states >> (i * 2)) & 0x03)) {
-        warn = true;
-      }
-    }
-  }
-
-  if (g_model.potsWarnMode) {
-    evalFlightModeMixes(e_perout_mode_normal, 0);
-    bad_pots = 0;
-    for (int i = 0; i < NUM_POTS + NUM_SLIDERS; i++) {
-      if (!IS_POT_SLIDER_AVAILABLE(POT1 + i)) {
-        continue;
-      }
-      if (!(g_model.potsWarnEnabled & (1 << i)) && (abs(g_model.potsWarnPosition[i] - GET_LOWRES_POT_POSITION(i)) > 1)) {
-        warn = true;
-        bad_pots |= (1 << i);
-      }
-    }
-  }
-
-  if (!warn)
+  if (!isSwitchWarningRequired(bad_pots))
     return true;
 
   if (last_bad_switches != switches_states || last_bad_pots != bad_pots) {
     invalidate();
-    if (last_bad_switches == 0xff || last_bad_pots == 0xff) {
+    if (last_bad_switches == 0xff || last_bad_pots & 0x7ff) {
       AUDIO_ERROR_MESSAGE(AU_SWITCH_ALERT);
     }
   }
@@ -67,50 +59,42 @@ bool SwitchWarnDialog::warningInactive()
 
 void SwitchWarnDialog::paint(BitmapBuffer * dc)
 {
-  if (!running)
-    return;
-
+  if (!running) return;
   FullScreenDialog::paint(dc);
+}
 
-  coord_t x = ALERT_MESSAGE_LEFT;
-  coord_t y = ALERT_MESSAGE_TOP; // ALERT_FRAME_TOP + ALERT_FRAME_PADDING + ALERT_TITLE_LINE_HEIGHT * 3;
+void SwitchWarnDialog::checkEvents()
+{
+  if (!running) return;
 
+  FullScreenDialog::checkEvents();
+  if (deleted()) return;
+
+  std::string warn_txt;
+  swarnstate_t states = g_model.switchWarningState;
   for (int i = 0; i < NUM_SWITCHES; ++i) {
     if (SWITCH_WARNING_ALLOWED(i)) {
-      unsigned int state = ((g_model.switchWarningState >> (3 * i)) & 0x07);
-      if (state && state - 1 != ((switches_states >> (i * 2)) & 0x03)) {
-        if (y < LCD_H) {
-          x = drawSwitch(dc, x, y, SWSRC_FIRST_SWITCH + i * 3 + state - 1, FONT(BOLD));
-          x += 5;
-        }
-        else {
-          dc->drawText(x, y, "...", FONT(BOLD));
-          break;
+      swarnstate_t mask = ((swarnstate_t)0x07 << (i*3));
+      if (states & mask) {
+        if ((switches_states & mask) != (states & mask)) {
+          swarnstate_t state = (states >> (i*3)) & 0x07;
+          warn_txt += getSwitchPositionName(SWSRC_FIRST_SWITCH + i * 3 + state - 1);
         }
       }
     }
   }
 
   if (g_model.potsWarnMode) {
+    if (!warn_txt.empty()) { warn_txt += '\n'; }
     for (int i = 0; i < NUM_POTS + NUM_SLIDERS; i++) {
-      if (!IS_POT_SLIDER_AVAILABLE(POT1 + i)) {
-        continue;
-      }
-      if (!(g_model.potsWarnEnabled & (1 << i))) {
+      if (!IS_POT_SLIDER_AVAILABLE(POT1 + i)) { continue; }
+      if ( (g_model.potsWarnEnabled & (1 << i))) {
         if (abs(g_model.potsWarnPosition[i] - GET_LOWRES_POT_POSITION(i)) > 1) {
-          if (y < LCD_H) {
-            char s[8];
-            // TODO add an helper
-            strncpy(s, &STR_VSRCRAW[1 + (NUM_STICKS + 1 + i) * STR_VSRCRAW[0]], STR_VSRCRAW[0]);
-            s[int(STR_VSRCRAW[0])] = '\0';
-            dc->drawText(x, y, s, ALARM_COLOR | FONT(XL));
-            y += 35;
-          }
-          else {
-            dc->drawText(x, y, "...", ALARM_COLOR | FONT(XL));
-          }
+          warn_txt += STR_VSRCRAW[POT1 + i + 1];
         }
       }
     }
   }
+
+  messageLabel->setText(warn_txt);
 }

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -29,26 +30,32 @@
 #define GHST_ADDR_MODULE_ASYM           0x88    // asymmetrical, 400k pulses, 115k telemetry
 #define GHST_ADDR_FC                    0x82
 #define GHST_ADDR_GOGGLES               0x83    // phase 2
-#define GHST_ADDR_5G_TXCTRL             0x84	// phase 3
+#define GHST_ADDR_5G_TXCTRL             0x84    // phase 3
 #define GHST_ADDR_5G_TWRSCAN            0x85
 #define GHST_ADDR_5G_RLY                0x86
 
-#define GHST_UL_RC_CHANS_HS4_5TO8	0x10	// High Speed 4 channel (12 bits), plus CH5-8 (8 bits)
-#define GHST_UL_RC_CHANS_HS4_9TO12	0x11	// High Speed 4 channel (12 bits), plus CH9-12 (8 bits)
-#define GHST_UL_RC_CHANS_HS4_13TO16	0x12	// High Speed 4 channel (12 bits), plus CH13-16 (8 bits)
-#define GHST_UL_RC_CHANS_SIZE           12      // 1 (type) + 10 (data) + 1 (crc)
+#define GHST_UL_RC_CHANS_HS4_5TO8       0x10  // High Speed 4 channel (12 bit legacy), plus CH5-8 (8 bits)
+#define GHST_UL_RC_CHANS_HS4_9TO12      0x11  // High Speed 4 channel (12 bit legacy), plus CH9-12 (8 bits)
+#define GHST_UL_RC_CHANS_HS4_13TO16     0x12  // High Speed 4 channel (12 bit legacy), plus CH13-16 (8 bits)
+#define GHST_UL_RC_CHANS_SIZE           12    // 1 (type) + 10 (data) + 1 (crc)
 #define GHST_UL_MENU_CTRL               0x13
 
-#define GHST_DL_OPENTX_SYNC		0x20
+#define GHST_UL_RC_CHANS_HS4_12_5TO8    0x30  // High Speed 4 channel (12 bit raw), plus CH5-8 (8 bit raw)
+#define GHST_UL_RC_CHANS_HS4_12_9TO12   0x31  // High Speed 4 channel (12 bit raw), plus CH9-12 (8 bit raw)
+#define GHST_UL_RC_CHANS_HS4_12_13TO16  0x32  // High Speed 4 channel (12 bit raw), plus CH13-16 (8 bit raw)
+
+#define GHST_DL_OPENTX_SYNC             0x20
 #define GHST_DL_LINK_STAT               0x21
 #define GHST_DL_VTX_STAT                0x22
 #define GHST_DL_PACK_STAT               0x23
 #define GHST_DL_MENU_DESC               0x24
 #define GHST_DL_GPS_PRIMARY             0x25
 #define GHST_DL_GPS_SECONDARY           0x26
+#define GHST_DL_MAGBARO                 0x27
+#define GHST_DL_MSP_RESP                0x28
 
-#define GHST_RC_CTR_VAL_12BIT		0x7C0   // 0x3e0 << 1
-#define GHST_RC_CTR_VAL_8BIT		0x7C
+#define GHST_RC_CTR_VAL_12BIT           0x7C0   // 0x3e0 << 1
+#define GHST_RC_CTR_VAL_8BIT            0x7C
 
 #define GHST_CH_BITS_12                 12
 #define GHST_CH_BITS_8                  8
@@ -97,9 +104,6 @@ enum GhstVtxBand
   GHST_VTX_BAND_MAX = GHST_VTX_BAND_BandA,
   GHST_VTX_BAND_COUNT
 };
-
-void processGhostTelemetryData(uint8_t data);
-void ghostSetDefault(int index, uint8_t id, uint8_t subId);
 
 #if SPORT_MAX_BAUDRATE < 400000
 // For radios which can't support telemetry at high rates, offer baud rate choices
@@ -157,27 +161,6 @@ enum GhostFrames
   GHST_MENU_CONTROL
 };
 
-constexpr uint8_t GHST_MENU_LINES = 6;
-constexpr uint8_t GHST_MENU_CHARS = 20;
-
-// GHST_DL_MENU_DESC (27 bytes)
-struct GhostMenuFrame
-{
-  uint8_t address;
-  uint8_t length ;
-  uint8_t packetId;
-  uint8_t menuStatus;    // GhostMenuStatus
-  uint8_t lineFlags;     // GhostLineFlags
-  uint8_t lineIndex;     // 0 = first line
-  unsigned char menuText[GHST_MENU_CHARS];
-  uint8_t crc;
-};
-
-struct GhostMenuData
-{
-  uint8_t menuStatus;    // Update Line, Clear Menu, etc.
-  uint8_t lineFlags;     // Carat states, Inverse, Bold for each of Menu Label, and Value
-  uint8_t splitLine;     // Store beginning of Value substring
-  char menuText[GHST_MENU_CHARS + 1];
-};
+void processGhostTelemetryFrame(uint8_t module, uint8_t* buffer, uint32_t length);
+void ghostSetDefault(int index, uint8_t id, uint8_t subId);
 

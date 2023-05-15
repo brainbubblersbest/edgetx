@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,6 +22,10 @@
 #include "opentx.h"
 #include "io/frsky_firmware_update.h"
 #include "hal/adc_driver.h"
+#include "timers_driver.h"
+
+#include "tasks.h"
+#include "tasks/mixer_task.h"
 
 #if defined(LIBOPENUI)
   #include "libopenui.h"
@@ -28,13 +33,13 @@
   #include "radio_calibration.h"
   #include "view_main.h"
   #include "view_text.h"
+
+  #include "gui/colorlcd/LvglWrapper.h"
 #endif
 
-#if defined(PCBSKY9X)
-#include "audio_driver.h"
+#if !defined(SIMU)
+#include <malloc.h>
 #endif
-
-extern uint16_t get_flysky_hall_adc_value(uint8_t ch);
 
 RadioData  g_eeGeneral;
 ModelData  g_model;
@@ -55,9 +60,7 @@ safetych_t safetyCh[MAX_OUTPUT_CHANNELS];
 // __DMA for the MSC_BOT_Data member
 union ReusableBuffer reusableBuffer __DMA;
 
-#if defined(STM32)
 uint8_t* MSC_BOT_Data = reusableBuffer.MSC_BOT_Data;
-#endif
 
 #if defined(DEBUG_LATENCY)
 uint8_t latencyToggleSwitch = 0;
@@ -71,6 +74,7 @@ const uint8_t bchout_ar[]  = {
 
 uint8_t channelOrder(uint8_t setup, uint8_t x)
 {
+  if (setup >= sizeof(bchout_ar)) return x;
   return ((*(bchout_ar + setup) >> (6 - (x - 1) * 2)) & 3) + 1;
 }
 
@@ -92,12 +96,6 @@ const uint8_t modn12x3[]  = {
     3, 2, 1, 0 };
 
 volatile uint8_t rtc_count = 0;
-uint32_t watchdogTimeout = 0;
-
-void watchdogSuspend(uint32_t timeout)
-{
-  watchdogTimeout = timeout;
-}
 
 #if defined(DEBUG_LATENCY)
 void toggleLatencySwitch()
@@ -118,14 +116,59 @@ void toggleLatencySwitch()
 }
 #endif
 
+static void readKeysAndTrims()
+{
+  uint32_t i;
+
+  uint8_t index = 0;
+  uint32_t keys_input = readKeys();
+  for (i = 0; i < TRM_BASE; i++) {
+    keys[index++].input(keys_input & (1 << i));
+  }
+
+  uint32_t trims_input = readTrims();
+  for (i = 1; i <= 1 << (TRM_LAST-TRM_BASE); i <<= 1) {
+    keys[index++].input(trims_input & i);
+  }
+
+#if defined(PWR_BUTTON_PRESS)
+  if ((keys_input || trims_input || pwrPressed()) &&
+      (g_eeGeneral.backlightMode & e_backlight_mode_keys)) {
+#else
+  if ((keys_input || trims_input) &&
+      (g_eeGeneral.backlightMode & e_backlight_mode_keys)) {
+#endif
+    // on keypress turn the light on
+    resetBacklightTimeout();
+  }
+}
+
+void checkValidMCU(void)
+{
+#if !defined(SIMU)
+  // Checks the radio MCU type matches intended firmware type
+  uint32_t idcode = DBGMCU->IDCODE & 0xFFF;
+
+#if defined(STM32F205xx)
+  #define TARGET_IDCODE   0x411
+#elif defined(STM32F407xx)
+  #define TARGET_IDCODE   0x413
+#elif defined(STM32F429xx)
+  #define TARGET_IDCODE   0x419
+#else
+  // Ensure new radio get registered :)
+  #define TARGET_IDCODE   0x0
+#endif
+
+  if(idcode != TARGET_IDCODE) {
+    runFatalErrorScreen("Wrong MCU");
+  }
+#endif
+}
+
 void per10ms()
 {
   g_tmr10ms++;
-
-  if (watchdogTimeout) {
-    watchdogTimeout -= 1;
-    WDG_RESET();  // Retrigger hardware watchdog
-  }
 
 #if defined(GUI)
   if (lightOffCounter) lightOffCounter--;
@@ -155,22 +198,18 @@ void per10ms()
   /* Update global Date/Time every 100 per10ms cycles */
   if (++g_ms100 == 100) {
     g_rtcTime++;   // inc global unix timestamp one second
-#if defined(COPROCESSOR)
-    if (g_rtcTime < 60 || rtc_count<5) {
-      rtcInit();
-      rtc_count++;
-    }
-    else {
-      coprocReadData(true);
-    }
-#endif
     g_ms100 = 0;
   }
 #endif
 
+  // TODO: to board...
   readKeysAndTrims();
 
-#if defined(ROTARY_ENCODER_NAVIGATION)
+#if defined(FUNCTION_SWITCHES)
+  evalFunctionSwitches();
+#endif
+
+#if defined(ROTARY_ENCODER_NAVIGATION) && !defined(LIBOPENUI)
   if (IS_ROTARY_ENCODER_NAVIGATION_ENABLE()) {
     static rotenc_t rePreviousValue;
     static bool cw = false;
@@ -205,6 +244,11 @@ void per10ms()
         cw = new_cw;
         lastEvent = g_tmr10ms;
       }
+
+      if (g_eeGeneral.backlightMode & e_backlight_mode_keys) {
+        resetBacklightTimeout();
+      }
+      inactivity.counter = 0;
     }
   }
 #endif
@@ -252,6 +296,11 @@ LimitData *limitAddress(uint8_t idx)
   return &g_model.limitData[idx];
 }
 
+USBJoystickChData *usbJChAddress(uint8_t idx)
+{
+  return &g_model.usbJoystickCh[idx];
+}
+
 
 void memswap(void * a, void * b, uint8_t size)
 {
@@ -269,8 +318,11 @@ void memswap(void * a, void * b, uint8_t size)
 #if defined(PXX2)
 void setDefaultOwnerId()
 {
+  uint8_t ch;
   for (uint8_t i = 0; i < PXX2_LEN_REGISTRATION_ID; i++) {
-     g_eeGeneral.ownerRegistrationID[i] = (((uint8_t *)cpu_uid)[4 + i] & 0x3fu);
+    ch = ((uint8_t *)cpu_uid)[4+i]&0x7f;
+    if(ch<0x20 || ch==0x7f) ch='-';
+    g_eeGeneral.ownerRegistrationID[PXX2_LEN_REGISTRATION_ID-1-i] = ch;
   }
 }
 #endif
@@ -278,8 +330,6 @@ void setDefaultOwnerId()
 void generalDefault()
 {
   memclear(&g_eeGeneral, sizeof(g_eeGeneral));
-  g_eeGeneral.version  = EEPROM_VER;
-  g_eeGeneral.variant = EEPROM_VARIANT;
 
 #if defined(PCBHORUS)
   g_eeGeneral.blOffBright = 20;
@@ -287,6 +337,10 @@ void generalDefault()
 
 #if defined(LCD_CONTRAST_DEFAULT)
   g_eeGeneral.contrast = LCD_CONTRAST_DEFAULT;
+#endif
+
+#if defined(DEFAULT_INTERNAL_MODULE)
+    g_eeGeneral.internalModule = DEFAULT_INTERNAL_MODULE;
 #endif
 
 #if defined(DEFAULT_POTS_CONFIG)
@@ -301,7 +355,12 @@ void generalDefault()
   g_eeGeneral.slidersConfig = DEFAULT_SLIDERS_CONFIG;
 #endif
 
-  // vBatWarn is voltage in 100mV, vBatMin is in 100mV but with -9V offset, vBatMax has a -12V offset
+#if defined(STICK_DEAD_ZONE)
+  g_eeGeneral.stickDeadZone = DEFAULT_STICK_DEADZONE;
+#endif
+
+  // vBatWarn is voltage in 100mV, vBatMin is in 100mV but with -9V offset,
+  // vBatMax has a -12V offset
   g_eeGeneral.vBatWarn = BATTERY_WARN;
   if (BATTERY_MIN != 90)
     g_eeGeneral.vBatMin = BATTERY_MIN - 90;
@@ -334,7 +393,7 @@ void generalDefault()
   memcpy(g_eeGeneral.bluetoothName, defaultName, sizeof(defaultName));
 #endif
 
-#if !defined(EEPROM)
+#if defined(STORAGE_MODELSLIST)
   strcpy(g_eeGeneral.currModelFilename, DEFAULT_MODEL_FILENAME);
 #endif
 
@@ -355,6 +414,12 @@ void generalDefault()
   g_eeGeneral.pwrOnSpeed = 1; // 1 second
 #endif
 
+#if defined(IFLIGHT_RELEASE)
+  g_eeGeneral.splashMode = 3;
+  g_eeGeneral.pwrOnSpeed = 2;
+  g_eeGeneral.pwrOffSpeed = 2;
+#endif
+
   g_eeGeneral.chkSum = 0xFFFF;
 }
 
@@ -366,7 +431,6 @@ uint16_t evalChkSum()
     sum += calibValues[i];
   return sum;
 }
-
 
 bool isInputRecursive(int index)
 {
@@ -512,9 +576,14 @@ bool inputsMoved()
     sum += anaIn(i) >> INAC_STICKS_SHIFT;
   for (uint8_t i=0; i<NUM_SWITCHES; i++)
     sum += getValue(MIXSRC_FIRST_SWITCH+i) >> INAC_SWITCHES_SHIFT;
-#if defined(GYRO)
+#if defined(IMU)
   for (uint8_t i=0; i<2; i++)
-    sum += getValue(MIXSRC_GYRO1+i) >> INAC_STICKS_SHIFT;
+    sum += getValue(MIXSRC_TILT_X+i) >> INAC_STICKS_SHIFT;
+#endif
+
+#if defined(SPACEMOUSE)
+  for (uint8_t i=0; i<(MIXSRC_LAST_SPACEMOUSE - MIXSRC_FIRST_SPACEMOUSE); i++)
+    sum += get_spacemouse_value(i) >> INAC_STICKS_SHIFT;
 #endif
 
   if (abs((int8_t)(sum-inactivity.sum)) > 1) {
@@ -539,29 +608,29 @@ void checkBacklight()
         resetBacklightTimeout();
       }
     }
-#if defined(HARDWARE_TOUCH) && defined(PCBNV14)
-    if (touchPanelEventOccured() && (g_eeGeneral.backlightMode & e_backlight_mode_keys)) {
-      resetBacklightTimeout();
-    }
-#endif
 
     if (requiredBacklightBright == BACKLIGHT_FORCED_ON) {
       currentBacklightBright = g_eeGeneral.backlightBright;
       BACKLIGHT_ENABLE();
-    }
-    else {
+    } else {
       bool backlightOn = ((g_eeGeneral.backlightMode == e_backlight_mode_on) ||
-                          (g_eeGeneral.backlightMode != e_backlight_mode_off && lightOffCounter) ||
-                          (g_eeGeneral.backlightMode == e_backlight_mode_off && isFunctionActive(FUNCTION_BACKLIGHT)));
+                          (g_eeGeneral.backlightMode != e_backlight_mode_off &&
+                           lightOffCounter) ||
+                          (g_eeGeneral.backlightMode == e_backlight_mode_off &&
+                           isFunctionActive(FUNCTION_BACKLIGHT)));
 
       if (flashCounter) {
         backlightOn = !backlightOn;
       }
       if (backlightOn) {
         currentBacklightBright = requiredBacklightBright;
+#if defined(COLORLCD)
+        // force backlight on for color lcd radios
+        if (currentBacklightBright > BACKLIGHT_LEVEL_MAX - BACKLIGHT_LEVEL_MIN)
+          currentBacklightBright = BACKLIGHT_LEVEL_MAX - BACKLIGHT_LEVEL_MIN;
+#endif
         BACKLIGHT_ENABLE();
-      }
-      else {
+      } else {
         BACKLIGHT_DISABLE();
       }
     }
@@ -570,22 +639,13 @@ void checkBacklight()
 
 void resetBacklightTimeout()
 {
-  lightOffCounter = ((uint16_t)g_eeGeneral.lightAutoOff*250) << 1;
-}
-
-#if MENUS_LOCK == 1
-bool readonly = true;
-bool readonlyUnlocked()
-{
-  if (readonly) {
-    POPUP_WARNING(STR_MODS_FORBIDDEN);
-    return false;
-  }
-  else {
-    return true;
-  }
-}
+  uint16_t autoOff = g_eeGeneral.lightAutoOff;
+#if defined(COLORLCD)
+  // prevent the timeout from being 0 seconds on color lcd radios
+  autoOff = std::max<uint16_t>(1, autoOff);
 #endif
+  lightOffCounter = (autoOff*250) << 1;
+}
 
 #if defined(SPLASH)
 void doSplash()
@@ -598,11 +658,6 @@ void doSplash()
     resetBacklightTimeout();
     drawSplash();
 
-#if defined(PCBSKY9X)
-    tmr10ms_t curTime = get_tmr10ms() + 10;
-    uint8_t contrast = 10;
-    lcdSetRefVolt(contrast);
-#endif
 
     getADC(); // init ADC array
 
@@ -636,18 +691,12 @@ void doSplash()
       }
 #endif
 
-#if defined(PCBSKY9X)
-      if (curTime < get_tmr10ms()) {
-        curTime += 10;
-        if (contrast < g_eeGeneral.contrast) {
-          contrast += 1;
-          lcdSetRefVolt(contrast);
-        }
-      }
-#endif
 
       checkBacklight();
     }
+#if defined(LIBOPENUI)
+    MainWindow::instance()->setActiveScreen();
+#endif
   }
 }
 #else
@@ -659,32 +708,36 @@ void doSplash()
 #if defined(MULTIMODULE)
 void checkMultiLowPower()
 {
-  if (isModuleMultimodule(EXTERNAL_MODULE) && g_model.moduleData[EXTERNAL_MODULE].multi.lowPowerMode) {
-    ALERT("MULTI", STR_WARN_MULTI_LOWPOWER, AU_ERROR);
-    return;
+  bool low_power_warning = false;
+  for (uint8_t i = 0; i < MAX_MODULES; i++) {
+    if (isModuleMultimodule(i) &&
+        g_model.moduleData[i].multi.lowPowerMode) {
+      low_power_warning = true;
+    }
   }
-#if defined(INTERNAL_MODULE_MULTI)
-  if (isModuleMultimodule(INTERNAL_MODULE) && g_model.moduleData[INTERNAL_MODULE].multi.lowPowerMode) {
+
+  if (low_power_warning) {
     ALERT("MULTI", STR_WARN_MULTI_LOWPOWER, AU_ERROR);
   }
-#endif
 }
 #endif
 
-#if defined(STM32)
 static void checkRTCBattery()
 {
-  GET_ADC_IF_MIXER_NOT_RUNNING();
+  if (!mixerTaskRunning()) getADC();
   if (getRTCBatteryVoltage() < 200) {
     ALERT(STR_BATTERY, STR_WARN_RTC_BATTERY_LOW, AU_ERROR);
   }
 }
-#endif
 
 #if defined(PCBFRSKY) || defined(PCBFLYSKY)
 static void checkFailsafe()
 {
   for (int i=0; i<NUM_MODULES; i++) {
+#if defined(MULTIMODULE)
+    // use delayed check for MPM
+    if (isModuleMultimodule(i)) break;
+#endif
     if (isModuleFailsafeAvailable(i)) {
       ModuleData & moduleData = g_model.moduleData[i];
       if (moduleData.failsafeMode == FAILSAFE_NOT_SET) {
@@ -701,7 +754,7 @@ static void checkFailsafe()
 #if defined(GUI)
 void checkAll()
 {
-#if defined(EEPROM_RLC)
+#if defined(EEPROM_RLC) && !defined(SDCARD_RAW) && !defined(SDCARD_YAML)
   checkLowEEPROM();
 #endif
 
@@ -714,13 +767,11 @@ void checkAll()
   checkFailsafe();
 
 
-#if defined(STM32)
   if (isVBatBridgeEnabled() && !g_eeGeneral.disableRtcWarning) {
     // only done once at board start
     checkRTCBattery();
   }
   disableVBatBridge();
-#endif
 
   if (g_model.displayChecklist && modelHasNotes()) {
     readModelNotes();
@@ -731,7 +782,32 @@ void checkAll()
 #endif
 
 #if defined(COLORLCD)
-  #warning "KEYSTUCK Message Not Yet Implemented"
+  if (!waitKeysReleased()) {
+    auto dlg = new FullScreenDialog(WARNING_TYPE_ALERT, STR_KEYSTUCK);
+    LED_ERROR_BEGIN();
+    AUDIO_ERROR_MESSAGE(AU_ERROR);
+
+    tmr10ms_t tgtime = get_tmr10ms() + 500;
+    uint32_t keys = readKeys();
+
+    std::string strKeys;
+    for (int i = 0; i < (int)TRM_BASE; i++) {
+      if (keys & (1 << i)) {
+        strKeys += std::string(STR_VKEYS[i]);
+      }
+    }
+
+    dlg->setMessage(strKeys.c_str());
+    dlg->setCloseCondition([tgtime]() {
+      if (tgtime >= get_tmr10ms() && keyDown()) {
+        return false;
+      } else {
+        return true;
+      }
+    });
+    dlg->runForever();
+    LED_ERROR_END();
+  }
 #else
   if (!waitKeysReleased()) {
     showMessageBox(STR_KEYSTUCK);
@@ -752,7 +828,7 @@ void checkAll()
 #endif // GUI
 
 
-#if defined(EEPROM_RLC)
+#if defined(EEPROM_RLC) && !defined(SDCARD_RAW) && !defined(SDCARD_YAML)
 void checkLowEEPROM()
 {
   if (g_eeGeneral.disableMemoryWarning) return;
@@ -774,44 +850,66 @@ bool isThrottleWarningAlertNeeded()
   // no other information available at the moment, and good enough to my option (otherwise too much exceptions...)
   uint8_t thrchn = ((g_model.thrTraceSrc==0) || (g_model.thrTraceSrc>NUM_POTS+NUM_SLIDERS)) ? THR_STICK : g_model.thrTraceSrc+NUM_STICKS-1;
 
-  GET_ADC_IF_MIXER_NOT_RUNNING();
+  if (!mixerTaskRunning()) getADC();
   evalInputs(e_perout_mode_notrainer); // let do evalInputs do the job
 
   int16_t v = calibratedAnalogs[thrchn];
   if (g_model.thrTraceSrc && g_model.throttleReversed) { // TODO : proper review of THR source definition and handling
     v = -v;
   }
-  return v > THRCHK_DEADBAND - 1024;
+
+  if (g_model.enableCustomThrottleWarning) {
+    int16_t idleValue = (int32_t)RESX * (int32_t)g_model.customThrottleWarningPosition / (int32_t)100;
+    return abs(v - idleValue) > THRCHK_DEADBAND;
+  }
+  else {
+    return v > THRCHK_DEADBAND - RESX;
+  }
 }
 
 #if defined(COLORLCD)
 void checkThrottleStick()
 {
+  char throttleNotIdle[strlen(STR_THROTTLE_NOT_IDLE) + 9];
   if (isThrottleWarningAlertNeeded()) {
+    if (g_model.enableCustomThrottleWarning) {
+    sprintf(throttleNotIdle, "%s (%d%%)", STR_THROTTLE_NOT_IDLE, g_model.customThrottleWarningPosition);
+    }
+    else {
+      strcpy(throttleNotIdle, STR_THROTTLE_NOT_IDLE);
+    }
+    LED_ERROR_BEGIN();
     AUDIO_ERROR_MESSAGE(AU_THROTTLE_ALERT);
-    auto dialog = new FullScreenDialog(WARNING_TYPE_ALERT, TR_THROTTLE_UPPERCASE, STR_THROTTLE_NOT_IDLE, STR_PRESS_ANY_KEY_TO_SKIP);
-    dialog->setCloseCondition([]() {
-        return !isThrottleWarningAlertNeeded();
-    });
+    auto dialog =
+        new FullScreenDialog(WARNING_TYPE_ALERT, TR_THROTTLE_UPPERCASE,
+                             throttleNotIdle, STR_PRESS_ANY_KEY_TO_SKIP);
+    dialog->setCloseCondition([]() { return !isThrottleWarningAlertNeeded(); });
     dialog->runForever();
+    LED_ERROR_END();
   }
 }
 #else
 void checkThrottleStick()
 {
+  char throttleNotIdle[strlen(STR_THROTTLE_NOT_IDLE) + 9];
   if (!isThrottleWarningAlertNeeded()) {
     return;
   }
-
+  if (g_model.enableCustomThrottleWarning) {
+    sprintf(throttleNotIdle, "%s (%d%%)", STR_THROTTLE_NOT_IDLE, g_model.customThrottleWarningPosition);
+  }
+  else {
+    strcpy(throttleNotIdle, STR_THROTTLE_NOT_IDLE);
+  }
   // first - display warning; also deletes inputs if any have been before
   LED_ERROR_BEGIN();
-  RAISE_ALERT(TR_THROTTLE_UPPERCASE, STR_THROTTLE_NOT_IDLE, STR_PRESS_ANY_KEY_TO_SKIP, AU_THROTTLE_ALERT);
+  RAISE_ALERT(TR_THROTTLE_UPPERCASE, throttleNotIdle, STR_PRESS_ANY_KEY_TO_SKIP, AU_THROTTLE_ALERT);
 
 #if defined(PWR_BUTTON_PRESS)
   bool refresh = false;
 #endif
 
-  while (!getEvent()) {
+  while (!keyDown()) {
     if (!isThrottleWarningAlertNeeded()) {
       return;
     }
@@ -827,7 +925,7 @@ void checkThrottleStick()
       refresh = true;
     }
     else if (power == e_power_on && refresh) {
-      RAISE_ALERT(TR_THROTTLE_UPPERCASE, STR_THROTTLE_NOT_IDLE, STR_PRESS_ANY_KEY_TO_SKIP, AU_NONE);
+      RAISE_ALERT(TR_THROTTLE_UPPERCASE, throttleNotIdle, STR_PRESS_ANY_KEY_TO_SKIP, AU_NONE);
       refresh = false;
     }
 #else
@@ -942,14 +1040,14 @@ void checkTrims()
 #endif
     int8_t trimInc = g_model.trimInc + 1;
     int8_t v = (trimInc==-1) ? min(32, abs(before)/4+1) : (1 << trimInc); // TODO flash saving if (trimInc < 0)
-    if (thro) v = 4; // if throttle trim and trim trottle then step=4
+    if (thro) v = 4; // if throttle trim and trim throttle then step=4
 #if defined(GVARS)
     if (TRIM_REUSED(idx)) v = 1;
 #endif
     int16_t after = (k&1) ? before + v : before - v;   // positive = k&1
-    bool beepTrim = false;
+    bool beepTrim = true;
 
-    if (!thro && before!=0 && ((!(after < 0) == (before < 0)) || after==0)) { //forcing a stop at centerered trim when changing sides
+    if (!thro && before!=0 && ((!(after < 0) == (before < 0)) || after==0)) { //forcing a stop at centered trim when changing sides
       after = 0;
       beepTrim = true;
       AUDIO_TRIM_MIDDLE();
@@ -963,13 +1061,13 @@ void checkTrims()
       int16_t vmax = GVAR_MAX - g_model.gvars[gvar].max;
       if (after < vmin) {
         after = vmin;
-        beepTrim = true;
+        beepTrim = false;
         AUDIO_TRIM_MIN();
         killEvents(event);
       }
       else if (after > vmax) {
         after = vmax;
-        beepTrim = true;
+        beepTrim = false;
         AUDIO_TRIM_MAX();
         killEvents(event);
       }
@@ -979,31 +1077,30 @@ void checkTrims()
     else
 #endif
     {
+      // Determine Max and Min trim values based on Extended Trim setting
       int16_t tMax = g_model.extendedTrims ? TRIM_EXTENDED_MAX : TRIM_MAX;
       int16_t tMin = g_model.extendedTrims ? TRIM_EXTENDED_MIN : TRIM_MIN;
-      if (before > tMin && after <= tMin) {
-        beepTrim = true;
+
+      // Play warning whe going past limits and remove any buffered trim moves
+      if (before >= tMin && after <= tMin) {
+        beepTrim = false;
         AUDIO_TRIM_MIN();
         killEvents(event);
       }
-      else if (before < tMax && after >= tMax) {
-        beepTrim = true;
+      else if (before <= tMax && after >= tMax) {
+        beepTrim = false;
         AUDIO_TRIM_MAX();
         killEvents(event);
       }
 
-      // Allow only move into the right direction if over the limits
-      if ((before < after && after > tMax) || // increasing over tMax
-          (before > after && after < tMin)) { // decreasing under tMin
-        after = before;
+      // If the new value is outside the limit, set it to the limit. This could have
+      // been done while playing the warning above but this way it catches any other
+      // scenarios
+      if (after < tMin) {
+        after = tMin;
       }
-
-      // Clip at hard limits
-      if (after < TRIM_EXTENDED_MIN) {
-        after = TRIM_EXTENDED_MIN;
-      }
-      else if (after > TRIM_EXTENDED_MAX) {
-        after = TRIM_EXTENDED_MAX;
+      else if (after > tMax) {
+        after = tMax;
       }
 
       if (!setTrimValue(phase, idx, after)) {
@@ -1012,137 +1109,11 @@ void checkTrims()
       }
     }
 
-    if (!beepTrim) {
+    if (beepTrim) {
       AUDIO_TRIM_PRESS(after);
     }
-
   }
 }
-
-#if !defined(SIMU)
-uint16_t s_anaFilt[NUM_ANALOGS];
-#endif
-
-#if defined(JITTER_MEASURE)
-JitterMeter<uint16_t> rawJitter[NUM_ANALOGS];
-JitterMeter<uint16_t> avgJitter[NUM_ANALOGS];
-tmr10ms_t jitterResetTime = 0;
-#endif
-
-#define JITTER_FILTER_STRENGTH  4         // tune this value, bigger value - more filtering (range: 1-5) (see explanation below)
-#define ANALOG_SCALE            1         // tune this value, bigger value - more filtering (range: 0-1) (see explanation below)
-
-#define JITTER_ALPHA            (1<<JITTER_FILTER_STRENGTH)
-#define ANALOG_MULTIPLIER       (1<<ANALOG_SCALE)
-#define ANA_FILT(chan)          (s_anaFilt[chan] / (JITTER_ALPHA * ANALOG_MULTIPLIER))
-#if (JITTER_ALPHA * ANALOG_MULTIPLIER > 32)
-  #error "JITTER_FILTER_STRENGTH and ANALOG_SCALE are too big, their summ should be <= 5 !!!"
-#endif
-
-#if !defined(SIMU)
-uint16_t anaIn(uint8_t chan)
-{
-  return ANA_FILT(chan);
-}
-
-void getADC()
-{
-#if defined(JITTER_MEASURE)
-  if (JITTER_MEASURE_ACTIVE() && jitterResetTime < get_tmr10ms()) {
-    // reset jitter measurement every second
-    for (uint32_t x=0; x<NUM_ANALOGS; x++) {
-      rawJitter[x].reset();
-      avgJitter[x].reset();
-    }
-    jitterResetTime = get_tmr10ms() + 100;  //every second
-  }
-#endif
-
-  DEBUG_TIMER_START(debugTimerAdcRead);
-  if (!adcRead())
-      TRACE("adcRead failed");
-  DEBUG_TIMER_STOP(debugTimerAdcRead);
-
-  for (uint8_t x=0; x<NUM_ANALOGS; x++) {
-    uint16_t v;
-
-#if defined(FLYSKY_HALL_STICKS)
-    if (x < 4)
-      v = get_flysky_hall_adc_value(x) >> (1 - ANALOG_SCALE);
-    else
-      v = getAnalogValue(x) >> (1 - ANALOG_SCALE);
-#else
-    v = getAnalogValue(x) >> (1 - ANALOG_SCALE);
-#endif
-
-    // Jitter filter:
-    //    * pass trough any big change directly
-    //    * for small change use Modified moving average (MMA) filter
-    //
-    // Explanation:
-    //
-    // Normal MMA filter has this formula:
-    //            <out> = ((ALPHA-1)*<out> + <in>)/ALPHA
-    //
-    // If calculation is done this way with integer arithmetics, then any small change in
-    // input signal is lost. One way to combat that, is to rearrange the formula somewhat,
-    // to store a more precise (larger) number between iterations. The basic idea is to
-    // store undivided value between iterations. Therefore an new variable <filtered> is
-    // used. The new formula becomes:
-    //           <filtered> = <filtered> - <filtered>/ALPHA + <in>
-    //           <out> = <filtered>/ALPHA  (use only when out is needed)
-    //
-    // The above formula with a maximum allowed ALPHA value (we are limited by
-    // the 16 bit s_anaFilt[]) was tested on the radio. The resulting signal still had
-    // some jitter (a value of 1 was observed). The jitter might be bigger on other
-    // radios.
-    //
-    // So another idea is to use larger input values for filtering. So instead of using
-    // input in a range from 0 to 2047, we use twice larger number (temp[x] is divided less)
-    //
-    // This also means that ALPHA must be lowered (remember 16 bit limit), but test results
-    // have proved that this kind of filtering gives better results. So the recommended values
-    // for filter are:
-    //     JITTER_FILTER_STRENGTH  4
-    //     ANALOG_SCALE            1
-    //
-    // Variables mapping:
-    //   * <in> = v
-    //   * <out> = s_anaFilt[x]
-    uint16_t previous = s_anaFilt[x] / JITTER_ALPHA;
-    uint16_t diff = (v > previous) ? (v - previous) : (previous - v);
-    if (!g_eeGeneral.jitterFilter && diff < (10*ANALOG_MULTIPLIER)) { // g_eeGeneral.jitterFilter is inverted, 0 - active
-      // apply jitter filter
-      s_anaFilt[x] = (s_anaFilt[x] - previous) + v;
-    }
-    else {
-      // use unfiltered value
-      s_anaFilt[x] = v * JITTER_ALPHA;
-    }
-
-#if defined(JITTER_MEASURE)
-    if (JITTER_MEASURE_ACTIVE()) {
-      avgJitter[x].measure(ANA_FILT(x));
-    }
-#endif
-
-    #define ANAFILT_MAX    (2 * RESX * JITTER_ALPHA * ANALOG_MULTIPLIER - 1)
-    StepsCalibData * calib = (StepsCalibData *) &g_eeGeneral.calib[x];
-    if (IS_POT_MULTIPOS(x) && IS_MULTIPOS_CALIBRATED(calib)) {
-      // TODO: consider adding another low pass filter to eliminate multipos switching glitches
-      uint8_t vShifted = ANA_FILT(x) >> 4;
-      s_anaFilt[x] = ANAFILT_MAX;
-      for (uint32_t i=0; i<calib->count; i++) {
-        if (vShifted < calib->steps[i]) {
-          s_anaFilt[x] = (i * ANAFILT_MAX) / calib->count;
-          break;
-        }
-      }
-    }
-  }
-}
-
-#endif // SIMU
 
 uint8_t g_vbat100mV = 0;
 uint16_t lightOffCounter;
@@ -1152,8 +1123,7 @@ uint16_t sessionTimer;
 uint16_t s_timeCumThr;    // THR in 1/16 sec
 uint16_t s_timeCum16ThrP; // THR% in 1/16 sec
 
-uint8_t  trimsCheckTimer = 0;
-
+uint8_t trimsCheckTimer = 0;
 uint8_t trimsDisplayTimer = 0;
 uint8_t trimsDisplayMask = 0;
 
@@ -1193,199 +1163,6 @@ void flightReset(uint8_t check)
   }
 }
 
-#if defined(THRTRACE)
-uint8_t  s_traceBuf[MAXTRACE];
-uint16_t s_traceWr;
-uint8_t  s_cnt_10s;
-uint16_t s_cnt_samples_thr_10s;
-uint16_t s_sum_samples_thr_10s;
-#endif
-
-void evalTrims()
-{
-  uint8_t phase = mixerCurrentFlightMode;
-  for (uint8_t i=0; i<NUM_TRIMS; i++) {
-    // do trim -> throttle trim if applicable
-    int16_t trim = getTrimValue(phase, i);
-    if (trimsCheckTimer > 0) {
-      trim = 0;
-    }
-
-    trims[i] = trim*2;
-  }
-}
-
-uint8_t s_mixer_first_run_done = false;
-
-void doMixerCalculations()
-{
-  static tmr10ms_t lastTMR = 0;
-
-  tmr10ms_t tmr10ms = get_tmr10ms();
-
-#if defined(DEBUG_LATENCY_MIXER_RF) || defined(DEBUG_LATENCY_RF_ONLY)
-  static tmr10ms_t lastLatencyToggle = 0;
-  if (tmr10ms - lastLatencyToggle >= 10) {
-    lastLatencyToggle = tmr10ms;
-    toggleLatencySwitch();
-  }
-#endif
-
-  uint8_t tick10ms = (tmr10ms >= lastTMR ? tmr10ms - lastTMR : 1);
-  // handle tick10ms overrun
-  // correct overflow handling costs a lot of code; happens only each 11 min;
-  // therefore forget the exact calculation and use only 1 instead; good compromise
-  lastTMR = tmr10ms;
-
-  DEBUG_TIMER_START(debugTimerGetAdc);
-  getADC();
-  DEBUG_TIMER_STOP(debugTimerGetAdc);
-
-  DEBUG_TIMER_START(debugTimerGetSwitches);
-  getSwitchesPosition(!s_mixer_first_run_done);
-  DEBUG_TIMER_STOP(debugTimerGetSwitches);
-
-#if defined(PCBSKY9X) && !defined(SIMU)
-  Current_analogue = (Current_analogue*31 + s_anaFilt[8] ) >> 5 ;
-  if (Current_analogue > Current_max)
-    Current_max = Current_analogue ;
-#endif
-
-
-  DEBUG_TIMER_START(debugTimerEvalMixes);
-  evalMixes(tick10ms);
-  DEBUG_TIMER_STOP(debugTimerEvalMixes);
-}
-
-void doMixerPeriodicUpdates()
-{
-  static tmr10ms_t lastTMR = 0;
-
-  tmr10ms_t tmr10ms = get_tmr10ms();
-
-  uint8_t tick10ms = (tmr10ms >= lastTMR ? tmr10ms - lastTMR : 1);
-  // handle tick10ms overrun
-  // correct overflow handling costs a lot of code; happens only each 11 min;
-  // therefore forget the exact calculation and use only 1 instead; good compromise
-  lastTMR = tmr10ms;
-
-  DEBUG_TIMER_START(debugTimerMixes10ms);
-  if (tick10ms) {
-    /* Throttle trace */
-    int16_t val;
-
-    if (g_model.thrTraceSrc > NUM_POTS+NUM_SLIDERS) {
-      uint8_t ch = g_model.thrTraceSrc-NUM_POTS-NUM_SLIDERS-1;
-      val = channelOutputs[ch];
-
-      LimitData * lim = limitAddress(ch);
-      int16_t gModelMax = LIMIT_MAX_RESX(lim);
-      int16_t gModelMin = LIMIT_MIN_RESX(lim);
-
-      if (lim->revert)
-        val = -val + gModelMax;
-      else
-        val = val - gModelMin;
-
-#if defined(PPM_LIMITS_SYMETRICAL)
-      if (lim->symetrical) {
-        val -= calc1000toRESX(lim->offset);
-      }
-#endif
-
-      gModelMax -= gModelMin; // we compare difference between Max and Mix for recaling needed; Max and Min are shifted to 0 by default
-      // usually max is 1024 min is -1024 --> max-min = 2048 full range
-
-      if (gModelMax != 0 && gModelMax != 2048)
-        val = (int32_t) (val << 11) / (gModelMax); // rescaling only needed if Min, Max differs
-
-      if (val < 0)
-        val=0;  // prevent val be negative, which would corrupt throttle trace and timers; could occur if safetyswitch is smaller than limits
-    }
-    else {
-      val = RESX + calibratedAnalogs[g_model.thrTraceSrc == 0 ? THR_STICK : g_model.thrTraceSrc+NUM_STICKS-1];
-    }
-
-    val >>= (RESX_SHIFT-6); // calibrate it (resolution increased by factor 4)
-
-    evalTimers(val, tick10ms);
-
-    static uint8_t  s_cnt_100ms;
-    static uint8_t  s_cnt_1s;
-    static uint8_t  s_cnt_samples_thr_1s;
-    static uint16_t s_sum_samples_thr_1s;
-
-    s_cnt_samples_thr_1s++;
-    s_sum_samples_thr_1s+=val;
-
-    if ((s_cnt_100ms += tick10ms) >= 10) { // 0.1sec
-      s_cnt_100ms -= 10;
-      s_cnt_1s += 1;
-
-      logicalSwitchesTimerTick();
-      checkTrainerSignalWarning();
-
-      if (s_cnt_1s >= 10) { // 1sec
-        s_cnt_1s -= 10;
-        sessionTimer += 1;
-        inactivity.counter++;
-        if ((((uint8_t)inactivity.counter) & 0x07) == 0x01 && g_eeGeneral.inactivityTimer && inactivity.counter > ((uint16_t)g_eeGeneral.inactivityTimer * 60))
-          AUDIO_INACTIVITY();
-
-#if defined(AUDIO)
-        if (mixWarning & 1) if ((sessionTimer&0x03)==0) AUDIO_MIX_WARNING(1);
-        if (mixWarning & 2) if ((sessionTimer&0x03)==1) AUDIO_MIX_WARNING(2);
-        if (mixWarning & 4) if ((sessionTimer&0x03)==2) AUDIO_MIX_WARNING(3);
-#endif
-
-        val = s_sum_samples_thr_1s / s_cnt_samples_thr_1s;
-        s_timeCum16ThrP += (val>>3);  // s_timeCum16ThrP would overrun if we would store throttle value with higher accuracy; therefore stay with 16 steps
-        if (val)
-          s_timeCumThr += 1;
-        s_sum_samples_thr_1s >>= 2;  // correct better accuracy now, because trace graph can show this information; in case thrtrace is not active, the compile should remove this
-
-#if defined(THRTRACE)
-        // throttle trace is done every 10 seconds; Tracebuffer is adjusted to screen size.
-        // in case buffer runs out, it wraps around
-        // resolution for y axis is only 32, therefore no higher value makes sense
-        s_cnt_samples_thr_10s += s_cnt_samples_thr_1s;
-        s_sum_samples_thr_10s += s_sum_samples_thr_1s;
-
-        if (++s_cnt_10s >= 10) { // 10s
-          s_cnt_10s -= 10;
-          val = s_sum_samples_thr_10s / s_cnt_samples_thr_10s;
-          s_sum_samples_thr_10s = 0;
-          s_cnt_samples_thr_10s = 0;
-          s_traceBuf[s_traceWr % MAXTRACE] = val;
-          s_traceWr++;
-        }
-#endif
-
-        s_cnt_samples_thr_1s = 0;
-        s_sum_samples_thr_1s = 0;
-      }
-    }
-
-#if defined(PXX) || defined(DSM2)
-    static uint8_t countRangecheck = 0;
-    for (uint8_t i = 0; i < NUM_MODULES; ++i) {
-      if (isModuleBeeping(i)) {
-        if (++countRangecheck >= 250) {
-          countRangecheck = 0;
-          AUDIO_PLAY(AU_SPECIAL_SOUND_CHEEP);
-        }
-      }
-    }
-#endif
-
-    checkTrims();
-  }
-
-  DEBUG_TIMER_STOP(debugTimerMixes10ms);
-
-  s_mixer_first_run_done = true;
-}
-
 #if !defined(OPENTX_START_DEFAULT_ARGS)
   #define OPENTX_START_DEFAULT_ARGS  0
 #endif
@@ -1398,6 +1175,7 @@ void opentxStart(const uint8_t startOptions = OPENTX_START_DEFAULT_ARGS)
 
 #if defined(GUI)
   if (!calibration_needed && !(startOptions & OPENTX_START_NO_SPLASH)) {
+    AUDIO_HELLO();
     doSplash();
   }
 #endif
@@ -1406,14 +1184,15 @@ void opentxStart(const uint8_t startOptions = OPENTX_START_DEFAULT_ARGS)
   trace_event(trace_start, 0x12345678);
 #endif
 
-#if defined(PCBSKY9X) && defined(SDCARD) && !defined(SIMU)
-  for (int i=0; i<500 && !Card_initialized; i++) {
-    RTOS_WAIT_MS(2); // 2ms
-  }
-#endif
 
 #if defined(TEST_BUILD_WARNING)
   ALERT(STR_TEST_WARNING, TR_TEST_NOTSAFE, AU_ERROR);
+#endif
+
+#if defined(FUNCTION_SWITCHES)
+  if (!UNEXPECTED_SHUTDOWN()) {
+    setFSStartupPosition();
+  }
 #endif
 
 #if defined(GUI)
@@ -1439,12 +1218,9 @@ void opentxClose(uint8_t shutdown)
   watchdogSuspend(2000/*20s*/);
 
   if (shutdown) {
-    pausePulses();   // stop mixer task to disable trims processing while in shutdown
+    pulsesStop();
     AUDIO_BYE();
     // TODO needed? telemetryEnd();
-#if defined(LUA)
-    luaClose(&lsScripts);
-#endif
 #if defined(HAPTIC)
     hapticOff();
 #endif
@@ -1461,12 +1237,6 @@ void opentxClose(uint8_t shutdown)
     sessionTimer = 0;
   }
 
-#if defined(PCBSKY9X)
-  uint32_t mAhUsed = g_eeGeneral.mAhUsed + Current_used * (488 + g_eeGeneral.txCurrentCalibration) / 8192 / 36;
-  if (g_eeGeneral.mAhUsed != mAhUsed) {
-    g_eeGeneral.mAhUsed = mAhUsed;
-  }
-#endif
 
   g_eeGeneral.unexpectedShutdown = 0;
   storageDirty(EE_GENERAL);
@@ -1479,17 +1249,25 @@ void opentxClose(uint8_t shutdown)
   RTOS_WAIT_MS(100);
 
 #if defined(COLORLCD)
-  MainWindow::instance()->deleteChildren();
+  // clear layer stack first
+  for (Window* w = Layer::back(); w; w = Layer::back()) w->deleteLater();
+  MainWindow::instance()->clear();
   // this is necessary as the custom screens are not deleted
   // by using deleteCustomScreens(), but here through it's parent window
   memset(customScreens, 0, sizeof(customScreens));
 
   //TODO: In fact we want only to empty the trash (private method)
   MainWindow::instance()->run();
-
+#if defined(LUA)
   luaUnregisterWidgets();
   luaClose(&lsWidgets);
   lsWidgets = 0;
+#endif
+#endif
+#if defined(LUA)
+  // the script context needs to be closed *after*
+  // the widgets, as it has been the first to be opened
+  luaClose(&lsScripts);
 #endif
 
 #if defined(SDCARD)
@@ -1497,13 +1275,12 @@ void opentxClose(uint8_t shutdown)
 #endif
 }
 
-#if defined(STM32)
 void opentxResume()
 {
   TRACE("opentxResume");
 
   sdMount();
-#if defined(COLORLCD)
+#if defined(COLORLCD) && defined(LUA)
   // reload widgets
   luaInitThemesAndWidgets();
 #endif
@@ -1530,7 +1307,6 @@ void opentxResume()
     storageDirty(EE_GENERAL);
   }
 }
-#endif
 
 #define INSTANT_TRIM_MARGIN 10 /* around 1% */
 
@@ -1552,7 +1328,7 @@ void instantTrim()
         if (!EXPO_VALID(expo))
           break; // end of list
         if (stick == expo->srcRaw - MIXSRC_FIRST_STICK) {
-          if (expo->carryTrim < 0) {
+          if (expo->trimSource < 0) {
             // only default trims will be taken into account
             addTrim = false;
             break;
@@ -1581,7 +1357,7 @@ void instantTrim()
 
 void copySticksToOffset(uint8_t ch)
 {
-  pauseMixerCalculations();
+  mixerTaskStop();
   int32_t zero = (int32_t)channelOutputs[ch];
 
   evalFlightModeMixes(e_perout_mode_nosticks+e_perout_mode_notrainer, 0);
@@ -1594,7 +1370,8 @@ void copySticksToOffset(uint8_t ch)
   }
   zero = (zero*256000 - val*lim) / (1024*256-val);
   ld->offset = (ld->revert ? -zero : zero);
-  resumeMixerCalculations();
+
+  mixerTaskStart();
   storageDirty(EE_MODEL);
 }
 
@@ -1602,7 +1379,7 @@ void copyTrimsToOffset(uint8_t ch)
 {
   int16_t zero;
 
-  pauseMixerCalculations();
+  mixerTaskStop();
 
   evalFlightModeMixes(e_perout_mode_noinput, 0); // do output loop - zero input sticks and trims
   zero = applyLimits(ch, chans[ch]);
@@ -1616,7 +1393,7 @@ void copyTrimsToOffset(uint8_t ch)
   v += (output * 125) / 128;
   g_model.limitData[ch].offset = limit((int16_t)-1000, (int16_t)v, (int16_t)1000); // make sure the offset doesn't go haywire
 
-  resumeMixerCalculations();
+  mixerTaskStart();
   storageDirty(EE_MODEL);
 }
 
@@ -1627,7 +1404,7 @@ void copyMinMaxToOutputs(uint8_t ch)
   int16_t max = ld->max;
   int16_t center = ld->ppmCenter;
 
-  pauseMixerCalculations();
+  mixerTaskStop();
 
   for (uint8_t chan = 0; chan < MAX_OUTPUT_CHANNELS; chan++) {
     ld = limitAddress(chan);
@@ -1636,7 +1413,7 @@ void copyMinMaxToOutputs(uint8_t ch)
     ld->ppmCenter = center;
   }
 
-  resumeMixerCalculations();
+  mixerTaskStart();
   storageDirty(EE_MODEL);
 }
 
@@ -1644,9 +1421,6 @@ void copyMinMaxToOutputs(uint8_t ch)
 
 inline uint32_t PWR_PRESS_DURATION_MIN()
 {
-  if (g_eeGeneral.version != EEPROM_VER)
-    return 200;
-
   return (2 - g_eeGeneral.pwrOnSpeed) * 100;
 }
 
@@ -1684,7 +1458,7 @@ void moveTrimsToOffsets() // copy state of 3 primary to subtrim
 {
   int16_t zeros[MAX_OUTPUT_CHANNELS];
 
-  pauseMixerCalculations();
+  mixerTaskStop();
 
   evalFlightModeMixes(e_perout_mode_noinput, 0); // do output loop - zero input sticks and trims
 
@@ -1717,15 +1491,14 @@ void moveTrimsToOffsets() // copy state of 3 primary to subtrim
     }
   }
 
-  resumeMixerCalculations();
+  mixerTaskStart();
 
   storageDirty(EE_MODEL);
   AUDIO_WARNING2();
 }
 
 #if defined(ROTARY_ENCODER_NAVIGATION)
-  volatile rotenc_t rotencValue = 0;
-  uint8_t rotencSpeed;
+uint8_t rotencSpeed = ROTENC_LOWSPEED;
 #endif
 
 void opentxInit()
@@ -1737,13 +1510,17 @@ void opentxInit()
 #elif defined(GUI)
   // TODO add a function for this (duplicated)
   menuHandlers[0] = menuMainView;
-  #if MENUS_LOCK != 2/*no menus*/
-    menuHandlers[1] = menuModelSelect;
-  #endif
+  menuHandlers[1] = menuModelSelect;
 #endif
 
-#if defined(EEPROM)
+#if defined(STARTUP_ANIMATION)
+  lcdRefreshWait();
+  lcdClear();
+  lcdRefresh();
+  lcdRefreshWait();
+
   bool radioSettingsValid = storageReadRadioSettings(false);
+  (void)radioSettingsValid;
 #endif
 
   BACKLIGHT_ENABLE(); // we start the backlight during the startup animation
@@ -1757,6 +1534,7 @@ void opentxInit()
   }
 #else // defined(PWR_BUTTON_PRESS)
   pwrOn();
+  haptic.play(15, 3, PLAY_NOW);
 #endif
 
   // Radios handle UNEXPECTED_SHUTDOWN() differently:
@@ -1781,6 +1559,13 @@ void opentxInit()
     if (!sdMounted())
       sdInit();
 
+#if !defined(COLORLCD)
+    if (!sdMounted()) {
+      g_eeGeneral.pwrOffSpeed = 2;
+      runFatalErrorScreen(STR_NO_SDCARD);
+    }
+#endif
+
 #if defined(AUTOUPDATE)
     sportStopSendByteLoop();
     if (f_stat(AUTOUPDATE_FILENAME, nullptr) == FR_OK) {
@@ -1789,13 +1574,6 @@ void opentxInit()
 #if defined(BLUETOOTH)
         if (information.productFamily == FIRMWARE_FAMILY_BLUETOOTH_CHIP) {
           if (bluetooth.flashFirmware(AUTOUPDATE_FILENAME) == nullptr)
-            f_unlink(AUTOUPDATE_FILENAME);
-        }
-#endif
-#if defined(HARDWARE_POWER_MANAGEMENT_UNIT)
-        if (information.productFamily == FIRMWARE_FAMILY_POWER_MANAGEMENT_UNIT) {
-          FrskyChipFirmwareUpdate device;
-          if (device.flashFirmware(AUTOUPDATE_FILENAME, false) == nullptr)
             f_unlink(AUTOUPDATE_FILENAME);
         }
 #endif
@@ -1836,20 +1614,12 @@ void opentxInit()
 #endif
 #endif  // #if !defined(EEPROM)
 
-#if defined(AUX_SERIAL)
-  auxSerialInit(g_eeGeneral.auxSerialMode, modelTelemetryProtocol());
-#endif
-
-#if defined(AUX2_SERIAL)
-  aux2SerialInit(g_eeGeneral.aux2SerialMode, modelTelemetryProtocol());
-#endif
-
-#if MENUS_LOCK == 1
-  getMovedSwitch();
-  if (TRIMS_PRESSED() && g_eeGeneral.switchUnlockStates==switches_states) {
-    readonly = false;
-  }
-#endif
+// TODO: move to board on hook (onStorageReady()?)
+// #if defined(SPORT_UPDATE_PWR_GPIO)
+//   SPORT_UPDATE_POWER_INIT();
+// #endif
+  
+  initSerialPorts();
 
   currentSpeakerVolume = requiredSpeakerVolume = g_eeGeneral.speakerVolume + VOLUME_LEVEL_DEF;
   currentBacklightBright = requiredBacklightBright = g_eeGeneral.backlightBright;
@@ -1861,21 +1631,16 @@ void opentxInit()
   audioQueue.start();
   BACKLIGHT_ENABLE();
 
-#if defined(PCBSKY9X)
-  // Set ADC gains here
-  setSticksGain(g_eeGeneral.sticksGain);
-#endif
-
-#if defined(PCBSKY9X) && defined(BLUETOOTH)
-  btInit();
-#endif
-
-#if defined(SPORT_UPDATE_PWR_GPIO)
-  SPORT_UPDATE_POWER_INIT();
-#endif
-
 #if defined(COLORLCD)
   loadTheme();
+  if (g_eeGeneral.backlightMode == e_backlight_mode_off) {
+    // no backlight mode off on color lcd radios
+    g_eeGeneral.backlightMode = e_backlight_mode_keys;
+  }
+  if (g_eeGeneral.backlightBright > BACKLIGHT_LEVEL_MAX - BACKLIGHT_LEVEL_MIN)
+    g_eeGeneral.backlightBright = BACKLIGHT_LEVEL_MAX - BACKLIGHT_LEVEL_MIN;
+  if (g_eeGeneral.lightAutoOff < 1)
+    g_eeGeneral.lightAutoOff = 1;
 #endif
 
   if (g_eeGeneral.backlightMode != e_backlight_mode_off) {
@@ -1894,14 +1659,13 @@ void opentxInit()
   }
 #endif
 
-#if defined(GUI)
+#if defined(GUI) && !defined(COLORLCD)
   lcdSetContrast();
 #endif
 
   resetBacklightTimeout();
 
-  startPulses();
-
+  pulsesStart();
   WDG_ENABLE(WDG_DURATION);
 }
 
@@ -1919,21 +1683,10 @@ int main()
   initialise_monitor_handles();
 #endif
 
-#if defined(STM32)
 
 #if !defined(SIMU)
   /* Ensure all priority bits are assigned as preemption priority bits. */
   NVIC_PriorityGroupConfig( NVIC_PriorityGroup_4 );
-#endif
-
-  TRACE("reusableBuffer: modelSel=%d, moduleSetup=%d, calib=%d, sdManager=%d, hardwareAndSettings=%d, spectrumAnalyser=%d, usb=%d",
-        sizeof(reusableBuffer.modelsel),
-        sizeof(reusableBuffer.moduleSetup),
-        sizeof(reusableBuffer.calib),
-        sizeof(reusableBuffer.sdManager),
-        sizeof(reusableBuffer.hardwareAndSettings),
-        sizeof(reusableBuffer.spectrumAnalyser),
-        sizeof(reusableBuffer.MSC_BOT_Data));
 #endif
 
   // G: The WDT remains active after a WDT reset -- at maximum clock speed. So it's
@@ -1946,14 +1699,10 @@ int main()
 
   boardInit();
 
-#if defined(COLORLCD)
-  extern void loadFonts(); // TODO ?
-  loadFonts();
-#endif
+  modulePortInit();
+  pulsesInit();
 
-#if !defined(SIMU)
-  stackPaint();
-#endif
+  checkValidMCU();
 
 #if defined(PCBHORUS)
   if (!IS_FIRMWARE_COMPATIBLE_WITH_BOARD()) {
@@ -1961,12 +1710,19 @@ int main()
   }
 #endif
 
-#if !defined(EEPROM)
+#if defined(COLORLCD)
+  // SD_CARD_PRESENT() does not work properly on most
+  // B&W targets, so that we need to delay the detection
+  // until the SD card is mounted (requires RTOS scheduler running)
   if (!SD_CARD_PRESENT() && !UNEXPECTED_SHUTDOWN()) {
     runFatalErrorScreen(STR_NO_SDCARD);
   }
 #endif
 
+#if defined(EEPROM) && defined(EEPROM_RLC)
+  eepromInit();
+#endif
+  
   tasksStart();
 }
 
@@ -1994,6 +1750,10 @@ uint32_t pwrPressedDuration()
   }
 }
 
+#if defined(COLORLCD)
+inline tmr10ms_t getTicks() { return g_tmr10ms; }
+#endif
+
 uint32_t pwrCheck()
 {
   const char * message = nullptr;
@@ -2010,6 +1770,10 @@ uint32_t pwrCheck()
     return e_power_off;
   }
   else if (pwrPressed()) {
+    if (g_eeGeneral.backlightMode == e_backlight_mode_keys ||
+        g_eeGeneral.backlightMode == e_backlight_mode_all)
+      resetBacklightTimeout();
+
     if (TELEMETRY_STREAMING()) {
       message = STR_MODEL_STILL_POWERED;
     }
@@ -2028,6 +1792,10 @@ uint32_t pwrCheck()
         BACKLIGHT_ENABLE();
       }
       if (get_tmr10ms() - pwr_press_time > PWR_PRESS_SHUTDOWN_DELAY()) {
+#if defined(COLORLCD)
+        bool usbConfirmed = !usbPlugged() || getSelectedUsbMode() == USB_UNSELECTED_MODE;
+        bool modelConnectedConfirmed = !TELEMETRY_STREAMING() || g_eeGeneral.disableRssiPoweroffAlarm;
+#endif
 #if defined(SHUTDOWN_CONFIRMATION)
         while (1)
 #else
@@ -2049,7 +1817,7 @@ uint32_t pwrCheck()
             msg = STR_USB_STILL_CONNECTED;
             msg_len = sizeof(TR_USB_STILL_CONNECTED);
           }
-          
+
           event_t evt = getEvent(false);
           SET_WARNING_INFO(msg, msg_len, 0);
           DISPLAY_WARNING(evt);
@@ -2071,15 +1839,34 @@ uint32_t pwrCheck()
 #else  // COLORLCD
 
           const char* message = nullptr;
-          if (usbPlugged()) {
+          std::function<bool(void)> closeCondition = nullptr;
+          if (!usbConfirmed) {
             message = STR_USB_STILL_CONNECTED;
+            closeCondition = [](){
+              return !usbPlugged();
+            };
           }
-          else {
+          else if (!modelConnectedConfirmed) {
             message = STR_MODEL_STILL_POWERED;
+            closeCondition = []() {
+              tmr10ms_t startTime = getTicks();
+              while (!TELEMETRY_STREAMING()) {
+                if (getTicks() - startTime > TELEMETRY_CHECK_DELAY10ms) break;
+              }
+              return !TELEMETRY_STREAMING() || g_eeGeneral.disableRssiPoweroffAlarm;
+            };
           }
 
           // TODO: abort dialog condition (here, RSSI lost / USB connected)
-          if (confirmationDialog(STR_MODEL_SHUTDOWN, message, false)) {
+          if (confirmationDialog(STR_MODEL_SHUTDOWN, message, false, closeCondition)) {
+            if( message == STR_USB_STILL_CONNECTED)
+              usbConfirmed=true;
+            if( message == STR_MODEL_STILL_POWERED)
+              modelConnectedConfirmed = true;
+
+            if(!usbConfirmed || !modelConnectedConfirmed)
+              continue;
+
             pwr_check_state = PWR_CHECK_OFF;
             return e_power_off;
           } else {
@@ -2088,7 +1875,7 @@ uint32_t pwrCheck()
             LED_ERROR_END();
             return e_power_on;
           }
-          
+
 #endif // COLORLCD
         }
 
@@ -2103,10 +1890,6 @@ uint32_t pwrCheck()
     }
   }
   else {
-#if defined(COLORLCD)
-    if (pwr_press_time != 0)
-      MainWindow::instance()->invalidate();
-#endif
     pwr_check_state = PWR_CHECK_ON;
     pwr_press_time = 0;
   }
@@ -2125,12 +1908,6 @@ uint32_t pwrCheck()
   if (usbPlugged()) {
     return e_power_usb;
   }
-
-#if defined(TRAINER_PWR)
-  if (TRAINER_CONNECTED()) {
-    return e_power_trainer;
-  }
-#endif
 
   if (!g_eeGeneral.disableRssiPoweroffAlarm) {
     if (TELEMETRY_STREAMING()) {
@@ -2152,3 +1929,17 @@ uint32_t pwrCheck()
 }
 #endif  // defined(PWR_BUTTON_PRESS)
 #endif  // !defined(SIMU)
+
+uint32_t availableMemory()
+{
+#if defined(SIMU)
+  return 1000;
+#else
+  extern unsigned char *heap;
+  extern int _heap_end;
+
+  struct mallinfo info = mallinfo();
+
+  return ((uint32_t)((unsigned char *)&_heap_end - heap)) + info.fordblks;
+#endif
+}

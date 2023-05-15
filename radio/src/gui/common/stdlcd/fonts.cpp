@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -25,6 +26,8 @@ const unsigned char font_5x7[]  = {
 #include "font_05x07_extra.lbm"
 #if defined(TRANSLATIONS_DE)
 #include "font_de_05x07.lbm"
+#elif defined(TRANSLATIONS_DA)
+#include "font_da_05x07.lbm"
 #elif defined(TRANSLATIONS_CZ)
 #include "font_cz_05x07.lbm"
 #elif defined(TRANSLATIONS_ES)
@@ -53,6 +56,8 @@ const unsigned char font_10x14[]  = {
 #include "font_10x14_compressed.lbm"
   #if defined(TRANSLATIONS_DE)
   #include "font_de_10x14.lbm"
+  #elif defined(TRANSLATIONS_DA)
+  #include "font_da_10x14.lbm"
   #elif defined(TRANSLATIONS_CZ)
   #include "font_cz_10x14.lbm"
   #elif defined(TRANSLATIONS_ES)
@@ -80,6 +85,8 @@ const unsigned char font_4x6[]  = {
 #include "font_04x06.lbm"
 #if defined(TRANSLATIONS_DE)
 #include "font_de_04x06.lbm"
+#elif defined(TRANSLATIONS_DA)
+#include "font_da_04x06.lbm"
 #elif defined(TRANSLATIONS_CZ)
 #include "font_cz_04x06.lbm"
 #elif defined(TRANSLATIONS_ES)
@@ -103,6 +110,8 @@ const unsigned char font_8x10[]  = {
 #include "font_08x10.lbm"
 #if defined(TRANSLATIONS_DE)
 #include "font_de_08x10.lbm"
+#elif defined(TRANSLATIONS_DA)
+#include "font_da_08x10.lbm"
 #elif defined(TRANSLATIONS_CZ)
 #include "font_cz_08x10.lbm"
 #elif defined(TRANSLATIONS_ES)

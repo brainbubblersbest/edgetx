@@ -1,16 +1,13 @@
 /*
- * Authors (alphabetical order)
- * - Andre Bernet <bernet.andre@gmail.com>
- * - Andreas Weitl <andreas.weitl@gmx.de>
- * - Bertrand Songis <bsongis@gmail.com>
- * - Benjamin Boy <rcbebo82@googlemail.com>
- * - Thomas Husterer
+ * Copyright (C) EdgeTX
  *
- * opentx is based on code named
- * gruvin9x by Bryan J. Rentoul: http://code.google.com/p/gruvin9x/,
- * er9x by Erez Raviv: http://code.google.com/p/er9x/,
- * and the original (and ongoing) project by
- * Thomas Husterer, th9x: http://code.google.com/p/th9x/
+ * Based on code named
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
+ *   er9x - http://code.google.com/p/er9x
+ *   gruvin9x - http://code.google.com/p/gruvin9x
+ *
+ * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -20,7 +17,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
  */
 
 #include "opentx.h"
@@ -165,51 +161,50 @@ I18N_PLAY_FUNCTION(de, playDuration, int seconds PLAY_DURATION_ATT)
     seconds = -seconds;
   }
 
-  uint8_t tmp = seconds / 3600;
-  seconds %= 3600;
+  int hours, minutes;
+  hours = seconds / 3600;
+  seconds = seconds % 3600;
+  minutes = seconds / 60;
+  seconds = seconds % 60;
 
-  if (tmp > 0 || IS_PLAY_TIME()) {
-    if (tmp > 1) {
-      PLAY_NUMBER(tmp, 0, 0);
+  if (IS_PLAY_LONG_TIMER() && seconds >= 30) {
+    minutes += 1;
+  }
+
+  if (hours > 0 || IS_PLAY_TIME()) {
+    if (hours > 1) {
+      PLAY_NUMBER(hours, 0, 0);
       PUSH_NUMBER_PROMPT(DE_PROMPT_STUNDEN);
-    }
-    else {
+    } else {
       PUSH_NUMBER_PROMPT(DE_PROMPT_EINE);
       PUSH_NUMBER_PROMPT(DE_PROMPT_STUNDE);
     }
-    if (seconds > 0) {
-      PUSH_NUMBER_PROMPT(DE_PROMPT_UND);
-    }
   }
 
-  tmp = seconds / 60;
-  seconds %= 60;
-
-  if (tmp > 0) {
-    if (tmp > 1) {
-      PLAY_NUMBER(tmp, 0, 0);
+  if (minutes > 0) {
+    if (hours)
+      PUSH_NUMBER_PROMPT(DE_PROMPT_UND);
+    if (minutes > 1) {
+      PLAY_NUMBER(minutes, 0, 0);
       PUSH_NUMBER_PROMPT(DE_PROMPT_MINUTEN);
-    }
-    else {
+    } else {
       PUSH_NUMBER_PROMPT(DE_PROMPT_EINE);
       PUSH_NUMBER_PROMPT(DE_PROMPT_MINUTE);
     }
-    if (seconds > 0) {
+  }
+
+  if (!IS_PLAY_LONG_TIMER() && seconds > 0) {
+    if (minutes)
       PUSH_NUMBER_PROMPT(DE_PROMPT_UND);
-    }
-  }
-  
-  if (seconds > 1) {
-    PLAY_NUMBER(seconds, 0, 0);
-    PUSH_NUMBER_PROMPT(DE_PROMPT_SEKUNDEN);
-  }
-  else {
-    if (seconds == 1) {
+    if (seconds > 1) {
+      PLAY_NUMBER(seconds, 0, 0);
+      PUSH_NUMBER_PROMPT(DE_PROMPT_SEKUNDEN);
+    } else {
       PUSH_NUMBER_PROMPT(DE_PROMPT_EINE);
       PUSH_NUMBER_PROMPT(DE_PROMPT_SEKUNDE);
     }
   }
 }
 
-LANGUAGE_PACK_DECLARE(de, "Deutsch");
+LANGUAGE_PACK_DECLARE(de, TR_VOICE_DEUTSCH);
 

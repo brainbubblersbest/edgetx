@@ -190,7 +190,8 @@ void MultiModelPrinter::MultiColumns::appendFieldSeparator(const bool sep)
   for (int cc=0; cc < modelPrinterMap.size(); cc++) { \
     ModelPrinter * modelPrinter = modelPrinterMap.value(cc).second; \
     const ModelData * model = modelPrinterMap.value(cc).first; \
-    (void)(model); (void)(modelPrinter); \
+    const GeneralSettings * generalSettings = modelPrinter->gs(); \
+    (void)(model); (void)(modelPrinter); (void)(generalSettings); \
     columns.append(cc, (what)); \
   } \
   columns.endCompare();
@@ -277,6 +278,10 @@ QString MultiModelPrinter::print(QTextDocument * document)
   if (firmware->getCapability(Timers)) {
     str.append(printTimers());
   }
+  if (Boards::getCapability(firmware->getBoard(), Board::FunctionSwitches)) {
+    str.append(printFunctionSwitches());
+  }
+
   str.append(printModules());
   if (firmware->getCapability(Heli))
     str.append(printHeliSetup());
@@ -310,10 +315,7 @@ QString MultiModelPrinter::printSetup()
   MultiColumns columns(modelPrinterMap.size());
   columns.appendSectionTableStart();
   ROWLABELCOMPARECELL(tr("Name"), 20, model->name, 80);
-  if (!IS_FAMILY_HORUS_OR_T16(firmware->getBoard())) {
-    ROWLABELCOMPARECELL(tr("EEprom Size"), 0, modelPrinter->printEEpromSize(), 0);
-  }
-  if (firmware->getCapability(ModelImage)) {
+  if (firmware->getCapability(HasModelImage)) {
     ROWLABELCOMPARECELL(tr("Model Image"), 0, model->bitmap, 0);
   }
   ROWLABELCOMPARECELL(tr("Throttle"), 0, modelPrinter->printThrottle(), 0);
@@ -334,7 +336,7 @@ QString MultiModelPrinter::printTimers()
   QString str;
   MultiColumns columns(modelPrinterMap.size());
   columns.appendSectionTableStart();
-  columns.appendRowHeader(QStringList() << tr("Timers") << tr("Time") << tr("Switch") << tr("Countdown") << tr("Start") << tr("Min.call") << tr("Persist"));
+  columns.appendRowHeader(QStringList() << tr("Timers") << tr("Time") << tr("Mode") << tr("Switch") << tr("Countdown") << tr("Start") << tr("Min.call") << tr("Persist"));
 
   for (int i=0; i<firmware->getCapability(Timers); i++) {
     columns.appendRowStart();
@@ -342,11 +344,13 @@ QString MultiModelPrinter::printTimers()
     COMPARE(model->timers[i].nameToString(i));
     columns.appendCellEnd(true);
     COMPARECELLWIDTH(model->timers[i].valToString(), 10);
-    COMPARECELLWIDTH(model->timers[i].mode.toString(), 10);
+    COMPARECELLWIDTH(model->timers[i].modeToString(), 10);
+    COMPARECELLWIDTH(modelPrinter->printFlightModeSwitch(model->timers[i].swtch), 5);
     COMPARECELLWIDTH(model->timers[i].countdownBeepToString(), 10);
     COMPARECELLWIDTH(model->timers[i].countdownStartToString(), 10);
     COMPARECELLWIDTH(DataHelpers::boolToString(model->timers[i].minuteBeep, DataHelpers::BOOL_FMT_YESNO), 10);
-    COMPARECELLWIDTH(model->timers[i].persistentToString(false), 15);
+    COMPARECELLWIDTH(model->timers[i].persistentToString(false), 10);
+    COMPARECELLWIDTH(model->timers[i].showElapsedToString(), 12);
     columns.appendRowEnd();
   }
   columns.appendTableEnd();
@@ -367,10 +371,11 @@ QString MultiModelPrinter::printModules()
     COMPARECELLWIDTH(modelPrinter->printModule(i), 80);
     columns.appendRowEnd();
   }
-  if (firmware->getCapability(ModelTrainerEnable))
+  if (firmware->getCapability(ModelTrainerEnable)) {
     columns.appendRowStart(tr("Trainer port"));
     COMPARECELL(modelPrinter->printModule(-1));
     columns.appendRowEnd();
+  }
   columns.appendTableEnd();
   str.append(columns.print());
   return str;
@@ -725,6 +730,8 @@ QString MultiModelPrinter::printSpecialFunctions()
   MultiColumns columns(modelPrinterMap.size());
   int count = 0;
   columns.appendSectionTableStart();
+  columns.appendRowHeader(QStringList() << "" << tr("Switch") << tr("Function") << tr("Parameters") << tr("Repeat") << tr("Enabled"));
+
   for (int i=0; i < firmware->getCapability(CustomFunctions); i++) {
     bool sfEmpty = true;
     for (int k=0; k < modelPrinterMap.size(); k++) {
@@ -735,8 +742,12 @@ QString MultiModelPrinter::printSpecialFunctions()
     }
     if (!sfEmpty) {
       count++;
-      columns.appendRowStart(tr("SF%1").arg(i+1), 20);
-      COMPARECELL(modelPrinter->printCustomFunctionLine(i));
+      columns.appendRowStart(tr("SF%1").arg(i + 1), 20);
+      COMPARECELLWIDTH(!model->customFn[i].isEmpty() ? model->customFn[i].swtch.toString(getCurrentBoard(), &defaultSettings, model) : "", 10);
+      COMPARECELLWIDTH(!model->customFn[i].isEmpty() ? model->customFn[i].funcToString(model) : "", 20);
+      COMPARECELLWIDTH(!model->customFn[i].isEmpty() ? model->customFn[i].paramToString(model) : "", 20);
+      COMPARECELLWIDTH(!model->customFn[i].isEmpty() ? model->customFn[i].repeatToString(true) : "", 10);
+      COMPARECELLWIDTH(!model->customFn[i].isEmpty() ? DataHelpers::boolToString(model->customFn[i].enabled, DataHelpers::BOOL_FMT_YN) : "", 10);
       columns.appendRowEnd();
     }
   }
@@ -808,7 +819,8 @@ QString MultiModelPrinter::printTelemetry()
     columns.appendRowEnd();
   }
 
-  ROWLABELCOMPARECELL("Multi sensors", 0, modelPrinter->printIgnoreSensorIds(!model->frsky.ignoreSensorIds), 0);
+  ROWLABELCOMPARECELL(tr("Multi sensors"), 0, modelPrinter->printIgnoreSensorIds(!model->frsky.ignoreSensorIds), 0);
+  ROWLABELCOMPARECELL(tr("Show Instance IDs"), 0, modelPrinter->printIgnoreSensorIds(!model->showInstanceIds), 0);
 
   // Various
   columns.appendTableEnd();
@@ -890,6 +902,7 @@ QString MultiModelPrinter::printGlobalFunctions()
   int idx = -1;
   MultiColumns columns(modelPrinterMap.size());
   columns.appendSectionTableStart();
+  columns.appendRowHeader(QStringList() << "" << tr("Switch") << tr("Function") << tr("Parameters") << tr("Repeat") << tr("Enabled"));
 
   for (int k=0; k < modelPrinterMap.size(); k++) {
     if (!modelPrinterMap.value(k).first->noGlobalFunctions) {
@@ -900,13 +913,18 @@ QString MultiModelPrinter::printGlobalFunctions()
 
   if (idx > -1) {
     ModelPrinter * modelPrinter = modelPrinterMap.value(idx).second;
-    (void)(modelPrinter);
+    const GeneralSettings * generalSettings = modelPrinter->gs();
 
-    for (int i=0; i < firmware->getCapability(GlobalFunctions); i++) {
-      txt = modelPrinter->printCustomFunctionLine(i, true);
-      if (!txt.isEmpty()) {
+    for (int i = 0; i < firmware->getCapability(GlobalFunctions); i++) {
+      if (!generalSettings->customFn[i].isEmpty()) {
         count++;
-        ROWLABELCOMPARECELL(tr("GF%1").arg(i+1), 20, modelPrinter->printCustomFunctionLine(i, true), 80);
+        columns.appendRowStart(tr("GF%1").arg(i + 1), 20);
+        COMPARECELLWIDTH(generalSettings->customFn[i].swtch.toString(getCurrentBoard(), &defaultSettings), 10);
+        COMPARECELLWIDTH(generalSettings->customFn[i].funcToString(), 20);
+        COMPARECELLWIDTH(generalSettings->customFn[i].paramToString(), 20);
+        COMPARECELLWIDTH(generalSettings->customFn[i].repeatToString(true), 10);
+        COMPARECELLWIDTH(DataHelpers::boolToString(generalSettings->customFn[i].enabled, DataHelpers::BOOL_FMT_YN), 10);
+        columns.appendRowEnd();
       }
     }
     columns.appendTableEnd();
@@ -937,3 +955,59 @@ QString MultiModelPrinter::printChecklist()
   }
   return str;
 }
+
+QString MultiModelPrinter::printFunctionSwitches()
+ {
+   QString str;
+   MultiColumns columns(modelPrinterMap.size());
+   columns.appendSectionTableStart();
+
+   int numFS = Boards::getCapability(firmware->getBoard(), Board::FunctionSwitches);
+   int colwidth = 80 / numFS;
+
+   QStringList headings = { tr("Function Switches") };
+   for (int i = 0; i < numFS; i++) {
+     headings << tr("Switch %1").arg(i + 1);
+   }
+   columns.appendRowHeader(headings);
+
+   columns.appendRowStart(tr("Name"), 20);
+
+   for (int i = 0; i < numFS; i++) {
+     COMPARECELLWIDTH(model->functionSwitchNames[i], colwidth);
+   }
+
+   columns.appendRowEnd();
+   columns.appendRowStart(tr("Type"), 20);
+
+   for (int i = 0; i < numFS; i++) {
+     COMPARECELLWIDTH(model->funcSwitchConfigToString(model->getFuncSwitchConfig((unsigned int)i)), colwidth);
+   }
+
+   columns.appendRowEnd();
+   columns.appendRowStart(tr("Start"), 20);
+
+   for (int i = 0; i < numFS; i++) {
+     COMPARECELLWIDTH(model->funcSwitchStartToString(model->getFuncSwitchStart((unsigned int)i)), colwidth);
+   }
+
+   columns.appendRowEnd();
+   columns.appendRowStart(tr("Group"), 20);
+
+   for (int i = 0; i < numFS; i++) {
+     COMPARECELLWIDTH(model->getFuncSwitchGroup((unsigned int)i), colwidth);
+   }
+
+   columns.appendRowEnd();
+   columns.appendRowStart(tr("Always On"), 20);
+
+   for (int i = 0; i < numFS; i++) {
+     COMPARECELLWIDTH((model->getFuncSwitchAlwaysOnGroup((unsigned int)i) == 0 ? "No" : "Yes"), colwidth);
+   }
+
+   columns.appendRowEnd();
+
+   columns.appendTableEnd();
+   str.append(columns.print());
+   return str;
+ }

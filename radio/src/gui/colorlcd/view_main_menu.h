@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -22,42 +23,17 @@
 
 #include "form.h"
 
-class ViewMainMenu: public Window
+class ViewMainMenu : public Window
 {
-public:
-    ViewMainMenu(Window * parent);
-    void paint(BitmapBuffer * dc) override;
-    void deleteLater(bool detach=true, bool trash=true) override;
+ public:
+  ViewMainMenu(Window* parent, std::function<void()> closeHandler);
 
-#if defined(HARDWARE_TOUCH)
-    bool onTouchStart(coord_t /*x*/, coord_t /*y*/) override { return true; }
-    bool onTouchEnd(coord_t x, coord_t y) override
-    {
-      if (!Window::onTouchEnd(x, y)) {
-        onKeyPress();
-        deleteLater();
-      }
-      return true;
-    }
-    bool onTouchSlide(coord_t x, coord_t y, coord_t startX, coord_t startY,
-                      coord_t slideX, coord_t slideY) override
-    {
-      Window::onTouchSlide(x, y, startX, startY, slideX, slideY);
-      return true;
-    }
-#endif
-#if defined(HARDWARE_KEYS)
-    void onEvent(event_t event) override
-    {
-      switch (event) {
-        case EVT_KEY_BREAK(KEY_EXIT):
-          killEvents(event);
-          parent->deleteLater();
-          return;
-      }
-    }
-#endif
+  void onCancel() override;
+  void onClicked() override;
+  void paint(BitmapBuffer* dc) override;
+  void deleteLater(bool detach = true, bool trash = true) override;
 
-    protected:
-    rect_t carouselRect;
+ protected:
+  rect_t carouselRect;
+  std::function<void()> closeHandler = nullptr;
 };

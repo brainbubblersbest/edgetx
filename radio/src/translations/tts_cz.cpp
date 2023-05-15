@@ -1,13 +1,13 @@
 /*
- * Authors (alphabetical order)
- * - Bertrand Songis <bsongis@gmail.com>
- * - Martin Hotar <mhotar@gmail.com>
+ * Copyright (C) EdgeTX
  *
- * opentx is based on code named
- * gruvin9x by Bryan J. Rentoul: http://code.google.com/p/gruvin9x/,
- * er9x by Erez Raviv: http://code.google.com/p/er9x/,
- * and the original (and ongoing) project by
- * Thomas Husterer, th9x: http://code.google.com/p/th9x/
+ * Based on code named
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
+ *   er9x - http://code.google.com/p/er9x
+ *   gruvin9x - http://code.google.com/p/gruvin9x
+ *
+ * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,7 +17,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
  */
 
 #include "opentx.h"
@@ -164,22 +163,28 @@ I18N_PLAY_FUNCTION(cz, playDuration, int seconds PLAY_DURATION_ATT)
     seconds = -seconds;
   }
 
-  uint8_t tmp = seconds / 3600;
-  seconds %= 3600;
-  if (tmp > 0 || IS_PLAY_TIME()) {
-    PLAY_NUMBER(tmp, UNIT_HOURS, FEMALE);
+  int hours, minutes;
+  hours = seconds / 3600;
+  seconds = seconds % 3600;
+  minutes = seconds / 60;
+  seconds = seconds % 60;
+
+  if (IS_PLAY_LONG_TIMER() && seconds >= 30) {
+    minutes += 1;
   }
 
-  tmp = seconds / 60;
-  seconds %= 60;
-  if (tmp > 0) {
-    PLAY_NUMBER(tmp, UNIT_MINUTES, FEMALE);
+  if (hours > 0 || IS_PLAY_TIME()) {
+    PLAY_NUMBER(hours, UNIT_HOURS, FEMALE);
   }
 
-  if (seconds > 0) {
+  if (minutes > 0) {
+    PLAY_NUMBER(minutes, UNIT_MINUTES, FEMALE);
+  }
+
+  if (!IS_PLAY_LONG_TIMER() && seconds > 0) {
     PLAY_NUMBER(seconds, UNIT_SECONDS, FEMALE);
   }
 }
 
-LANGUAGE_PACK_DECLARE(cz, "Czech");
+LANGUAGE_PACK_DECLARE(cz, TR_VOICE_CZECH);
 

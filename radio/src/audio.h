@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -571,10 +572,6 @@ void audioTimerCountdown(uint8_t timer, int value);
 #define AUDIO_WARNING1()         AUDIO_BUZZER(audioEvent(AU_WARNING1), beep(3))
 #define AUDIO_WARNING2()         AUDIO_BUZZER(audioEvent(AU_WARNING2), beep(2))
 #define AUDIO_TX_BATTERY_LOW()   AUDIO_BUZZER(audioEvent(AU_TX_BATTERY_LOW), beep(4))
-#if defined(PCBSKY9X)
-#define AUDIO_TX_MAH_HIGH()      audioEvent(AU_TX_MAH_HIGH)
-#define AUDIO_TX_TEMP_HIGH()     audioEvent(AU_TX_TEMP_HIGH)
-#endif
 #define AUDIO_ERROR()            AUDIO_BUZZER(audioEvent(AU_ERROR), beep(4))
 #define AUDIO_TIMER_COUNTDOWN(idx, val) audioTimerCountdown(idx, val)
 #define AUDIO_TIMER_ELAPSED(idx) AUDIO_BUZZER(audioEvent(AU_TIMER1_ELAPSED+idx), beep(3))
@@ -592,6 +589,7 @@ void audioTimerCountdown(uint8_t timer, int value);
 #define AUDIO_RAS_RED()          audioEvent(AU_RAS_RED)
 #define AUDIO_TELEMETRY_LOST()   audioEvent(AU_TELEMETRY_LOST)
 #define AUDIO_TELEMETRY_BACK()   audioEvent(AU_TELEMETRY_BACK)
+#define AUDIO_TRAINER_CONNECTED() audioEvent(AU_TRAINER_CONNECTED)
 #define AUDIO_TRAINER_LOST()     audioEvent(AU_TRAINER_LOST)
 #define AUDIO_TRAINER_BACK()     audioEvent(AU_TRAINER_BACK)
 
@@ -614,14 +612,16 @@ void pushUnit(uint8_t unit, uint8_t idx, uint8_t id);
 void playModelName();
 
 #define I18N_PLAY_FUNCTION(lng, x, ...) void lng ## _ ## x(__VA_ARGS__, uint8_t id)
-#define PLAY_FUNCTION(x, ...)    void x(__VA_ARGS__, uint8_t id)
 #define PUSH_NUMBER_PROMPT(p)    pushPrompt((p), id)
 #define PUSH_UNIT_PROMPT(p, i)   pushUnit((p), (i), id)
 #define PLAY_NUMBER(n, u, a)     playNumber((n), (u), (a), id)
 #define PLAY_DURATION(d, att)    playDuration((d), (att), id)
 #define PLAY_DURATION_ATT        , uint8_t flags
 #define PLAY_TIME                1
-#define IS_PLAY_TIME()           (flags&PLAY_TIME)
+#define PLAY_LONG_TIMER          2
+#define LONG_TIMER_DURATION      (10 * 60)  // 10 minutes
+#define IS_PLAY_TIME()           (flags & PLAY_TIME)
+#define IS_PLAY_LONG_TIMER()     (flags & PLAY_LONG_TIMER)
 #define IS_PLAYING(id)           audioQueue.isPlaying((id))
 #define PLAY_VALUE(v, id)        playValue((v), (id))
 #define PLAY_FILE(f, flags, id)  audioQueue.playFile((f), (flags), (id))

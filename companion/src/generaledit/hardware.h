@@ -25,6 +25,7 @@
 class CompoundItemModelFactory;
 class FilteredItemModelFactory;
 class QGridLayout;
+class AutoComboBox;
 
 class HardwarePanel : public GeneralPanel
 {
@@ -34,17 +35,35 @@ class HardwarePanel : public GeneralPanel
     HardwarePanel(QWidget * parent, GeneralSettings & generalSettings, Firmware * firmware, CompoundItemModelFactory * editorItemModels);
     virtual ~HardwarePanel();
 
+  signals:
+    void internalModuleChanged();
+
+  private slots:
+    void on_internalModuleChanged();
+
   private:
     Board::Type board;
     CompoundItemModelFactory *editorItemModels;
     FilteredItemModelFactory *tabFilteredModels;
     QGridLayout *grid;
+    AutoComboBox *internalModule;
+    unsigned int m_internalModule = 0;
+    QLabel *internalModuleBaudRateLabel;
+    AutoComboBox *internalModuleBaudRate;
+    AutoComboBox *serialPortUSBVCP;
+    QLabel *antennaLabel;
+    AutoComboBox *antennaMode;
+    QList<QWidget *> *params;
+    int row;
 
-    void addStick(int index, int & row);
-    void addPot(int index, int & row);
-    void addSlider(int index, int & row);
-    void addSwitch(int index, int & row);
-    void addLabel(QString text, int row, int col);
-    void addLine(int & row);
-    void addParams(int & row, QWidget * widget1, QWidget * widget2 = nullptr);
+    void addStick(int index);
+    void addPot(int index);
+    void addSlider(int index);
+    void addSwitch(int index);
+    void addLabel(QString text);
+    void addLine();
+    void addParams();
+    void addSection(QString text);
+
+    void updateSerialPortUSBVCP();
 };

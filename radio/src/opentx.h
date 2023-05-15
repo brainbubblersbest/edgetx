@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,9 +22,9 @@
 #pragma once
 
 #include <stdlib.h>
+#include "debounce.h"
 #include "definitions.h"
 #include "opentx_types.h"
-#include "debounce.h"
 #include "opentx_helpers.h"
 #include "touch.h"
 
@@ -33,9 +34,7 @@
 
 #include "board.h"
 
-#if defined(STM32)
 #include "usbd_conf.h"
-#endif
 
 #if defined(LIBOPENUI)
   #include "libopenui.h"
@@ -49,30 +48,16 @@
   #define SWITCH_SIMU(a, b)  (b)
 #endif
 
-#if defined(PCBSKY9X)
-  #define IS_PCBSKY9X        true
-  #define CASE_PCBSKY9X(x)   x,
-#else
-  #define IS_PCBSKY9X        false
-  #define CASE_PCBSKY9X(x)
-#endif
-
-#if defined(STM32)
-  #define CASE_STM32(x)     x,
-#else
-  #define CASE_STM32(x)
-#endif
-
 #if defined(VARIO)
   #define CASE_VARIO(x) x,
 #else
   #define CASE_VARIO(x)
 #endif
 
-#if defined(GYRO)
-#define CASE_GYRO(x) x,
+#if defined(IMU)
+#define CASE_IMU(x) x,
 #else
-#define CASE_GYRO(x)
+#define CASE_IMU(x)
 #endif
 
 #if defined(BACKLIGHT_GPIO)
@@ -195,12 +180,7 @@
   #define CASE_PCBX9E(x)
 #endif
 
-#if defined(PCBSKY9X) && !defined(PCBAR9X)
-  #define TX_CAPACITY_MEASUREMENT
-  #define CASE_CAPACITY(x) x,
-#else
   #define CASE_CAPACITY(x)
-#endif
 
 #if defined(FAI)
   #define IS_FAI_ENABLED() true
@@ -232,6 +212,15 @@
   #define RADIO_TOOLS
 #endif
 
+#if defined(ROTARY_ENCODER_NAVIGATION)
+enum RotaryEncoderMode {
+  ROTARY_ENCODER_MODE_NORMAL,
+  ROTARY_ENCODER_MODE_INVERT_BOTH,
+  ROTARY_ENCODER_MODE_INVERT_VERT_HORZ_NORM,
+  ROTARY_ENCODER_MODE_INVERT_VERT_HORZ_ALT
+};
+#endif
+
 // RESX range is used for internal calculation; The menu says -100.0 to 100.0; internally it is -1024 to 1024 to allow some optimizations
 #define RESX_SHIFT 10
 #define RESX       1024
@@ -251,7 +240,7 @@
 
 #include "debug.h"
 
-#if defined(PCBFRSKY)
+#if defined(PCBFRSKY) || defined(PCBFLYSKY)
   #define SWSRC_THR                    SWSRC_SB2
   #define SWSRC_GEA                    SWSRC_SG2
   #define SWSRC_ID0                    SWSRC_SA0
@@ -275,7 +264,7 @@ void memswap(void * a, void * b, uint8_t size);
   #define IS_POT_AVAILABLE(x)          (IS_POT(x) && POT_CONFIG(x)!=POT_NONE)
   #define IS_POT_SLIDER_AVAILABLE(x)   (IS_POT_AVAILABLE(x) || IS_SLIDER_AVAILABLE(x))
   #define IS_MULTIPOS_CALIBRATED(cal)  (cal->count>0 && cal->count<XPOTS_MULTIPOS_COUNT)
-#elif defined(PCBX7) || defined(PCBXLITE)
+#elif defined(PCBX7) || defined(PCBXLITE) || defined(PCBNV14)
   #define POT_CONFIG(x)                ((g_eeGeneral.potsConfig >> (2*((x)-POT1)))&0x03)
   #define IS_POT_MULTIPOS(x)           (IS_POT(x) && POT_CONFIG(x)==POT_MULTIPOS_SWITCH)
   #define IS_POT_WITHOUT_DETENT(x)     (IS_POT(x) && POT_CONFIG(x)==POT_WITHOUT_DETENT)
@@ -293,12 +282,6 @@ void memswap(void * a, void * b, uint8_t size);
   #define IS_SWITCH_MULTIPOS(x)         (SWSRC_FIRST_MULTIPOS_SWITCH <= (x) && (x) <= SWSRC_LAST_MULTIPOS_SWITCH)
 #else
   #define IS_SWITCH_MULTIPOS(x)         (false)
-#endif
-
-#if defined(PWR_BUTTON_PRESS)
-  #define pwrOffPressed()              pwrPressed()
-#else
-  #define pwrOffPressed()              (!pwrPressed())
 #endif
 
 #define GET_LOWRES_POT_POSITION(i)     (getValue(MIXSRC_FIRST_POT+(i)) >> 4)
@@ -392,19 +375,6 @@ inline bool SPLASH_NEEDED()
   #define SPLASH_TIMEOUT               (4 * 100)  // 4 seconds
 #endif
 
-#if defined(ROTARY_ENCODER_NAVIGATION)
-  #define IS_ROTARY_ENCODER_NAVIGATION_ENABLE()  true
-  extern volatile rotenc_t rotencValue;
-  #define ROTARY_ENCODER_NAVIGATION_VALUE        rotencValue
-  #define ROTENC_LOWSPEED              1
-  #define ROTENC_MIDSPEED              5
-  #define ROTENC_HIGHSPEED             50
-  #define ROTENC_DELAY_MIDSPEED        32
-  #define ROTENC_DELAY_HIGHSPEED       16
-#elif defined(RADIO_T8)
-  constexpr uint8_t rotencSpeed = 1;
-#endif
-
 constexpr uint8_t HEART_TIMER_10MS = 0x01;
 constexpr uint8_t HEART_TIMER_PULSES = 0x02; // when multiple modules this is the first one
 
@@ -419,22 +389,7 @@ constexpr uint8_t HEART_WDT_CHECK = HEART_TIMER_10MS
 
 extern uint8_t heartbeat;
 
-#if !defined(BOOT)
-void watchdogSuspend(uint32_t timeout);
-#define WATCHDOG_SUSPEND(x)            watchdogSuspend(x)
-#else
-#define WATCHDOG_SUSPEND(...)
-#endif
-
 #define MAX_ALERT_TIME   60
-
-struct InactivityData
-{
-  uint16_t counter;
-  uint8_t  sum;
-};
-
-extern InactivityData inactivity;
 
 #define LEN_STD_CHARS 40
 
@@ -453,7 +408,6 @@ extern uint8_t potsPos[NUM_XPOTS];
 #endif
 
 bool trimDown(uint8_t idx);
-void readKeysAndTrims();
 
 #if defined(KEYS_GPIO_REG_BIND)
 void bindButtonHandler(event_t event);
@@ -470,7 +424,9 @@ void alert(const char * title, const char * msg, uint8_t sound);
 
 #elif defined(COLORLCD)
 
-bool confirmationDialog(const char *title, const char *msg, bool checkPwr = true);
+#define TELEMETRY_CHECK_DELAY10ms 150
+
+bool confirmationDialog(const char *title, const char *msg, bool checkPwr = true, const std::function<bool(void)>& closeCondition = nullptr);
 
 void raiseAlert(const char *title, const char *msg, const char *info,
                 uint8_t sound);
@@ -482,7 +438,7 @@ inline void RAISE_ALERT(const char *title, const char *msg, const char *info,
 }
 inline void ALERT(const char *title, const char *msg, uint8_t sound)
 {
-  raiseAlert(title, msg, "", sound);
+  raiseAlert(title, msg, STR_PRESS_ANY_KEY_TO_SKIP, sound);
 }
 
 #else // !COLORLCD && GUI
@@ -513,14 +469,7 @@ extern uint8_t mixerCurrentFlightMode;
 extern uint8_t lastFlightMode;
 extern uint8_t flightModeTransitionLast;
 
-#if defined(SIMU)
-  inline int availableMemory() { return 1000; }
-#else
-  extern unsigned char *heap;
-  extern int _end;
-  extern int _heap_end;
-  #define availableMemory() ((unsigned int)((unsigned char *)&_heap_end - heap))
-#endif
+extern uint32_t availableMemory();
 
 
 void evalFlightModeMixes(uint8_t mode, uint8_t tick10ms);
@@ -533,7 +482,7 @@ extern uint8_t currentBacklightBright;
 void perMain();
 void per10ms();
 
-getvalue_t getValue(mixsrc_t i);
+getvalue_t getValue(mixsrc_t i, bool* valid = nullptr);
 
 #define GETSWITCH_MIDPOS_DELAY   1
 bool getSwitch(swsrc_t swtch, uint8_t flags=0);
@@ -576,12 +525,6 @@ int getTrimValue(uint8_t phase, uint8_t idx);
 
 bool setTrimValue(uint8_t phase, uint8_t idx, int trim);
 
-#if defined(PCBSKY9X)
-  #define ROTARY_ENCODER_GRANULARITY (2 << g_eeGeneral.rotarySteps)
-#else
-  #define ROTARY_ENCODER_GRANULARITY (2)
-#endif
-
 #include "gvars.h"
 
 void flightReset(uint8_t check=true);
@@ -604,31 +547,13 @@ void flightReset(uint8_t check=true);
   #define RESET_THR_TRACE() s_timeCum16ThrP = s_timeCumThr = 0
 #endif
 
-#if defined(SIMU)
-  uint16_t getTmr2MHz();
-  uint16_t getTmr16KHz();
-#elif defined(STM32)
-  static inline uint16_t getTmr2MHz() { return TIMER_2MHz_TIMER->CNT; }
-#elif defined(PCBSKY9X)
-  static inline uint16_t getTmr2MHz() { return TC1->TC_CHANNEL[0].TC_CV; }
-#else
-  uint16_t getTmr16KHz();
-#endif
-
-
 #if defined(SPLASH)
   void doSplash();
 #endif
 
-#if MENUS_LOCK == 1
-  extern bool readonly;
-  extern bool readonlyUnlocked();
-  #define READ_ONLY() readonly
-  #define READ_ONLY_UNLOCKED() readonlyUnlocked()
-#else
-  #define READ_ONLY() false
-  #define READ_ONLY_UNLOCKED() true
-#endif
+// disabled function (not used anywhere)
+#define READ_ONLY() false
+#define READ_ONLY_UNLOCKED() true
 
 void checkLowEEPROM();
 void checkThrottleStick();
@@ -637,12 +562,6 @@ void checkAlarm();
 void checkAll();
 
 void getADC();
-static inline void GET_ADC_IF_MIXER_NOT_RUNNING()
-{
-  if (s_pulses_paused) {
-    getADC();
-  }
-}
 
 #include "sbus.h"
 
@@ -650,23 +569,6 @@ void resetBacklightTimeout();
 void checkBacklight();
 
 uint16_t isqrt32(uint32_t n);
-
-#if defined(BOOT)
-#define pauseMixerCalculations()
-#define resumeMixerCalculations()
-#else
-#include "tasks.h"
-extern RTOS_MUTEX_HANDLE mixerMutex;
-inline void pauseMixerCalculations()
-{
-  RTOS_LOCK_MUTEX(mixerMutex);
-}
-
-inline void resumeMixerCalculations()
-{
-  RTOS_UNLOCK_MUTEX(mixerMutex);
-}
-#endif
 
 void setDefaultOwnerId();
 void generalDefault();
@@ -703,23 +605,6 @@ inline int calcRESXto100(int x)
 {
   return divRoundClosest(x*100, RESX);
 }
-
-#if defined(COLORLCD)
-extern const char fw_stamp[];
-extern const char vers_stamp[];
-extern const char date_stamp[];
-extern const char time_stamp[];
-extern const char eeprom_stamp[];
-#else
-extern const char vers_stamp[];
-#endif
-
-/**
- * Tries to find opentx version in the first 1024 byte of either firmware/bootloader (the one not running) or the buffer
- * @param buffer If non-null find the firmware version in the buffer instead
- * @return The opentx version string starting with "opentx-" or "no version found" if the version string is not found
- */
-const char * getFirmwareVersion(const char * buffer = nullptr);
 
 #define g_blinkTmr10ms    (*(uint8_t*)&g_tmr10ms)
 
@@ -798,6 +683,7 @@ ExpoData * expoAddress(uint8_t idx);
 MixData * mixAddress(uint8_t idx);
 LimitData * limitAddress(uint8_t idx);
 LogicalSwitchData * lswAddress(uint8_t idx);
+USBJoystickChData * usbJChAddress(uint8_t idx);
 
 void applyDefaultTemplate();
 void instantTrim();
@@ -817,20 +703,6 @@ inline bool isMixActive(uint8_t mix)
   return swOn[mix].activeMix;
 }
 
-enum LogicalSwitchFamilies {
-  LS_FAMILY_OFS,
-  LS_FAMILY_BOOL,
-  LS_FAMILY_COMP,
-  LS_FAMILY_DIFF,
-  LS_FAMILY_TIMER,
-  LS_FAMILY_STICKY,
-  LS_FAMILY_RANGE,
-  LS_FAMILY_EDGE
-};
-
-uint8_t lswFamily(uint8_t func);
-int16_t lswTimerValue(delayval_t val);
-
 enum FunctionsActive {
   FUNCTION_TRAINER_STICK1,
   FUNCTION_TRAINER_CHANNELS = FUNCTION_TRAINER_STICK1 + NUM_STICKS,
@@ -843,6 +715,9 @@ enum FunctionsActive {
   FUNCTION_BACKGND_MUSIC_PAUSE,
   FUNCTION_BACKLIGHT,
   FUNCTION_RACING_MODE,
+#if defined(HARDWARE_TOUCH)
+  FUNCTION_DISABLE_TOUCH,
+#endif
 };
 
 #define VARIO_FREQUENCY_ZERO   700/*Hz*/
@@ -883,16 +758,13 @@ enum AUDIO_SOUNDS {
   AU_RAS_RED,
   AU_TELEMETRY_LOST,
   AU_TELEMETRY_BACK,
+  AU_TRAINER_CONNECTED,
   AU_TRAINER_LOST,
   AU_TRAINER_BACK,
   AU_SENSOR_LOST,
   AU_SERVO_KO,
   AU_RX_OVERLOAD,
   AU_MODEL_STILL_POWERED,
-#if defined(PCBSKY9X)
-  AU_TX_MAH_HIGH,
-  AU_TX_TEMP_HIGH,
-#endif
   AU_ERROR,
   AU_WARNING1,
   AU_WARNING2,
@@ -910,6 +782,12 @@ enum AUDIO_SOUNDS {
 #if defined(PCBX9E)
   AU_POT3_MIDDLE,
   AU_POT4_MIDDLE,
+#endif
+#if defined(PCBX10)
+  AU_POT4_MIDDLE,
+  AU_POT5_MIDDLE,
+  AU_POT6_MIDDLE,
+  AU_POT7_MIDDLE,
 #endif
   AU_SLIDER1_MIDDLE,
   AU_SLIDER2_MIDDLE,
@@ -948,7 +826,7 @@ enum AUDIO_SOUNDS {
   AU_SPECIAL_SOUND_ALARMC,
   AU_SPECIAL_SOUND_LAST,
 
-  AU_NONE=0xff
+  AU_NONE = 0xff
 };
 
 #if defined(AUDIO)
@@ -970,10 +848,6 @@ enum AUDIO_SOUNDS {
 #include "rtc.h"
 #endif
 
-#if defined(REVX)
-void setMFP();
-void clearMFP();
-#endif
 
 void checkBattery();
 void opentxClose(uint8_t shutdown=true);
@@ -986,11 +860,14 @@ constexpr uint8_t OPENTX_START_NO_CHECKS = 0x04;
 
 #if defined(STATUS_LEDS)
   #define LED_ERROR_BEGIN()            ledRed()
-#if defined(RADIO_T8)
-  // Because of green backlit logo, green is preferred on this radio
-  #define LED_ERROR_END()              ledGreen()
-  #define LED_BIND()                   ledBlue()
+// Green is preferred "ready to use" color for these radios
+#if defined(RADIO_T8) || defined(RADIO_COMMANDO8) || defined(RADIO_TLITE) || \
+    defined(RADIO_TPRO) || defined(RADIO_TX12) || defined(RADIO_TX12MK2) ||  \
+    defined(RADIO_ZORRO) || defined(RADIO_BOXER)
+#define LED_ERROR_END() ledGreen()
+#define LED_BIND() ledBlue()
 #else
+// Either green is not an option, or blue is preferred "ready to use" color
   #define LED_ERROR_END()              ledBlue()
 #endif
 #else
@@ -1010,6 +887,10 @@ constexpr uint8_t SD_SCREEN_FILE_LENGTH = 64;
 #endif
 
 constexpr uint8_t TEXT_FILENAME_MAXLEN = 40;
+
+#if defined(GHOST)
+  #include "telemetry/ghost_menu.h"
+#endif
 
 union ReusableBuffer
 {
@@ -1031,25 +912,10 @@ union ReusableBuffer
     int8_t antennaMode;
     uint8_t previousType;
     uint8_t newType;
+#if defined(PXX2)
     BindInformation bindInformation;
-    struct {
-      union {
-        uint8_t registerStep;
-        uint8_t resetStep;
-      };
-      uint8_t registerPopupVerticalPosition;
-      uint8_t registerPopupHorizontalPosition;
-      int8_t registerPopupEditMode;
-      char registerRxName[PXX2_LEN_RX_NAME];
-      uint8_t registerLoopIndex; // will be removed later
-      union {
-        uint8_t shareReceiverIndex;
-        uint8_t resetReceiverIndex;
-      };
-      uint8_t resetReceiverFlags;
-      ModuleInformation moduleInformation;
-      ModuleSettings moduleSettings;
-    } pxx2;
+    PXX2ModuleSetup pxx2;
+#endif
 #if defined(BLUETOOTH)
     struct {
       char devices[MAX_BLUETOOTH_DISTANT_ADDR][LEN_BLUETOOTH_ADDR+1];
@@ -1080,30 +946,30 @@ union ReusableBuffer
     uint16_t offset;
     uint16_t count;
     char originalName[SD_SCREEN_FILE_LENGTH+1];
+#if defined(PXX2)
     OtaUpdateInformation otaUpdateInformation;
     char otaReceiverVersion[sizeof(TR_CURRENT_VERSION) + 12];
+#endif
   } sdManager;
 #endif
 
-#if defined(STM32)
   struct
   {
     char id[27];
   } version;
+
+#if defined(PXX2)
+  PXX2HardwareAndSettings hardwareAndSettings; // radio_version
 #endif
 
   struct {
+#if defined(PXX2)
     ModuleInformation modules[NUM_MODULES];
-    uint32_t updateTime;
-    ModuleSettings moduleSettings;
-    ReceiverSettings receiverSettings; // when dealing with receiver settings, we also need module settings
+#endif
     char msg[64];
-  } hardwareAndSettings; // moduleOptions, receiverOptions, radioVersion
-
-  struct {
-    ModuleInformation modules[NUM_MODULES];
+#if !defined(COLORLCD)
     uint8_t linesCount;
-    char msg[64];
+#endif
   } radioTools;
 
   struct {
@@ -1112,6 +978,9 @@ union ReusableBuffer
 
   struct {
     uint8_t stickMode;
+#if defined(ROTARY_ENCODER_NAVIGATION)
+    uint8_t rotaryEncoderMode;
+#endif
   } generalSettings;
 
   struct {
@@ -1151,11 +1020,13 @@ union ReusableBuffer
     int8_t preset;
   } curveEdit;
 
+#if !defined(COLORLCD)
   struct {
     char filename[TEXT_FILENAME_MAXLEN];
     char lines[NUM_BODY_LINES][LCD_COLS + 1];
     int linesCount;
   } viewText;
+#endif
 
   struct {
     bool longNames;
@@ -1168,28 +1039,38 @@ union ReusableBuffer
   } modelFailsafe;
 
   struct {
+#if defined(PXX2)
     ModuleInformation internalModule;
+#endif
   } viewMain;
 
-#if defined(STM32)
   // Data for the USB mass storage driver. If USB mass storage runs no menu is not allowed to be displayed
   uint8_t MSC_BOT_Data[MSC_MEDIA_PACKET];
-#endif
 };
 
 extern ReusableBuffer reusableBuffer;
 
 uint8_t zlen(const char *str, uint8_t size);
 bool zexist(const char *str, uint8_t size);
-unsigned int effectiveLen(const char * str, unsigned int size);
-char * strcat_zchar(char *dest, const char *name, uint8_t size, const char *defaultName=nullptr, uint8_t defaultNameSize=0, uint8_t defaultIdx=0);
-#define strcatFlightmodeName(dest, idx) strcat_zchar(dest, g_model.flightModeData[idx].name, LEN_FLIGHT_MODE_NAME, STR_FM, PSIZE(TR_FM), idx+1)
-#if defined(EEPROM)
-#define strcat_modelname(dest, idx) strcat_zchar(dest, modelHeaders[idx].name, LEN_MODEL_NAME, STR_MODEL, PSIZE(TR_MODEL), idx+1)
-#define strcat_currentmodelname(dest) strcat_modelname(dest, g_eeGeneral.currModel)
+char * strcat_zchar(char *dest, const char *name, uint8_t size, const char spaceSym = 0, const char *defaultName=nullptr, uint8_t defaultNameSize=0, uint8_t defaultIdx=0);
+#define strcatFlightmodeName(dest, idx) strcat_zchar(dest, g_model.flightModeData[idx].name, LEN_FLIGHT_MODE_NAME, 0, STR_FM, PSIZE(TR_FM), idx+1)
+
+#if !defined(STORAGE_MODELSLIST)
+
+#define strcat_modelname(dest, idx, spaceSym)                                     \
+  strcat_zchar(dest, modelHeaders[idx].name, LEN_MODEL_NAME, spaceSym, STR_MODEL, \
+               PSIZE(TR_MODEL), idx + 1)
+
+#define strcat_currentmodelname(dest, spaceSym)      \
+  strcat_modelname(dest, g_eeGeneral.currModel, spaceSym)
+
 #else
-#define strcat_currentmodelname(dest) strcat_zchar(dest, g_model.header.name, LEN_MODEL_NAME)
+
+#define strcat_currentmodelname(dest, spaceSym)                         \
+  strcat_zchar(dest, g_model.header.name, LEN_MODEL_NAME, spaceSym)
+
 #endif
+
 #define ZLEN(s) zlen(s, sizeof(s))
 #define ZEXIST(s) zexist(s, sizeof(s))
 
@@ -1244,10 +1125,6 @@ void varioWakeup();
   extern const unsigned char logo_taranis[];
 #endif
 
-#if defined(STM32)
-void usbPluggedIn();
-#endif
-
 #include "lua/lua_api.h"
 
 #if defined(SDCARD)
@@ -1279,24 +1156,12 @@ struct Clipboard {
 extern Clipboard clipboard;
 #endif
 
-#if !defined(SIMU)
-extern uint16_t s_anaFilt[NUM_ANALOGS];
-#endif
-
-#if defined(JITTER_MEASURE)
-extern JitterMeter<uint16_t> rawJitter[NUM_ANALOGS];
-extern JitterMeter<uint16_t> avgJitter[NUM_ANALOGS];
-#if defined(PCBHORUS) || defined(PCBTARANIS)
-  #define JITTER_MEASURE_ACTIVE()   (menuHandlers[menuLevel] == menuRadioDiagAnalogs)
-#elif defined(CLI)
-  #define JITTER_MEASURE_ACTIVE()   (1)
-#else
-  #define JITTER_MEASURE_ACTIVE()   (0)
-#endif
-#endif
-
 #if defined(INTERNAL_GPS)
   #include "gps.h"
+#endif
+
+#if defined(SPACEMOUSE)
+  #include "spacemouse.h"
 #endif
 
 #if defined(JACK_DETECT_GPIO)
@@ -1308,7 +1173,7 @@ enum JackMode {
 };
 #endif
 
-#if defined(GYRO)
+#if defined(IMU)
 #include "gyro.h"
 #endif
 
@@ -1326,3 +1191,5 @@ inline bool isAsteriskDisplayed()
 }
 
 #include "module.h"
+
+extern CircularBuffer<uint8_t, 8> luaSetStickySwitchBuffer;

@@ -24,7 +24,6 @@
 
 #include <QtCore>
 
-constexpr int CPN_MAX_SENSORS  { 60 };
 constexpr int SENSOR_LABEL_LEN { 4 };
 
 constexpr int SENSOR_ISCONFIGURABLE   { 1 << 1 };
@@ -77,6 +76,8 @@ class SensorData {
       TELEM_CELL_INDEX_4,
       TELEM_CELL_INDEX_5,
       TELEM_CELL_INDEX_6,
+      TELEM_CELL_INDEX_7,
+      TELEM_CELL_INDEX_8,
       TELEM_CELL_INDEX_HIGHEST,
       TELEM_CELL_INDEX_DELTA,
       TELEM_CELL_INDEX_LAST = TELEM_CELL_INDEX_DELTA
@@ -197,7 +198,7 @@ class SensorData {
     void formulaChanged();
     void unitChanged();
 
-    static QString sourceToString(const ModelData * model, const int index, const bool sign = false);
+    static QString sourceToString(const ModelData * model, const int index, const bool positivesign = false);
     static bool isSourceAvailable(const ModelData * model, const int index);
     static QString idToString(const int value);
     static QString typeToString(const int value);

@@ -1,8 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   cleanflight - https://github.com/cleanflight
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -39,8 +39,18 @@ struct gpsdata_t
 };
 
 extern gpsdata_t gpsData;
+
+#if defined(DEBUG)
+extern uint8_t gpsTraceEnabled;
+#endif
+
+// Setup GPS serial port
+void gpsSetSerialDriver(void* ctx, const etx_serial_driver_t* drv);
+
+// Periodic processing
 void gpsWakeup();
 
+// Send a 0-terminated frame
 void gpsSendFrame(const char * frame);
 
 #endif // _GPS_H_

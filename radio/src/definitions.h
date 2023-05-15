@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -94,10 +95,12 @@
 #endif
 
 #if defined(__cplusplus)
+  #undef  EXTERN_C
   #define EXTERN_C(__Declaration__) extern "C" { __Declaration__ ; }
   #define EXTERN_C_START extern "C" {
   #define EXTERN_C_END }
 #else
+  #undef  EXTERN_C
   #define EXTERN_C(__Declaration__) __Declaration__
   #define EXTERN_C_START
   #define EXTERN_C_END

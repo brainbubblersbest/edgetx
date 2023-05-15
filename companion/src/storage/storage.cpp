@@ -21,7 +21,9 @@
 #include "bineeprom.h"
 #include "eepe.h"
 #include "otx.h"
+#include "etx.h"
 #include "sdcard.h"
+#include "yaml.h"
 #include "firmwareinterface.h"
 #include "eeprominterface.h"
 #include <QFileInfo>
@@ -41,6 +43,10 @@ StorageType getStorageType(const QString & filename)
     return STORAGE_TYPE_XML;
   else if (suffix == "OTX")
     return STORAGE_TYPE_OTX;
+  else if (suffix == "ETX")
+    return STORAGE_TYPE_ETX;
+  else if (suffix == "YML")
+    return STORAGE_TYPE_YML;
   else
     return STORAGE_TYPE_UNKNOWN;
 }
@@ -61,6 +67,8 @@ void registerStorageFactories()
   registerStorageFactory(new DefaultStorageFactory<EepeFormat>("eepe"));
   registerStorageFactory(new DefaultStorageFactory<HexEepromFormat>("hex"));
   registerStorageFactory(new DefaultStorageFactory<OtxFormat>("otx"));
+  registerStorageFactory(new DefaultStorageFactory<EtxFormat>("etx"));
+  registerStorageFactory(new DefaultStorageFactory<YamlFormat>("yml"));
   registerStorageFactory(new SdcardStorageFactory());
 }
 
@@ -80,17 +88,20 @@ bool Storage::load(RadioData & radioData)
 
   bool ret = false;
   foreach(StorageFactory * factory, registeredStorageFactories) {
-    StorageFormat * format = factory->instance(filename);
-    if (format->load(radioData)) {
-      board = format->getBoard();
-      setWarning(format->warning());
-      ret = true;
-      break;
+    if (factory->probe(filename)) {
+      StorageFormat * format = factory->instance(filename);
+      if (format->load(radioData)) {
+        board = format->getBoard();
+        setWarning(format->warning());
+        ret = true;
+        delete format;
+        break;
+      }
+      else {
+        setError(format->error());
+      }
+      delete format;
     }
-    else {
-      setError(format->error());
-    }
-    delete format;
   }
 
   return ret;
@@ -103,6 +114,20 @@ bool Storage::write(const RadioData & radioData)
     if (factory->probe(filename)) {
       StorageFormat * format = factory->instance(filename);
       ret = format->write(radioData);
+      delete format;
+      break;
+    }
+  }
+  return ret;
+}
+
+bool Storage::writeModel(const RadioData & radioData, const int modelIndex)
+{
+  bool ret = false;
+  foreach(StorageFactory * factory, registeredStorageFactories) {
+    if (factory->probe(filename)) {
+      StorageFormat * format = factory->instance(filename);
+      ret = format->writeModel(radioData, modelIndex);
       delete format;
       break;
     }

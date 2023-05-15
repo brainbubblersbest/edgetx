@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,54 +19,47 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _MODEL_INPUTS_H
-#define _MODEL_INPUTS_H
+#pragma once
 
 #include "tabsgroup.h"
 
-class ModelInputsPage: public PageTab {
-  public:
-    ModelInputsPage();
+class InputMixGroup;
+class InputMixButton;
 
-    void build(FormWindow * window) override
-    {
-      build(window, 0);
-    }
+class ModelInputsPage : public PageTab
+{
+ public:
+  ModelInputsPage();
 
-  protected:
-    void build(FormWindow * window, int8_t focusIndex);
-    void rebuild(FormWindow * window, int8_t focusIndex);
-    void editInput(FormWindow * window, uint8_t channel, uint8_t index);
-    uint8_t s_copySrcIdx;
+  void build(FormWindow *window) override;
+
+ protected:
+  FormWindow* form = nullptr;
+  std::list<InputMixGroup*> groups;
+  std::list<InputMixButton*> lines;
+  InputMixButton* _copySrc = nullptr;
+  uint8_t _copyMode = 0;
+
+  InputMixGroup* getGroupBySrc(mixsrc_t src);
+  virtual InputMixGroup* getGroupByIndex(uint8_t index);
+  InputMixButton* getLineByIndex(uint8_t index);
+
+  void removeGroup(InputMixGroup* g);
+  void removeLine(InputMixButton* l);
+  
+  virtual void addLineButton(uint8_t index);
+  virtual void addLineButton(mixsrc_t src, uint8_t index);
+  virtual InputMixGroup* createGroup(FormWindow* form, mixsrc_t src);
+  virtual InputMixButton* createLineButton(InputMixGroup *group, uint8_t index);
+
+  void newInput();
+  void editInput(uint8_t input, uint8_t index);
+  void insertInput(uint8_t input, uint8_t index);
+  void deleteInput(uint8_t index);
+
+  void pasteInput(uint8_t dst_idx, uint8_t input);
+  void pasteInputBefore(uint8_t dst_idx);
+  void pasteInputAfter(uint8_t dst_idx);
+
+  bool reachExposLimit();
 };
-
-class CommonInputOrMixButton : public Button {
-  public:
-    CommonInputOrMixButton(FormGroup * parent, const rect_t & rect, uint8_t index):
-      Button(parent, rect),
-      index(index)
-    {
-      setFocusHandler([=](bool active) {
-        if (active) {
-          bringToTop();
-        }
-      });
-    }
-
-    virtual bool isActive() const = 0;
-
-    void checkEvents() override;
-
-    void drawFlightModes(BitmapBuffer *dc, FlightModesType value, LcdFlags textColor);
-
-    void paint(BitmapBuffer * dc) override;
-
-    virtual void paintBody(BitmapBuffer * dc) = 0;
-
-  protected:
-    uint8_t index;
-    bool active = false;
-};
-
-
-#endif //_MODEL_INPUTS_H

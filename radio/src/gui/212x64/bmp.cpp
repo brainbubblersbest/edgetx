@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -203,6 +204,10 @@ bool loadModelBitmap(char * name, uint8_t * bitmap)
   }
 
   // In all error cases, we set the default logo
-  memcpy(bitmap, logo_taranis, MODEL_BITMAP_SIZE);
+  RleBitmap pic(logo_taranis, 0);
+  *bitmap++ = pic.getWidth();
+  *bitmap++ = pic.getRawRows();
+  for(int i=0; i < MODEL_BITMAP_SIZE-2; i++)
+    *bitmap++ = pic.getNext();
   return false;
 }

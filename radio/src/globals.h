@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,6 +24,7 @@
 
 #include "definitions.h"
 #include "dataconstants.h"
+#include "opentx_types.h"
 
 PACK(struct GlobalData {
   uint8_t unexpectedShutdown:1;
@@ -30,7 +32,8 @@ PACK(struct GlobalData {
   uint8_t authenticationCount:2;
   uint8_t upgradeModulePopup:1;
   uint8_t internalModuleVersionChecked:1;
-  uint8_t spare:2;
+  uint8_t flyskygimbals:1;
+  uint8_t spare:1;
 });
 
 extern GlobalData globalData;
@@ -55,12 +58,13 @@ extern uint8_t requiredBacklightBright;
 enum MainRequest {
   REQUEST_SCREENSHOT,
   REQUEST_FLIGHT_RESET,
+  REQUEST_MAIN_VIEW,
 };
 
 extern uint8_t mainRequestFlags;
 
 #define DELAY_POS_MARGIN   3
-typedef int16_t delayval_t;
+
 PACK(struct SwOn {
   uint16_t delay:14; // max = 2550
   uint8_t  activeMix:1;

@@ -12,13 +12,19 @@ set(simulation_SRCS
   simulateduiwidgetX9D2019.cpp
   simulateduiwidgetX10.cpp
   simulateduiwidgetX12.cpp
+  simulateduiwidgetLR3PRO.cpp
+  simulateduiwidgetCommando8.cpp
   simulateduiwidgetJumperT12.cpp
   simulateduiwidgetJumperTLITE.cpp
+  simulateduiwidgetJumperTPRO.cpp
   simulateduiwidgetJumperT16.cpp
   simulateduiwidgetJumperT18.cpp
   simulateduiwidgetTX12.cpp
+  simulateduiwidgetZorro.cpp
+  simulateduiwidgetBoxer.cpp
   simulateduiwidgetT8.cpp
   simulateduiwidgetTX16S.cpp
+  simulateduiwidgetNV14.cpp
   simulatorinterface.cpp
   simulatormainwindow.cpp
   simulatorstartupdialog.cpp
@@ -27,6 +33,7 @@ set(simulation_SRCS
   trainersimu.cpp
   widgets/radiowidget.cpp
   widgets/virtualjoystickwidget.cpp
+  widgets/lcdwidget.cpp
 )
 
 set(simulation_UIS
@@ -41,13 +48,19 @@ set(simulation_UIS
   simulateduiwidgetX9D2019.ui
   simulateduiwidgetX10.ui
   simulateduiwidgetX12.ui
+  simulateduiwidgetLR3PRO.ui
+  simulateduiwidgetCommando8.ui
   simulateduiwidgetJumperT12.ui
   simulateduiwidgetJumperTLITE.ui
+  simulateduiwidgetJumperTPRO.ui
   simulateduiwidgetJumperT16.ui
   simulateduiwidgetJumperT18.ui
   simulateduiwidgetTX12.ui
+  simulateduiwidgetZorro.ui
+  simulateduiwidgetBoxer.ui
   simulateduiwidgetT8.ui
   simulateduiwidgetTX16S.ui
+  simulateduiwidgetNV14.ui
   simulatormainwindow.ui
   simulatorstartupdialog.ui
   simulatorwidget.ui
@@ -80,7 +93,7 @@ set(simulation_HDRS
   widgets/virtualjoystickwidget.h
 )
 
-if(SDL_FOUND)
+if(SDL2_FOUND)
   set(simulation_SRCS
     ${simulation_SRCS}
     joystick.cpp
@@ -112,4 +125,4 @@ qt5_wrap_ui(simulation_SRCS ${simulation_UIS})
 qt5_wrap_cpp(simulation_SRCS ${simulation_HDRS})
 
 add_library(simulation ${simulation_SRCS} ${simulation_HDRS})
-target_link_libraries(simulation PRIVATE ${CPN_COMMON_LIB} Qt5::Core Qt5::Widgets Qt5::Svg)
+target_link_libraries(simulation PRIVATE ${CPN_COMMON_LIB} shared Qt5::Core Qt5::Widgets Qt5::Svg)

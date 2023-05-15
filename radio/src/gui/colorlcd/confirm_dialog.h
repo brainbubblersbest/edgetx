@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,12 +24,18 @@
 
 #include "dialog.h"
 
-class ConfirmDialog: public Dialog {
-  public:
-    ConfirmDialog(Window * parent, const char * title, const char * message, std::function<void(void)> confirmHandler);
+class ConfirmDialog : public Dialog
+{
+ public:
+  ConfirmDialog(Window* parent, const char* title, const char* message,
+                std::function<void(void)> confirmHandler,
+                std::function<void(void)> cancelHandler = nullptr);
 
-  protected:
-    std::function<void(void)> confirmHandler;
+ protected:
+  std::function<void(void)> confirmHandler;
+  std::function<void(void)> cancelHandler;
+
+  void onCancel() override;
 };
 
-#endif // _CONFIRM_DIALOG_H_
+#endif  // _CONFIRM_DIALOG_H_

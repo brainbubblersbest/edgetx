@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,10 +19,13 @@
  * GNU General Public License for more details.
  */
 
-#ifndef OPENTX_USB_DRIVER_H
-#define OPENTX_USB_DRIVER_H
+#pragma once
+
+#include "hal/serial_port.h"
+#include "definitions.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 // USB driver
 enum usbMode {
@@ -36,22 +40,22 @@ enum usbMode {
 #endif
 };
 
-int usbPlugged();
+// Control line state bits
+#define CTRL_LINE_STATE_DTR (1 << 0)
+#define CTRL_LINE_STATE_RTS (1 << 1)
+
+int  usbPlugged();
 void usbInit();
 void usbStart();
 void usbStop();
+#if defined(USBJ_EX)
+void usbJoystickRestart();
+#endif
 bool usbStarted();
-int getSelectedUsbMode();
+
+EXTERN_C(int getSelectedUsbMode());
 void setSelectedUsbMode(int mode);
 
-void usbSerialPutc(uint8_t c);
+EXTERN_C(uint32_t usbSerialFreeSpace());
 
-// Used in view_statistics.cpp
-#if defined(DEBUG) && !defined(BOOT)
-  extern uint16_t usbWraps;
-  extern uint16_t charsWritten;
-  extern volatile uint32_t APP_Rx_ptr_in;
-  extern volatile uint32_t APP_Rx_ptr_out;
-#endif
-
-#endif
+extern const etx_serial_port_t UsbSerialPort;

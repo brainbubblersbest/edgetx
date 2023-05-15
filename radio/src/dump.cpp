@@ -1,8 +1,9 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   th9x - http://code.google.com/p/th9x 
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
  *
@@ -23,7 +24,7 @@
 #if defined(SIMU)
 #define dumpPrintf(...) debugPrintf(__VA_ARGS__)
 #else
-#define dumpPrintf(...) serialPrintf(__VA_ARGS__)
+#define dumpPrintf(...) dbgSerialPrintf(__VA_ARGS__)
 #endif
 
 #if defined(DEBUG) || defined(CLI)

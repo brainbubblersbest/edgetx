@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -41,7 +42,6 @@ class Debounce
     T debouncedState;
 };
 
-#if defined(STM32)
 class PinDebounce: public Debounce<uint8_t>
 {
   public:
@@ -50,6 +50,5 @@ class PinDebounce: public Debounce<uint8_t>
       return Debounce<uint8_t>::debounce(GPIO_ReadInputDataBit(GPIOx, GPIO_Pin));
     }
 };
-#endif
 
 #endif // _DEBOUNCE_H_

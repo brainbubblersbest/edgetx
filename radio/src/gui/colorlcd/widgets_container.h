@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,10 +27,14 @@
 #include "form.h"
 #include "zone.h"
 
-#define WIDGET_NAME_LEN     10
+#define WIDGET_NAME_LEN     12
 #define MAX_WIDGET_OPTIONS   5 // Name?
 
+#if LCD_W > LCD_H
 #define MAX_TOPBAR_ZONES     4
+#else
+#define MAX_TOPBAR_ZONES     2
+#endif
 #define MAX_TOPBAR_OPTIONS   1 // just because of VC++ which doesn't like 0-size arrays :(
 
 // Common 'ZoneOptionValue's among all layouts
@@ -62,12 +67,19 @@ struct WidgetsContainerPersistentData {
   ZoneOptionValueTyped options[O];
 };
 
+#if !defined(YAML_GENERATOR)
 typedef WidgetsContainerPersistentData<MAX_TOPBAR_ZONES, MAX_TOPBAR_OPTIONS> TopBarPersistentData;
+#else
+struct TopBarPersistentData {
+  ZonePersistentData   zones[MAX_TOPBAR_ZONES];
+  ZoneOptionValueTyped options[MAX_TOPBAR_OPTIONS];
+};
+#endif
 
-class WidgetsContainer: public FormGroup
+class WidgetsContainer: public Window
 {
   public:
-    using FormGroup::FormGroup;
+    using Window::Window;
   
     virtual unsigned int getZonesCount() const = 0;
     virtual rect_t getZone(unsigned int index) const = 0;
@@ -76,6 +88,7 @@ class WidgetsContainer: public FormGroup
     virtual void removeWidget(unsigned int index) = 0;
     virtual void adjustLayout() = 0;
     virtual void updateZones() = 0;
+    virtual void updateFromTheme() = 0;
 };
 
 

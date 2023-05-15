@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,6 +24,8 @@
 
 #include "storage/modelslist.h"
 
+#include <cstring>
+
 using std::list;
 
 struct modelslist_iter
@@ -33,17 +36,18 @@ struct modelslist_iter
         Model=2
     };
 
-    ModelsList* root;
+    std::vector<std::string>* filelist;
     uint8_t     level;
     char        current_attr[16]; // set after find_node()
 };
 
 static modelslist_iter __modelslist_iter_inst;
 
-void* get_modelslist_iter()
+void* get_modelslist_iter(std::vector<std::string>* filelist)
 {
-    __modelslist_iter_inst.root = &modelslist;
+    __modelslist_iter_inst.filelist = filelist;
     __modelslist_iter_inst.level = 0;
+
     return &__modelslist_iter_inst;
 }
 
@@ -91,35 +95,22 @@ static bool find_node(void* ctx, char* buf, uint8_t len)
     return true;
 }
 
-static void set_attr(void* ctx, char* buf, uint8_t len)
+static void set_attr(void* ctx, char* buf, uint16_t len)
 {
-    modelslist_iter* mi = (modelslist_iter*)ctx;
-    list<ModelsCategory *>& cats = mi->root->getCategories();
-    switch(mi->level) {
-    case modelslist_iter::Category: {
-        ModelsCategory* cat = new ModelsCategory(buf,len);
-        cats.push_back(cat);
-    } break;
+  char fnamebuf[LEN_MODEL_FILENAME + 1];
+  modelslist_iter* mi = (modelslist_iter*)ctx;
 
+  switch (mi->level) {
     case modelslist_iter::Model:
-        if (!strcmp(mi->current_attr,"filename")) {
-            if (!cats.empty()) {
-                ModelCell* model = new ModelCell(buf, len);
-                cats.back()->push_back(model);
-                mi->root->incModelsCount();
-            }
+      if (!strcmp(mi->current_attr, "filename")) {
+        if(len <= LEN_MODEL_FILENAME) {
+          memcpy(fnamebuf, buf, len);
+          fnamebuf[len] = '\0';
+          mi->filelist->push_back(fnamebuf);
         }
-        else if (!strcmp(mi->current_attr,"name")) {
-            if (!cats.empty()) {
-                ModelsCategory* cat = cats.back();
-                if (!cat->empty()) {
-                    ModelCell* model = cat->back();
-                    model->setModelName(buf,len);
-                }
-            }
-        }
-        break;
-    }
+      }
+      break;
+  }
 }
 
 static const YamlParserCalls modelslistCalls = {

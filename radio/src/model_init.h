@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,5 +24,11 @@
 void clearInputs();
 void setDefaultInputs();
 
+#if defined(STORAGE_MODELSLIST)
+  #define DEFAULT_MODEL_IDX 1
+#else
+  #define DEFAULT_MODEL_IDX 0
+#endif
+
 // Reset the global model to full defaults
-void setModelDefaults(uint8_t id);
+void setModelDefaults(uint8_t id = DEFAULT_MODEL_IDX);

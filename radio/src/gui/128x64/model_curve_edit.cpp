@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -46,7 +47,7 @@ void runPopupCurvePreset(event_t event)
   }
 
   lcdDrawNumber(WARNING_LINE_X+FW*7, WARNING_LINE_Y, 45 * reusableBuffer.curveEdit.preset / 4, LEFT|INVERS);
-  lcdDrawChar(lcdLastRightPos, WARNING_LINE_Y, '@', INVERS);
+  lcdDrawChar(lcdLastRightPos, WARNING_LINE_Y, STR_CHAR_BW_DEGREE, INVERS);
 
   if (warningResult) {
     warningResult = 0;
@@ -71,19 +72,12 @@ void onCurveOneMenu(const char * result)
     POPUP_INPUT(STR_PRESET, runPopupCurvePreset);
   }
   else if (result == STR_MIRROR) {
-    CurveHeader & crv = g_model.curves[s_currIdxSubMenu];
-    int8_t * points = curveAddress(s_currIdxSubMenu);
-    for (int i=0; i<5+crv.points; i++)
-      points[i] = -points[i];
+    curveMirror(s_currIdxSubMenu);
+    storageDirty(EE_MODEL);
   }
   else if (result == STR_CLEAR) {
-    CurveHeader & crv = g_model.curves[s_currIdxSubMenu];
-    int8_t * points = curveAddress(s_currIdxSubMenu);
-    for (int i=0; i<5+crv.points; i++)
-      points[i] = 0;
-    if (crv.type == CURVE_TYPE_CUSTOM) {
-      resetCustomCurveX(points, 5+crv.points);
-    }
+    curveClear(s_currIdxSubMenu);
+    storageDirty(EE_MODEL);
   }
 }
 

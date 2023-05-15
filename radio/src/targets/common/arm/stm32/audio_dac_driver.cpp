@@ -1,8 +1,9 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   th9x - http://code.google.com/p/th9x 
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
  *
@@ -43,6 +44,34 @@ void dacTimerInit()
   AUDIO_TIMER->CR1 = TIM_CR1_CEN ;
 }
 
+#if defined(AUDIO_MUTE_GPIO_PIN)
+static inline void setMutePin(bool enabled)
+{
+  if (enabled) {
+#if defined(INVERTED_MUTE_PIN)
+    GPIO_ResetBits(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+#else
+    GPIO_SetBits(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+#endif
+  } else {
+#if defined(INVERTED_MUTE_PIN)
+    GPIO_SetBits(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+#else
+    GPIO_ResetBits(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+#endif
+  }
+}
+
+static inline bool getMutePin(void)
+{
+#if defined(INVERTED_MUTE_PIN)
+  return !GPIO_ReadOutputDataBit(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+#else
+  return GPIO_ReadOutputDataBit(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+#endif  
+}
+#endif
+
 // Configure DAC0
 // Not sure why PB14 has not be allocated to the DAC, although it is an EXTRA function
 // So maybe it is automatically done
@@ -59,7 +88,7 @@ void dacInit()
   GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
   GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
   GPIO_Init(AUDIO_MUTE_GPIO, &GPIO_InitStructure);
-  GPIO_SetBits(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+  setMutePin(true);
 #endif
 
   GPIO_InitStructure.GPIO_Pin = AUDIO_OUTPUT_GPIO_PIN;
@@ -99,11 +128,11 @@ void audioMute()
   }
   else if (now - audioQueue.lastAudioPlayTime > AUDIO_MUTE_DELAY / 10) {
     // delay expired, we may mute
-    GPIO_SetBits(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+  setMutePin(true);
   }
 #else
   // mute
-  GPIO_SetBits(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+  setMutePin(true);
 #endif
 }
 
@@ -111,15 +140,15 @@ void audioUnmute()
 {
 #if defined(AUDIO_UNMUTE_DELAY)
   // if muted
-  if (GPIO_ReadOutputDataBit(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN)) {
+  if (getMutePin()) {
     // ..un-mute
-    GPIO_ResetBits(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+    setMutePin(false);
     RTOS_WAIT_MS(AUDIO_UNMUTE_DELAY);
   }
   // reset the mute delay
   audioQueue.lastAudioPlayTime = 0;
 #else
-  GPIO_ResetBits(AUDIO_MUTE_GPIO, AUDIO_MUTE_GPIO_PIN);
+  setMutePin(false);
 #endif
 }
 #endif

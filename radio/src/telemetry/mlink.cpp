@@ -1,5 +1,11 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
+ *
+ * Based on code named
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
+ *   er9x - http://code.google.com/p/er9x
+ *   gruvin9x - http://code.google.com/p/gruvin9x
  *
  * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
  *
@@ -14,6 +20,7 @@
  */
 
 #include "opentx.h"
+#include "mlink.h"
 
 struct MLinkSensor
 {
@@ -24,23 +31,23 @@ struct MLinkSensor
 };
 
 const MLinkSensor mlinkSensors[] = {
-  {MLINK_RX_VOLTAGE,      STR_BATT,              UNIT_VOLTS,             1},
-  {MLINK_VOLTAGE,         STR_VFAS,              UNIT_VOLTS,             1},
-  {MLINK_CURRENT,         STR_CURR,              UNIT_AMPS,              1},
-  {MLINK_VARIO,           STR_VSPD,              UNIT_METERS_PER_SECOND, 1},
-  {MLINK_SPEED,           STR_SPEED,             UNIT_KMH,               1},
-  {MLINK_RPM,             STR_RPM,               UNIT_RPMS,              0},
-  {MLINK_TEMP,            STR_TEMP1,             UNIT_CELSIUS,           1},
-  {MLINK_HEADING,         STR_HDG,               UNIT_DEGREE,            1},
-  {MLINK_ALT,             STR_ALT ,              UNIT_METERS,            0},
-  {MLINK_FUEL,            STR_FUEL,              UNIT_PERCENT,           0},
-  {MLINK_CAPACITY,        STR_CAPACITY,          UNIT_MAH,               0},
-  {MLINK_FLOW,            STR_FLOW,              UNIT_MILLILITERS,       0},
-  {MLINK_DISTANCE,        STR_DIST,              UNIT_KM,                1},
-  {MLINK_LQI,             STR_RSSI,              UNIT_RAW,               0},
-  {MLINK_LOSS,            STR_LOSS,              UNIT_RAW,               0},
-  {MLINK_TX_RSSI,         STR_TX_RSSI,           UNIT_RAW,               0},
-  {MLINK_TX_LQI,          STR_TX_QUALITY,        UNIT_RAW,               0},
+  {MLINK_RX_VOLTAGE,      STR_SENSOR_BATT,              UNIT_VOLTS,             1},
+  {MLINK_VOLTAGE,         STR_SENSOR_VFAS,              UNIT_VOLTS,             1},
+  {MLINK_CURRENT,         STR_SENSOR_CURR,              UNIT_AMPS,              1},
+  {MLINK_VARIO,           STR_SENSOR_VSPD,              UNIT_METERS_PER_SECOND, 1},
+  {MLINK_SPEED,           STR_SENSOR_SPEED,             UNIT_KMH,               1},
+  {MLINK_RPM,             STR_SENSOR_RPM,               UNIT_RPMS,              0},
+  {MLINK_TEMP,            STR_SENSOR_TEMP1,             UNIT_CELSIUS,           1},
+  {MLINK_HEADING,         STR_SENSOR_HDG,               UNIT_DEGREE,            1},
+  {MLINK_ALT,             STR_SENSOR_ALT ,              UNIT_METERS,            0},
+  {MLINK_FUEL,            STR_SENSOR_FUEL,              UNIT_PERCENT,           0},
+  {MLINK_CAPACITY,        STR_SENSOR_CAPACITY,          UNIT_MAH,               0},
+  {MLINK_FLOW,            STR_SENSOR_FLOW,              UNIT_MILLILITERS,       0},
+  {MLINK_DISTANCE,        STR_SENSOR_DIST,              UNIT_KM,                1},
+  {MLINK_LQI,             STR_SENSOR_RSSI,              UNIT_RAW,               0},
+  {MLINK_LOSS,            STR_SENSOR_LOSS,              UNIT_RAW,               0},
+  {MLINK_TX_RSSI,         STR_SENSOR_TX_RSSI,           UNIT_RAW,               0},
+  {MLINK_TX_LQI,          STR_SENSOR_TX_QUALITY,        UNIT_RAW,               0},
 };
 
 const MLinkSensor * getMLinkSensor(uint16_t id)

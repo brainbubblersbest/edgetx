@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,14 +19,11 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _MULTI_PULSES_H_
-#define _MULTI_PULSES_H_
+#pragma once
 
 #include "pulses_common.h"
-
-void multiPatchCustom(uint8_t moduleIdx);
-void convertOtxProtocolToMulti(int *protocol, int *subprotocol);
-void convertMultiProtocolToOtx(int *protocol, int *subprotocol);
+#include "hal/serial_driver.h"
+#include "hal/module_driver.h"
 
 class UartMultiPulses: public DataBuffer<uint8_t, 64>
 {
@@ -42,4 +40,4 @@ class UartMultiPulses: public DataBuffer<uint8_t, 64>
     }
 };
 
-#endif
+extern const etx_proto_driver_t MultiDriver;

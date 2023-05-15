@@ -1,8 +1,9 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   th9x - http://code.google.com/p/th9x 
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
  *
@@ -23,6 +24,17 @@
 
 #define SBUS_BAUDRATE         100000
 #define SBUS_FRAME_SIZE       25
+
+// Setup SBUS AUX serial input
+void sbusSetAuxGetByte(void* ctx, int (*fct)(void*, uint8_t*));
+
+// SBUS AUX serial getter:
+//  if set, it will fetch data from the handler set
+//  with sbusSetAuxGetByte()
+int sbusAuxGetByte(uint8_t* byte);
+
+// Setup general SBUS input source
+void sbusSetGetByte(int (*fct)(uint8_t*));
 
 void processSbusInput();
 

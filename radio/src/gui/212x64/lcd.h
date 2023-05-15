@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -110,7 +111,7 @@ void lcdDrawChar(coord_t x, coord_t y, uint8_t c);
 void lcdDrawChar(coord_t x, coord_t y, uint8_t c, LcdFlags mode);
 void lcdDrawCenteredText(coord_t y, const char * s, LcdFlags flags = 0);
 void lcdDrawText(coord_t x, coord_t y, const char * s, LcdFlags mode);
-void lcdDrawTextAtIndex(coord_t x, coord_t y, const char * s,uint8_t idx, LcdFlags mode);
+void lcdDrawTextAtIndex(coord_t x, coord_t y, const char *const *s,uint8_t idx, LcdFlags mode);
 void lcdDrawSizedText(coord_t x, coord_t y, const char * s, unsigned char len, LcdFlags mode);
 void lcdDrawText(coord_t x, coord_t y, const char * s);
 void lcdDrawSizedText(coord_t x, coord_t y, const char * s, unsigned char len);
@@ -167,7 +168,9 @@ void drawTelemetryTopBar();
 void lcdDraw1bitBitmap(coord_t x, coord_t y, const unsigned char * img, uint8_t idx, LcdFlags att=0);
 
 void lcdDrawBitmap(coord_t x, coord_t y, const uint8_t * img, coord_t offset=0, coord_t width=0);
-#define LCD_ICON(x, y, icon) lcdDrawBitmap(x, y, icons, icon)
+void lcdDrawRleBitmap(coord_t x, coord_t y, const uint8_t * img, coord_t offset=0, coord_t width=0);
+#define LCD_ICON(x, y, icon) lcdDrawRleBitmap(x, y, icons, icon)
+
 
 void lcdClear();
 
@@ -191,5 +194,78 @@ inline pixel_t getPixel(unsigned int x, unsigned int y)
 }
 
 uint8_t getTextWidth(const char * s, uint8_t len=0, LcdFlags flags=0);
+
+class RleBitmap
+{
+public:
+  RleBitmap(const uint8_t *src, coord_t offset) :
+    state(RLE_FIRST_BYTE), src(src), curPtr(src), byte(0), curCount(0), pos(0)
+  {
+    width = *curPtr++;
+    rawRows = *curPtr++;
+    rows = (rawRows +1)/2;
+    skip(offset);
+  }
+
+  void skip(coord_t count)
+  {
+    while(count)
+    {
+      count--;
+      getNext();
+    }
+  }
+
+  uint8_t getNext()
+  {
+    pos++;
+    switch(state)
+    {
+    case RLE_FIRST_BYTE:
+      byte = *curPtr++;
+      if(byte == *curPtr)
+        state = RLE_SECOND_BYTE;
+      break;
+    case RLE_SECOND_BYTE:
+      byte = *curPtr++;
+      curCount = (*curPtr++)+1;
+      state = RLE_CONTINUE;
+      // fall through
+    case RLE_CONTINUE:
+      curCount--;
+      if(!curCount)
+        state = RLE_FIRST_BYTE;
+      break;
+    }
+    return byte;
+  }
+
+  uint8_t getWidth() const { return width; }
+  uint8_t getRows() const { return rows; }
+  uint8_t getRawRows() const { return rawRows; }
+  void goToNextRow()
+  {
+    coord_t offset = pos%width;
+    if(offset)
+      skip(width - pos%width);
+  }
+
+  void reset() { curPtr = src; }
+  
+private:
+  enum State {RLE_FIRST_BYTE, RLE_SECOND_BYTE, RLE_CONTINUE} state;
+  const uint8_t* src;
+  const uint8_t* curPtr;
+
+  uint8_t width;
+  uint8_t rows;
+  uint8_t rawRows;
+
+  uint8_t byte;
+  uint16_t curCount;
+
+  coord_t pos;
+};
+
 
 #endif // _LCD_H_

@@ -25,6 +25,7 @@
 #include "helpers_html.h"
 #include "appdata.h"
 #include "adjustmentreference.h"
+#include "curveimage.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -190,9 +191,9 @@ QString ModelPrinter::printModule(int idx)
   QString result;
   ModuleData module = model.moduleData[(idx<0 ? CPN_MAX_MODULES : idx)];
   if (idx < 0) {
-    str << printLabelValue(tr("Mode"), printTrainerMode());
+    str << printLabelValue(tr("Mode"), model.trainerModeToString());
     if (IS_HORUS_OR_TARANIS(firmware->getBoard())) {
-      if (model.trainerMode == TRAINER_SLAVE_JACK) {
+      if (model.trainerMode == TRAINER_MODE_SLAVE_JACK) {
         str << printLabelValue(tr("Channels"), QString("%1-%2").arg(module.channelsStart + 1).arg(module.channelsStart + module.channelsCount));
         str << printLabelValue(tr("Frame length"), QString("%1ms").arg(printPPMFrameLength(module.ppm.frameLength)));
         str << printLabelValue(tr("PPM delay"), QString("%1us").arg(module.ppm.delay));
@@ -229,37 +230,15 @@ QString ModelPrinter::printModule(int idx)
           str << printLabelValue(tr("RF Output Power"), module.powerValueToString(firmware));
           str << printLabelValue(tr("RX Output Frequency"), QString("%1Hz").arg(module.afhds3.rxFreq));
         }
+        if (module.protocol == PULSES_GHOST) {
+          str << printLabelValue(tr("Raw 12 bits"), printBoolean(module.ghost.raw12bits, BOOLEAN_YN));
+        }
       }
     }
     result = str.join(" ");
     if (((PulsesProtocol)module.protocol == PulsesProtocol::PULSES_PXX_XJT_X16 || (PulsesProtocol)module.protocol == PulsesProtocol::PULSES_PXX_R9M)
        && firmware->getCapability(HasFailsafe))
       result.append("<br/>" + printFailsafe(idx));
-  }
-  return result;
-}
-
-QString ModelPrinter::printTrainerMode()
-{
-  QString result;
-  switch (model.trainerMode) {
-    case TRAINER_MASTER_JACK:
-      result = tr("Master/Jack");
-      break;
-    case TRAINER_SLAVE_JACK:
-      result = tr("Slave/Jack");
-      break;
-    case TRAINER_MASTER_SBUS_MODULE:
-      result = tr("Master/SBUS Module");
-      break;
-    case TRAINER_MASTER_CPPM_MODULE:
-      result = tr("Master/CPPM Module");
-      break;
-    case TRAINER_MASTER_SBUS_BATT_COMPARTMENT:
-      result = tr("Master/SBUS in battery compartment");
-      break;
-    default:
-      result = CPN_STR_UNKNOWN_ITEM;
   }
   return result;
 }
@@ -376,6 +355,11 @@ QString ModelPrinter::printInputLine(const ExpoData & input)
     str += input.srcRaw.toString(&model, &generalSettings).toHtmlEscaped();
   }
 
+  if (input.srcRaw.type == SOURCE_TYPE_TELEMETRY && input.scale != 0){
+    RawSourceRange range = input.srcRaw.getRange(&model, generalSettings);
+    str += " " + tr("Scale(%1)").arg(input.scale * range.step).toHtmlEscaped();
+  }
+
   str += " " + tr("Weight(%1)").arg(AdjustmentReference(input.weight).toString(&model, true)).toHtmlEscaped();
   if (input.curve.value)
     str += " " + input.curve.toString(&model).toHtmlEscaped();
@@ -385,14 +369,14 @@ QString ModelPrinter::printInputLine(const ExpoData & input)
     str += " " + flightModesStr.toHtmlEscaped();
 
   if (input.swtch.type != SWITCH_TYPE_NONE)
-    str += " " + tr("Switch(%1)").arg(input.swtch.toString(getCurrentBoard(), &generalSettings)).toHtmlEscaped();
+    str += " " + tr("Switch(%1)").arg(input.swtch.toString(getCurrentBoard(), &generalSettings, &model)).toHtmlEscaped();
 
 
   if (firmware->getCapability(VirtualInputs)) {
-    if (input.carryTrim > 0)
-      str += " " + tr("NoTrim");
-    else if (input.carryTrim < 0)
-      str += " " + RawSource(SOURCE_TYPE_TRIM, (-(input.carryTrim) - 1)).toString(&model, &generalSettings).toHtmlEscaped();
+    if ((input.srcRaw.isStick() && input.carryTrim == CARRYTRIM_STICK_OFF) || (!input.srcRaw.isStick() && input.carryTrim == CARRYTRIM_DEFAULT))
+      str += " " + tr("No Trim");
+    else if (input.carryTrim != CARRYTRIM_DEFAULT)
+      str += " " + input.carryTrimToString().toHtmlEscaped();
   }
 
   if (input.offset)
@@ -434,7 +418,7 @@ QString ModelPrinter::printMixerLine(const MixData & mix, bool showMultiplex, in
     str += " " + flightModesStr.toHtmlEscaped();
 
   if (mix.swtch.type != SWITCH_TYPE_NONE)
-    str += " " + tr("Switch(%1)").arg(mix.swtch.toString(getCurrentBoard(), &generalSettings)).toHtmlEscaped();
+    str += " " + tr("Switch(%1)").arg(mix.swtch.toString(getCurrentBoard(), &generalSettings, &model)).toHtmlEscaped();
 
   if (mix.carryTrim > 0)
     str += " " + tr("NoTrim");
@@ -635,30 +619,6 @@ QString ModelPrinter::printLogicalSwitchLine(int idx)
   return result;
 }
 
-QString ModelPrinter::printCustomFunctionLine(int idx, bool gfunc)
-{
-  QString result;
-  CustomFunctionData cf;
-  if (gfunc) {
-    if (model.noGlobalFunctions)
-      return result;
-    cf = generalSettings.customFn[idx];
-  }
-  else
-    cf = model.customFn[idx];
-  if (cf.swtch.type == SWITCH_TYPE_NONE)
-    return result;
-
-  result += cf.swtch.toString(getCurrentBoard(), &generalSettings) + " - ";
-  result += cf.funcToString(&model) + " (";
-  result += cf.paramToString(&model) + ")";
-  if (!cf.repeatToString().isEmpty())
-    result += " " + cf.repeatToString();
-  if (!cf.enabledToString().isEmpty())
-    result += " " + cf.enabledToString();
-  return result;
-}
-
 QString ModelPrinter::printCurveName(int idx)
 {
   return model.curves[idx].nameToString(idx).toHtmlEscaped();
@@ -666,55 +626,8 @@ QString ModelPrinter::printCurveName(int idx)
 
 QString ModelPrinter::printCurve(int idx)
 {
-  QString result;
-  const CurveData & curve = model.curves[idx];
-  result += (curve.type == CurveData::CURVE_TYPE_CUSTOM) ? tr("Custom") : tr("Standard");
-  result += ", [";
-  if (curve.type == CurveData::CURVE_TYPE_CUSTOM) {
-    for (int j=0; j<curve.count; j++) {
-      if (j != 0)
-        result += ", ";
-      result += QString("(%1, %2)").arg(curve.points[j].x).arg(curve.points[j].y);
-    }
-  }
-  else {
-    for (int j=0; j<curve.count; j++) {
-      if (j != 0)
-        result += ", ";
-      result += QString("%1").arg(curve.points[j].y);
-    }
-  }
-  result += "]";
-  return result;
-}
-
-CurveImage::CurveImage():
-  size(200),
-  image(size+1, size+1, QImage::Format_RGB32),
-  painter(&image)
-{
-  painter.setBrush(QBrush("#FFFFFF"));
-  painter.setPen(QColor(0, 0, 0));
-  painter.drawRect(0, 0, size, size);
-
-  painter.setPen(QColor(0, 0, 0));
-  painter.drawLine(0, size/2, size, size/2);
-  painter.drawLine(size/2, 0, size/2, size);
-  for (int i=0; i<21; i++) {
-    painter.drawLine(size/2-5, (size*i)/(20), size/2+5, (size*i)/(20));
-    painter.drawLine((size*i)/(20), size/2-5, (size*i)/(20), size/2+5);
-  }
-}
-
-void CurveImage::drawCurve(const CurveData & curve, QColor color)
-{
-  painter.setPen(QPen(color, 2, Qt::SolidLine));
-  for (int j=1; j<curve.count; j++) {
-    if (curve.type == CurveData::CURVE_TYPE_CUSTOM)
-      painter.drawLine(size/2+(size*curve.points[j-1].x)/200, size/2-(size*curve.points[j-1].y)/200, size/2+(size*curve.points[j].x)/200, size/2-(size*curve.points[j].y)/200);
-    else
-      painter.drawLine(size*(j-1)/(curve.count-1), size/2-(size*curve.points[j-1].y)/200, size*(j)/(curve.count-1), size/2-(size*curve.points[j].y)/200);
-  }
+ const CurveData & curve = model.curves[idx];
+  return QString("%1   %2").arg(curve.typeToString()).arg(curve.pointsToString());
 }
 
 QString ModelPrinter::createCurveImage(int idx, QTextDocument * document)
@@ -822,7 +735,7 @@ QString ModelPrinter::printSwitchWarnings()
   uint64_t switchStates = model.switchWarningStates;
   uint64_t value;
 
-  for (int idx=0; idx<board.getCapability(Board::Switches); idx++) {
+  for (int idx=0; idx<board.getCapability(Board::Switches) + board.getCapability(Board::FunctionSwitches); idx++) {
     Board::SwitchInfo switchInfo = Boards::getSwitchInfo(board.getBoardType(), idx);
     switchInfo.config = Board::SwitchType(generalSettings.switchConfig[idx]);
     if (switchInfo.config == Board::SWITCH_NOT_AVAILABLE || switchInfo.config == Board::SWITCH_TOGGLE) {
@@ -851,7 +764,7 @@ QString ModelPrinter::printPotWarnings()
     for (int i=0; i<board.getCapability(Board::Pots)+board.getCapability(Board::Sliders); i++) {
       RawSource src(SOURCE_TYPE_STICK, CPN_MAX_STICKS + i);
       if ((src.isPot(&genAryIdx) && generalSettings.isPotAvailable(genAryIdx)) || (src.isSlider(&genAryIdx) && generalSettings.isSliderAvailable(genAryIdx))) {
-        if (!model.potsWarnEnabled[i])
+        if (model.potsWarnEnabled[i])
           str += src.toString(&model, &generalSettings);
       }
     }

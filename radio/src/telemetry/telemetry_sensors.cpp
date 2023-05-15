@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,50 +27,41 @@
   #include "libopenui.h"
 #endif
 
+#include "spektrum.h"
+
+#if defined(CROSSFIRE)
+  #include "crossfire.h"
+#endif
+
+#if defined(GHOST)
+  #include "ghost.h"
+#endif
+
+#if defined(PCBNV14)
+  #include "telemetry/flysky_nv14.h"
+#endif
+
+#if defined(MULTIMODULE)
+  #include "hitec.h"
+  #include "hott.h"
+  #include "multi.h"
+  #include "mlink.h"
+#endif
+
+#if defined(MULTIMODULE) || defined(AFHDS2) || defined(AFHDS3)
+  #include "flysky_ibus.h"
+#endif
+
 TelemetryItem telemetryItems[MAX_TELEMETRY_SENSORS];
 uint8_t allowNewSensors;
 
 bool isFaiForbidden(source_t idx)
 {
-  if (idx < MIXSRC_FIRST_TELEM) {
-    return false;
-  }
+  if (idx < MIXSRC_FIRST_TELEM) return false;
 
-  TelemetrySensor * sensor = &g_model.telemetrySensors[(idx-MIXSRC_FIRST_TELEM)/3];
+  auto unit = g_model.telemetrySensors[(idx - MIXSRC_FIRST_TELEM) / 3].unit;
+  if (unit == UNIT_VOLTS || unit == UNIT_DB) return false;
 
-  switch (telemetryProtocol) {
-    case PROTOCOL_TELEMETRY_FRSKY_SPORT:
-      if (sensor->id == RSSI_ID) {
-        return false;
-      }
-      else if (sensor->id == BATT_ID) {
-        return false;
-      }
-      break;
-
-    case PROTOCOL_TELEMETRY_FRSKY_D:
-      if (sensor->id == D_RSSI_ID) {
-        return false;
-      }
-      else if (sensor->id == D_A1_ID) {
-        return false;
-      }
-      break;
-
-#if defined(CROSSFIRE)
-    case PROTOCOL_TELEMETRY_CROSSFIRE:
-      if (sensor->id == RX_RSSI1_INDEX) {
-        return false;
-      }
-      else if (sensor->id == RX_RSSI2_INDEX) {
-        return false;
-      }
-      else if (sensor->id == BATT_VOLTAGE_INDEX) {
-        return false;
-      }
-      break;
-#endif
-  }
   return true;
 }
 
@@ -79,7 +71,10 @@ uint32_t getDistFromEarthAxis(int32_t latitude)
   uint32_t lat = abs(latitude) / 10000;
   uint32_t angle2 = (lat * lat) / 10000;
   uint32_t angle4 = angle2 * angle2;
-  return 139*(((uint32_t)10000000 - ((angle2*(uint32_t)123370)/81) + (angle4/25))/12500);
+
+  return 139 * (((uint32_t)10000000 - ((angle2 * (uint32_t)123370) / 81) +
+                 (angle4 / 25)) /
+                12500);
 }
 
 void TelemetryItem::setValue(const TelemetrySensor & sensor, const char * val, uint32_t, uint32_t)
@@ -88,7 +83,8 @@ void TelemetryItem::setValue(const TelemetrySensor & sensor, const char * val, u
   setFresh();
 }
 
-void TelemetryItem::setValue(const TelemetrySensor & sensor, int32_t val, uint32_t unit, uint32_t prec)
+void TelemetryItem::setValue(const TelemetrySensor &sensor, int32_t val,
+                             uint32_t unit, uint32_t prec)
 {
   int32_t newVal = val;
 
@@ -369,20 +365,11 @@ void TelemetryItem::eval(const TelemetrySensor & sensor)
           }
         }
         uint32_t angle = abs(gpsItem.gps.latitude - gpsItem.pilotLatitude);
-#if defined(STM32)
         uint32_t dist = uint64_t(EARTH_RADIUS * M_PI / 180) * angle / 1000000;
-#else
-        // TODO search later why it breaks Sky9x
-        uint32_t dist = EARTH_RADIUS * angle / 1000000;
-#endif
         uint32_t result = dist * dist;
 
         angle = abs(gpsItem.gps.longitude - gpsItem.pilotLongitude);
-#if defined(STM32)
         dist = uint64_t(gpsItem.distFromEarthAxis) * angle / 1000000;
-#else
-        dist = gpsItem.distFromEarthAxis * angle / 1000000;
-#endif
         result += dist * dist;
 
         // Length on ground (ignoring curvature of the earth)
@@ -505,7 +492,9 @@ int lastUsedTelemetryIndex()
 }
 
 template <class T>
-int setTelemetryValue(TelemetryProtocol protocol, uint16_t id, uint8_t subId, uint8_t instance, T value, uint32_t unit = 0, uint32_t prec = 0)
+int setTelemetryValue(TelemetryProtocol protocol, uint16_t id, uint8_t subId,
+                      uint8_t instance, T value, uint32_t unit = 0,
+                      uint32_t prec = 0)
 {
   bool sensorFound = false;
 
@@ -551,17 +540,23 @@ int setTelemetryValue(TelemetryProtocol protocol, uint16_t id, uint8_t subId, ui
         break;
 #endif
 
-#if defined(MULTIMODULE) || defined(AFHDS3)
+#if defined(MULTIMODULE) || defined(AFHDS3) || defined(AFHDS2)
       case PROTOCOL_TELEMETRY_FLYSKY_IBUS:
-        flySkySetDefault(index,id, subId, instance);
+        flySkySetDefault(index, id, subId, instance);
         break;
 #endif
 
-#if defined(MULTIMODULE)
+#if defined(AFHDS2) && defined(PCBNV14)
+      case PROTOCOL_TELEMETRY_FLYSKY_NV14:
+        flySkyNv14SetDefault(index, id, subId, instance);
+        break;
+#endif
+
       case PROTOCOL_TELEMETRY_SPEKTRUM:
         spektrumSetDefault(index, id, subId, instance);
         break;
 
+#if defined(MULTIMODULE)
       case PROTOCOL_TELEMETRY_HITEC:
         hitecSetDefault(index, id, subId, instance);
         break;

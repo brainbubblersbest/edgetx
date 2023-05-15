@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,9 +20,22 @@
  */
 
 #include <algorithm>
+#include <vector>
 #include "opentx.h"
+#include "hal/module_port.h"
 
 extern uint8_t g_moduleIdx;
+
+struct LuaScript {
+  std::string path;
+  std::string label;
+  bool operator<(const LuaScript &a) { return label < a.label; }
+};
+
+inline bool LuaScript_compare_nocase(LuaScript first, LuaScript second)
+{
+  return strcasecmp(first.label.c_str(), second.label.c_str()) < 0;
+}
 
 bool addRadioTool(uint8_t index, const char * label)
 {
@@ -52,6 +66,21 @@ void addRadioModuleTool(uint8_t index, const char * label, void (* tool)(event_t
 }
 
 #if defined(LUA)
+void addRadioScriptTool(std::vector<LuaScript> luaScripts)
+{
+  uint8_t index = 0;
+  for (auto luaScript : luaScripts) {
+    if (addRadioTool(index++, luaScript.label.c_str())) {
+      char toolPath[FF_MAX_LFN + 1];
+      strncpy(toolPath, luaScript.path.c_str(), sizeof(toolPath) - 1);
+      *((char *)getBasename(toolPath) - 1) = '\0';
+      f_chdir(toolPath);
+
+      luaExec(luaScript.path.c_str());
+    }
+  }
+}
+
 void addRadioScriptTool(uint8_t index, const char * path)
 {
   char toolName[RADIO_TOOL_NAME_MAXLEN + 1];
@@ -76,7 +105,7 @@ void menuRadioTools(event_t event)
     memclear(&reusableBuffer.radioTools, sizeof(reusableBuffer.radioTools));
 #if defined(PXX2)
     for (uint8_t module = 0; module < NUM_MODULES; module++) {
-      if (isModulePXX2(module) && (module == INTERNAL_MODULE ? IS_INTERNAL_MODULE_ON() : IS_EXTERNAL_MODULE_ON())) {
+      if (isModulePXX2(module) && (module == INTERNAL_MODULE ? modulePortPowered(INTERNAL_MODULE) : modulePortPowered(EXTERNAL_MODULE))) {
         moduleState[module].readModuleInformation(&reusableBuffer.radioTools.modules[module], PXX2_HW_INFO_TX_ID, PXX2_HW_INFO_TX_ID);
       }
     }
@@ -87,51 +116,83 @@ void menuRadioTools(event_t event)
 
   uint8_t index = 0;
 
-
-
 #if defined(LUA)
   FILINFO fno;
   DIR dir;
 
   FRESULT res = f_opendir(&dir, SCRIPTS_TOOLS_PATH);
   if (res == FR_OK) {
+    std::vector<LuaScript> luaScripts;  // gather and sort before adding to menu
+
     for (;;) {
-      TCHAR path[FF_MAX_LFN+1] = SCRIPTS_TOOLS_PATH "/";
+      TCHAR path[FF_MAX_LFN + 1] = SCRIPTS_TOOLS_PATH "/";
+
       res = f_readdir(&dir, &fno);                   /* Read a directory item */
       if (res != FR_OK || fno.fname[0] == 0) break;  /* Break on error or end of dir */
-      if (fno.fattrib & AM_DIR) continue;            /* Skip subfolders */
-      if (fno.fattrib & AM_HID) continue;            /* Skip hidden files */
-      if (fno.fattrib & AM_SYS) continue;            /* Skip system files */
+      if (fno.fattrib & (AM_DIR|AM_HID|AM_SYS)) continue;  // skip subfolders, hidden files and system files
+      if (fno.fname[0] == '.') continue;  /* Ignore UNIX hidden files */
 
       strcat(path, fno.fname);
-      if (isRadioScriptTool(fno.fname))
-        addRadioScriptTool(index++, path);
+      if (isRadioScriptTool(fno.fname)) {
+        char toolName[RADIO_TOOL_NAME_MAXLEN + 1] = {0};
+        const char *label;
+        char *ext = (char *)getFileExtension(path);
+        if (readToolName(toolName, path)) {
+          label = toolName;
+        } else {
+          *ext = '\0';
+          label = getBasename(path);
+        }
+
+        luaScripts.emplace_back(LuaScript{path, label});
+      }
     }
     f_closedir(&dir);
+
+    std::sort(luaScripts.begin(), luaScripts.end(), LuaScript_compare_nocase);
+    addRadioScriptTool(luaScripts);
+    index += luaScripts.size();
   }
 #endif
 
 #if defined(INTERNAL_MODULE_PXX2)
-  if (isPXX2ModuleOptionAvailable(reusableBuffer.hardwareAndSettings.modules[INTERNAL_MODULE].information.modelID, MODULE_OPTION_SPECTRUM_ANALYSER))
+  if (isPXX2ModuleOptionAvailable(reusableBuffer.radioTools.modules[INTERNAL_MODULE].information.modelID, MODULE_OPTION_SPECTRUM_ANALYSER))
     addRadioModuleTool(index++, STR_SPECTRUM_ANALYSER_INT, menuRadioSpectrumAnalyser, INTERNAL_MODULE);
 
-  if (isPXX2ModuleOptionAvailable(reusableBuffer.hardwareAndSettings.modules[INTERNAL_MODULE].information.modelID, MODULE_OPTION_POWER_METER))
+  if (isPXX2ModuleOptionAvailable(reusableBuffer.radioTools.modules[INTERNAL_MODULE].information.modelID, MODULE_OPTION_POWER_METER))
     addRadioModuleTool(index++, STR_POWER_METER_INT, menuRadioPowerMeter, INTERNAL_MODULE);
-#elif defined(INTERNAL_MODULE_MULTI)
-  addRadioModuleTool(index++, STR_SPECTRUM_ANALYSER_INT, menuRadioSpectrumAnalyser, INTERNAL_MODULE);
 #endif
-#if defined(PXX2)|| defined(MULTIMODULE)
-  if (isPXX2ModuleOptionAvailable(reusableBuffer.hardwareAndSettings.modules[EXTERNAL_MODULE].information.modelID, MODULE_OPTION_SPECTRUM_ANALYSER) || isModuleMultimodule(EXTERNAL_MODULE))
+
+#if defined(HARDWARE_INTERNAL_MODULE) && defined(MULTIMODULE)
+  if (g_eeGeneral.internalModule == MODULE_TYPE_MULTIMODULE)
+    addRadioModuleTool(index++, STR_SPECTRUM_ANALYSER_INT, menuRadioSpectrumAnalyser, INTERNAL_MODULE);
+#endif
+
+#if defined(HARDWARE_EXTERNAL_MODULE)
+
+#if (defined(PXX2) || defined(MULTIMODULE))
+  bool has_spectrum_analyser = false;
+#if defined(PXX2)
+  if (isPXX2ModuleOptionAvailable(reusableBuffer.radioTools.modules[EXTERNAL_MODULE].information.modelID, MODULE_OPTION_SPECTRUM_ANALYSER))
+    has_spectrum_analyser = true;
+#endif
+#if defined(MULTIMODULE)
+  if (isModuleMultimodule(EXTERNAL_MODULE))
+    has_spectrum_analyser = true;
+#endif
+  if (has_spectrum_analyser)
     addRadioModuleTool(index++, STR_SPECTRUM_ANALYSER_EXT, menuRadioSpectrumAnalyser, EXTERNAL_MODULE);
 #endif
 #if defined(PXX2)
-  if (isPXX2ModuleOptionAvailable(reusableBuffer.hardwareAndSettings.modules[EXTERNAL_MODULE].information.modelID, MODULE_OPTION_POWER_METER))
+  if (isPXX2ModuleOptionAvailable(reusableBuffer.radioTools.modules[EXTERNAL_MODULE].information.modelID, MODULE_OPTION_POWER_METER))
     addRadioModuleTool(index++, STR_POWER_METER_EXT, menuRadioPowerMeter, EXTERNAL_MODULE);
 #endif
 
 #if defined(GHOST)
   if (isModuleGhost(EXTERNAL_MODULE))
     addRadioModuleTool(index++, "Ghost Menu", menuGhostModuleConfig, EXTERNAL_MODULE);
+#endif
+
 #endif
 
   if (index == 0) {

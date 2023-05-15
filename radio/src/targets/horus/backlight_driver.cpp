@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,7 +19,12 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "opentx_types.h"
+#include "board.h"
+
+#if !defined(BOOT)
+#include "myeeprom.h"
+#endif
 
 void backlightInit()
 {
@@ -96,4 +102,9 @@ void backlightEnable(uint8_t dutyCycle)
   else if ((BACKLIGHT_TIMER->BDTR & TIM_BDTR_MOE) == 0) {
     BACKLIGHT_TIMER->BDTR |= TIM_BDTR_MOE;
   }
+}
+
+void backlightFullOn()
+{
+  backlightEnable(BACKLIGHT_LEVEL_MAX);
 }

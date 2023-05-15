@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -17,12 +18,26 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
- 
-#include "opentx.h"
-#include "touch.h"
+
+#include "board.h"
+#include "boards/generic_stm32/module_ports.h"
 
 #include "hal/adc_driver.h"
-#include "../common/arm/stm32/stm32_hal_adc.h"
+#include "hal/trainer_driver.h"
+
+#include "globals.h"
+#include "sdcard.h"
+#include "touch.h"
+#include "debug.h"
+
+#include "stm32_hal_adc.h"
+#include "flysky_gimbal_driver.h"
+#include "timers_driver.h"
+
+#include "bitmapbuffer.h"
+#include "colors.h"
+
+#include <string.h>
 
 #if defined(__cplusplus) && !defined(SIMU)
 extern "C" {
@@ -32,8 +47,6 @@ extern "C" {
 #if defined(__cplusplus) && !defined(SIMU)
 }
 #endif
-
-extern void flysky_hall_stick_init( void );
 
 HardwareOptions hardwareOptions;
 
@@ -85,22 +98,55 @@ void delay_self(int count)
                               )
 
 #define RCC_APB1PeriphOther   (TELEMETRY_RCC_APB1Periph |\
-                               TRAINER_RCC_APB1Periph |\
-                               INTMODULE_RCC_APB1Periph |\
                                FLYSKY_HALL_RCC_APB1Periph |\
-                               EXTMODULE_RCC_APB1Periph |\
-                               INTMODULE_RCC_APB1Periph |\
-                               AUX_SERIAL_RCC_APB1Periph |\
                                MIXER_SCHEDULER_TIMER_RCC_APB1Periph \
                               )
 #define RCC_APB2PeriphMinimum (LCD_RCC_APB2Periph)
 
 #define RCC_APB2PeriphOther   (ADC_RCC_APB2Periph |\
                                HAPTIC_RCC_APB2Periph |\
-                               AUX_SERIAL_RCC_APB2Periph |\
-                               AUDIO_RCC_APB2Periph |\
-                               EXTMODULE_RCC_APB2Periph \
+                               AUDIO_RCC_APB2Periph \
                               )
+
+static uint8_t boardGetPcbRev()
+{
+  GPIO_InitTypeDef GPIO_InitStructure;
+
+  RCC_AHB1PeriphClockCmd(INTMODULE_RCC_AHB1Periph, ENABLE);
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
+  GPIO_InitStructure.GPIO_OType = GPIO_OType_OD;
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+  GPIO_InitStructure.GPIO_Pin = INTMODULE_PWR_GPIO_PIN;
+  GPIO_Init(INTMODULE_PWR_GPIO, &GPIO_InitStructure);
+  delay_ms(1); // delay to let the input settle, else it does not work properly
+
+  // detect NV14 vs EL18
+  if (GPIO_ReadInputDataBit(INTMODULE_PWR_GPIO, INTMODULE_PWR_GPIO_PIN) == Bit_SET) {
+    // pull-up connected: EL18
+    return PCBREV_EL18;
+  } else {
+    // pull-down connected: NV14
+    return PCBREV_NV14;
+  }
+}
+
+void boardBootloaderInit()
+{
+#if defined(USB_SW_PIN)
+  GPIO_InitTypeDef GPIO_InitStructure;
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
+  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+  GPIO_InitStructure.GPIO_Pin = USB_SW_PIN;
+  GPIO_Init(USB_SW_GPOIO, &GPIO_InitStructure);
+  RCC_AHB1PeriphClockCmd(USB_SW_AHB1Periph_GPIO, ENABLE);
+#endif
+
+  // detect NV14 vs EL18
+  hardwareOptions.pcbrev = boardGetPcbRev();
+}
 
 void boardInit()
 {
@@ -118,54 +164,65 @@ void boardInit()
   __enable_irq();
 #endif
 
-#if defined(DEBUG) && defined(AUX_SERIAL)
-  auxSerialInit(UART_MODE_DEBUG, 0); // default serial mode (None if DEBUG not defined)
-#endif
-#if defined(DEBUG) && defined(AUX2_SERIAL)
-  aux2SerialInit(UART_MODE_DEBUG, 0); // default serial mode (None if DEBUG not defined)
+  // detect NV14 vs EL18
+  hardwareOptions.pcbrev = boardGetPcbRev();
+
+#if defined(DEBUG)
+  serialInit(SP_AUX1, UART_MODE_DEBUG);
 #endif
 
-  TRACE("\nNV14 board started :)");
+  TRACE("\n%s board started :)",
+        hardwareOptions.pcbrev == PCBREV_NV14 ?
+        "NV14" : "EL18");
+
   delay_ms(10);
   TRACE("RCC->CSR = %08x", RCC->CSR);
 
   pwrInit();
-  extModuleInit();
+  boardInitModulePorts();
+
+  init_trainer();
   battery_charge_init();
-#if defined(FLYSKY_HALL_STICKS)
-  flysky_hall_stick_init();
-#endif
+  globalData.flyskygimbals = flysky_gimbal_init();
   init2MhzTimer();
   init1msTimer();
   TouchInit();
+  usbInit();
 
   uint32_t press_start = 0;
   uint32_t press_end = 0;
 
   if (UNEXPECTED_SHUTDOWN()) {
     pwrOn();
-  }
-  
-  while (boardState == BOARD_POWER_OFF) {
-    uint32_t now = get_tmr10ms();
-    if (pwrPressed()) {
-      press_end = now;
-      if (press_start == 0) press_start = now;
-      if ((now - press_start) > POWER_ON_DELAY) {
-          pwrOn();
+  } else {
+    // prime debounce state...
+    uint8_t usb_state = usbPlugged();
+    usb_state |= usbPlugged();
+    while (usb_state) {
+      pwrOn();
+      uint32_t now = get_tmr10ms();
+      if (pwrPressed()) {
+        press_end = now;
+        if (press_start == 0) press_start = now;
+        if ((now - press_start) > POWER_ON_DELAY) {
           break;
+        }
+      } else if (!usbPlugged()){
+          delay_ms(20);
+          if(!usbPlugged()){
+            boardOff();
+          }
+      } else {
+        uint32_t press_end_touch = press_end;
+        if (touchPanelEventOccured()) {
+          touchPanelRead();
+          press_end_touch = get_tmr10ms();
+        }
+        press_start = 0;
+        handle_battery_charge(press_end_touch);
+        delay_ms(20);
+        press_end = 0;
       }
-    }
-    else {
-      uint32_t press_end_touch = press_end;
-      if (touchPanelEventOccured()) {
-        touchPanelRead();
-        press_end_touch = get_tmr10ms();
-      }
-      press_start = 0;
-      handle_battery_charge(press_end_touch);
-      delay_ms(20);
-      press_end = 0;
     }
   }
 
@@ -176,49 +233,83 @@ void boardInit()
   memset(&g_FATFS_Obj, 0, sizeof(g_FATFS_Obj));
   monitorInit();
   adcInit(&stm32_hal_adc_driver);
-  backlightInit();
-  lcdInit();
-  usbInit();
   hapticInit();
 
-  boardState = BOARD_STARTED;
 
  #if defined(RTCLOCK)
   rtcInit(); // RTC must be initialized before rambackupRestore() is called
 #endif
- 
-  
-#if defined(DEBUG)
-  DBGMCU_APB1PeriphConfig(DBGMCU_IWDG_STOP|DBGMCU_TIM1_STOP|DBGMCU_TIM2_STOP|DBGMCU_TIM3_STOP|DBGMCU_TIM4_STOP|DBGMCU_TIM5_STOP|DBGMCU_TIM6_STOP|DBGMCU_TIM7_STOP|DBGMCU_TIM8_STOP|DBGMCU_TIM9_STOP|DBGMCU_TIM10_STOP|DBGMCU_TIM11_STOP|DBGMCU_TIM12_STOP|DBGMCU_TIM13_STOP|DBGMCU_TIM14_STOP, ENABLE);
-#endif
 
+
+#if defined(DEBUG)
+  DBGMCU_APB1PeriphConfig(
+      DBGMCU_IWDG_STOP | DBGMCU_TIM1_STOP | DBGMCU_TIM2_STOP |
+          DBGMCU_TIM3_STOP | DBGMCU_TIM4_STOP | DBGMCU_TIM5_STOP |
+          DBGMCU_TIM6_STOP | DBGMCU_TIM7_STOP | DBGMCU_TIM8_STOP |
+          DBGMCU_TIM9_STOP | DBGMCU_TIM10_STOP | DBGMCU_TIM11_STOP |
+          DBGMCU_TIM12_STOP | DBGMCU_TIM13_STOP | DBGMCU_TIM14_STOP,
+      ENABLE);
+#endif
 }
+
 void boardOff()
 {
-  lcd->drawFilledRect(0, 0, LCD_WIDTH, LCD_HEIGHT, SOLID, HEADER_BGCOLOR);
   lcdOff();
 
   while (pwrPressed()) {
     WDG_RESET();
   }
- 
- 
+
+  SysTick->CTRL = 0; // turn off systick
+
+  // Shutdown the Audio amp
+  GPIO_InitTypeDef GPIO_InitStructure;
+  GPIO_InitStructure.GPIO_Pin = AUDIO_SHUTDOWN_GPIO_PIN;
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_25MHz;
+  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+  GPIO_Init(AUDIO_SHUTDOWN_GPIO, &GPIO_InitStructure);
+  GPIO_ResetBits(AUDIO_SHUTDOWN_GPIO, AUDIO_SHUTDOWN_GPIO_PIN);
+
+  // Shutdown the Haptic
+  hapticDone();
+
 #if defined(RTC_BACKUP_RAM)
   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_BKPSRAM, DISABLE);
   PWR_BackupRegulatorCmd(DISABLE);
 #endif
 
-  RTC->BKP0R = SHUTDOWN_REQUEST;
-
-  SysTick->CTRL = 0; // turn off systick
-  pwrOff();
-#if !defined (SIMU)
-#if defined(HAPTIC) && !defined(BOOT)
-  haptic.event(AU_ERROR);
-  delay_ms(50);
-#endif
-  while(1) {
+  if (usbPlugged())
+  {
+    delay_ms(100);  // Add a delay to wait for lcdOff
+    RTC->BKP0R = SOFTRESET_REQUEST;
     NVIC_SystemReset();
   }
-#endif
+  else
+  {
+    RTC->BKP0R = SHUTDOWN_REQUEST;
+    pwrOff();
+  }
+
+
+  // We reach here only in forced power situations, such as hw-debugging with external power
+  // Enter STM32 stop mode / deep-sleep
+  // Code snippet from ST Nucleo PWR_EnterStopMode example
+#define PDMode             0x00000000U
+#if defined(PWR_CR_MRUDS) && defined(PWR_CR_LPUDS) && defined(PWR_CR_FPDS)
+  MODIFY_REG(PWR->CR, (PWR_CR_PDDS | PWR_CR_LPDS | PWR_CR_FPDS | PWR_CR_LPUDS | PWR_CR_MRUDS), PDMode);
+#elif defined(PWR_CR_MRLVDS) && defined(PWR_CR_LPLVDS) && defined(PWR_CR_FPDS)
+  MODIFY_REG(PWR->CR, (PWR_CR_PDDS | PWR_CR_LPDS | PWR_CR_FPDS | PWR_CR_LPLVDS | PWR_CR_MRLVDS), PDMode);
+#else
+  MODIFY_REG(PWR->CR, (PWR_CR_PDDS| PWR_CR_LPDS), PDMode);
+#endif /* PWR_CR_MRUDS && PWR_CR_LPUDS && PWR_CR_FPDS */
+
+/* Set SLEEPDEEP bit of Cortex System Control Register */
+  SET_BIT(SCB->SCR, ((uint32_t)SCB_SCR_SLEEPDEEP_Msk));
+
+  // To avoid HardFault at return address, end in an endless loop
+  while (1) {
+
+  }
 }

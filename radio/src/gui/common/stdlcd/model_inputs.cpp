@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,6 +20,7 @@
  */
 
 #include "opentx.h"
+#include "tasks/mixer_task.h"
 
 #define _STR_MAX(x)                     "/" #x
 #define STR_MAX(x)                     _STR_MAX(x)
@@ -50,25 +52,30 @@ bool reachExposLimit()
 int8_t s_currCh;
 void insertExpo(uint8_t idx)
 {
-  pauseMixerCalculations();
+  mixerTaskStop();
   ExpoData * expo = expoAddress(idx);
   memmove(expo+1, expo, (MAX_EXPOS-(idx+1))*sizeof(ExpoData));
   memclear(expo, sizeof(ExpoData));
-  expo->srcRaw = (s_currCh > 4 ? MIXSRC_Rud - 1 + s_currCh : MIXSRC_Rud - 1 + channelOrder(s_currCh));
+  for (int i = s_currCh; i < INPUTSRC_LAST; i++) {
+    expo->srcRaw = (s_currCh > 4 ? MIXSRC_Rud - 1 + i: MIXSRC_Rud - 1 + channelOrder(i));
+    if (isSourceAvailableInInputs(expo->srcRaw)) {
+      break;
+    }
+  }
   expo->curve.type = CURVE_REF_EXPO;
   expo->mode = 3; // pos+neg
   expo->chn = s_currCh - 1;
   expo->weight = 100;
-  resumeMixerCalculations();
+  mixerTaskStart();
   storageDirty(EE_MODEL);
 }
 
 void copyExpo(uint8_t idx)
 {
-  pauseMixerCalculations();
+  mixerTaskStop();
   ExpoData * expo = expoAddress(idx);
   memmove(expo+1, expo, (MAX_EXPOS-(idx+1))*sizeof(ExpoData));
-  resumeMixerCalculations();
+  mixerTaskStart();
   storageDirty(EE_MODEL);
 }
 
@@ -106,9 +113,9 @@ bool swapExpos(uint8_t & idx, uint8_t up)
     return true;
   }
   
-  pauseMixerCalculations();
+  mixerTaskStop();
   memswap(x, y, sizeof(ExpoData));
-  resumeMixerCalculations();
+  mixerTaskStart();
   
   idx = tgt_idx;
   return true;
@@ -116,7 +123,7 @@ bool swapExpos(uint8_t & idx, uint8_t up)
 
 void deleteExpo(uint8_t idx)
 {
-  pauseMixerCalculations();
+  mixerTaskStop();
   ExpoData * expo = expoAddress(idx);
   int input = expo->chn;
   memmove(expo, expo+1, (MAX_EXPOS-(idx+1))*sizeof(ExpoData));
@@ -124,7 +131,7 @@ void deleteExpo(uint8_t idx)
   if (!isInputAvailable(input)) {
     memclear(&g_model.inputNames[input], LEN_INPUT_NAME);
   }
-  resumeMixerCalculations();
+  mixerTaskStart();
   storageDirty(EE_MODEL);
 }
 
@@ -175,8 +182,8 @@ void displayExpoLine(coord_t y, ExpoData * ed)
 {
   drawSource(EXPO_LINE_SRC_POS, y, ed->srcRaw, 0);
 
-  if (ed->carryTrim != TRIM_ON) {
-    lcdDrawChar(EXPO_LINE_TRIM_POS, y, ed->carryTrim > 0 ? '-' : STR_RETA123[-ed->carryTrim]);
+  if (ed->trimSource != TRIM_ON) {
+    lcdDrawChar(EXPO_LINE_TRIM_POS, y, ed->trimSource > 0 ? '-' : STR_RETA123[-ed->trimSource][0]);
   }
 
   if (!ed->flightModes || ((ed->curve.value || ed->swtch) && ((get_tmr10ms() / 200) & 1)))

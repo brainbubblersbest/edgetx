@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -25,6 +26,15 @@
 #include "telemetry/telemetry_sensors.h"
 #include <stdio.h>
 
+// libopenui defines TIMOUR as zero
+#if !TIMEHOUR
+#undef TIMEHOUR
+#endif
+
+#if !defined(TIMEHOUR)
+#define TIMEHOUR 0x2000
+#endif
+
 #define OPTION_MENU_NO_FOOTER          0x01
 #define OPTION_MENU_TITLE_BAR          0x02
 #define OPTION_MENU_NO_SCROLLBAR       0x04
@@ -42,6 +52,7 @@
 
 coord_t drawStringWithIndex(BitmapBuffer * dc, coord_t x, coord_t y, const char * str, int idx, LcdFlags flags = 0, const char * prefix = nullptr, const char * suffix = nullptr);
 void drawFatalErrorScreen(const char * message);
+void clearFatalErrorScreen();
 void runFatalErrorScreen(const char * message);
 void drawPower(coord_t x, coord_t y, int8_t dBm, LcdFlags att);
 void drawSource(BitmapBuffer * dc, coord_t x, coord_t y, mixsrc_t idx, LcdFlags flags=0);
@@ -56,13 +67,8 @@ void drawFlightMode(coord_t x, coord_t y, int8_t idx, LcdFlags att);
 void drawStatusText(BitmapBuffer * dc, const char * text);
 void drawVerticalScrollbar(BitmapBuffer * dc, coord_t x, coord_t y, coord_t h, uint16_t offset, uint16_t count, uint8_t visible);
 void drawProgressScreen(BitmapBuffer * dc, const char * title, const char * message, int num, int den);
-void drawTrimSquare(BitmapBuffer * dc, coord_t x, coord_t y, LcdFlags color = TRIM_BGCOLOR);
-void drawHorizontalTrimPosition(BitmapBuffer * dc, coord_t x, coord_t y, int16_t dir);
-void drawVerticalTrimPosition(BitmapBuffer * dc, coord_t x, coord_t y, int16_t dir);
-void drawVerticalSlider(BitmapBuffer * dc, coord_t x, coord_t y, int len, int val, int min, int max, uint8_t steps, uint32_t options);
-void drawHorizontalSlider(BitmapBuffer * dc, coord_t x, coord_t y, int len, int val, int min, int max, uint8_t steps, uint32_t options);
-void drawSlider(coord_t x, coord_t y, int len, int val, int min, int max, uint8_t steps, uint32_t options);
-void drawValueOrGVar(BitmapBuffer * dc, coord_t x, coord_t y, gvar_t value, gvar_t vmin, gvar_t vmax, LcdFlags flags = 0);
+void drawTrimSquare(BitmapBuffer * dc, coord_t x, coord_t y, LcdFlags color = COLOR_THEME_FOCUS);
+void drawValueOrGVar(BitmapBuffer * dc, coord_t x, coord_t y, gvar_t value, gvar_t vmin, gvar_t vmax, LcdFlags flags = 0, const char* suffix = "%", gvar_t offset = 0);
 void drawGVarValue(BitmapBuffer * dc, coord_t x, coord_t y, uint8_t gvar, gvar_t value, LcdFlags flags = 0);
 void drawTimer(BitmapBuffer * dc, coord_t x, coord_t y, int32_t tme, LcdFlags flags = 0);
 void drawSourceValue(BitmapBuffer * dc, coord_t x, coord_t y, source_t source, LcdFlags flags = 0);
@@ -72,6 +78,7 @@ void drawGPSPosition(BitmapBuffer * dc, coord_t x, coord_t y, int32_t longitude,
 void drawDate(BitmapBuffer * dc, coord_t x, coord_t y, TelemetryItem & telemetryItem, LcdFlags flags = 0);
 void drawValueWithUnit(BitmapBuffer * dc, coord_t x, coord_t y, int val, uint8_t unit, LcdFlags flags = 0);
 void drawHexNumber(BitmapBuffer * dc, coord_t x, coord_t y, uint32_t val, LcdFlags flags = 0);
+void drawTextLines(BitmapBuffer * dc, coord_t left, coord_t top, coord_t width, coord_t height, const char * str, LcdFlags flags);
 inline void drawChn(BitmapBuffer * dc, coord_t x, coord_t y, uint8_t idx, LcdFlags flags)
 {
   drawSource(dc, x, y, MIXSRC_CH1 + idx - 1, flags);
@@ -81,6 +88,7 @@ inline void drawChn(BitmapBuffer * dc, coord_t x, coord_t y, uint8_t idx, LcdFla
 void drawSplash();
 void drawSleepBitmap();
 void drawShutdownAnimation(uint32_t duration, uint32_t totalDuration, const char * message);
+void clearShutdownAnimation();
 
 // Main view standard widgets
 void drawMainPots();

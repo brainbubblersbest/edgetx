@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -25,6 +26,13 @@
 #include <vector>
 #include "zone.h"
 #include "thirdparty/libopenui/src/theme.h"
+
+// TODO: hotfix, through FatFS out of libopenui instead
+#if !defined(YAML_GENERATOR)
+#include "ffconf.h"
+#else
+#define FF_MAX_LFN 255
+#endif
 
 class BitmapBuffer;
 class PageTab;
@@ -75,11 +83,17 @@ class OpenTxTheme: public Theme
 
     void init() const;
 
-    virtual void update() const
+    virtual void update(bool reload = true) const
     {
     }
 
     ZoneOptionValue * getOptionValue(unsigned int index) const;
+
+    virtual void setBackgroundImageFileName(const char *fileName)
+    {
+      strncpy(backgroundImageFileName, fileName, FF_MAX_LFN);
+      backgroundImageFileName[FF_MAX_LFN] = '\0'; // ensure string termination
+    }
 
     virtual void load() const;
 
@@ -88,19 +102,9 @@ class OpenTxTheme: public Theme
     virtual void drawPageHeaderBackground(BitmapBuffer *dc, uint8_t icon,
                                           const char *title) const = 0;
 
-    virtual void drawPageHeader(BitmapBuffer *dc, std::vector<PageTab *> &tabs,
-                                uint8_t currentIndex) const = 0;
-
-    // virtual void drawMessageBox(const char * title, const char * text, const
-    //                             char * action, uint32_t flags) const override;
-    // virtual void drawProgressBar(BitmapBuffer * dc, coord_t x, coord_t y,
-    //                              coord_t w, coord_t h, int value) const = 0;
+    virtual void drawCurrentMenuBackground(BitmapBuffer *dc) const = 0;
 
     void drawCheckBox(BitmapBuffer * dc, bool checked, coord_t x, coord_t y, bool focus) const override;
-
-    void drawChoice(BitmapBuffer * dc, ChoiceBase * choice, const char * str) const override;
-
-    void drawSlider(BitmapBuffer * dc, int vmin, int vmax, int value, const rect_t & rect, bool edit, bool focus) const override;
 
     virtual void drawTopLeftBitmap(BitmapBuffer * dc) const = 0;
 
@@ -111,6 +115,7 @@ class OpenTxTheme: public Theme
     const char * name;
     const ZoneOption * options;
     BitmapBuffer * thumb;
+    char backgroundImageFileName[FF_MAX_LFN + 1];
 
   public:
     static const BitmapBuffer * error;
@@ -123,7 +128,5 @@ void loadTheme(OpenTxTheme * theme);
 void loadTheme();
 
 std::list<OpenTxTheme *> & getRegisteredThemes();
-
-extern const uint8_t LBM_DROPDOWN[];
 
 #endif // _COLORLCD_THEME_H_

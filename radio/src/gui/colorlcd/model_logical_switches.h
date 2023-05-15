@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,19 +24,22 @@
 
 #include "tabsgroup.h"
 
-class ModelLogicalSwitchesPage: public PageTab {
-public:
-    ModelLogicalSwitchesPage();
+class ModelLogicalSwitchesPage : public PageTab
+{
+ public:
+  ModelLogicalSwitchesPage();
 
-    virtual void build(FormWindow * window) override
-    {
-      build(window, 0);
-    }
+  virtual void build(FormWindow* window) override;
 
-protected:
-    void build(FormWindow * window, int8_t focusIndex);
-    void rebuild(FormWindow * window, int8_t focusIndex);
-    void editLogicalSwitch(FormWindow * window, uint8_t lsIndex);
+ protected:
+  int8_t focusIndex = -1;
+  int8_t prevFocusIndex = -1;
+  bool isRebuilding = false;
+  Button* addButton = nullptr;
+
+  void rebuild(FormWindow* window);
+  void newLS(FormWindow* window, bool pasteLS);
+  void plusPopup(FormWindow* window);
 };
 
-#endif //_MODEL_LOGICAL_SWITCHES_H
+#endif  //_MODEL_LOGICAL_SWITCHES_H

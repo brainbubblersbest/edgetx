@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -20,13 +21,12 @@
 
 #include "select_fab_button.h"
 
-SelectFabButton::SelectFabButton(FormGroup* parent, coord_t x, coord_t y,
+SelectFabButton::SelectFabButton(FormGroup* parent,
                                  uint8_t icon, const char* title,
                                  std::function<uint8_t(void)> pressHandler,
                                  WindowFlags windowFlags) :
     // FabButton uses center coordinates, we want top left corner:
-    FabButton(parent, x + FAB_BUTTON_SIZE / 2, y + FAB_BUTTON_SIZE / 2, icon,
-              pressHandler, windowFlags),
+    FabButton(parent, icon, pressHandler, windowFlags),
     title(title)
 {
   // Add some space on either side on the button
@@ -39,21 +39,13 @@ SelectFabButton::SelectFabButton(FormGroup* parent, coord_t x, coord_t y,
 void SelectFabButton::paint(BitmapBuffer* dc)
 {
   FabButton::paint(dc);
-  auto pos = title.find('\n');
 
-  auto y_pos = FAB_BUTTON_SIZE;
-  dc->drawSizedText(width() / 2, y_pos,
-                    title.c_str(), pos,
-                    FOCUS_COLOR | CENTERED | VCENTERED);
-
-  if (pos != std::string::npos) {
-    y_pos += PAGE_LINE_HEIGHT;
-    dc->drawSizedText(width() / 2, y_pos, title.substr(pos+1).c_str(),
-                      255, FOCUS_COLOR | CENTERED | VCENTERED);
-  }
+  dc->drawSizedText(width() / 2, FAB_BUTTON_SIZE,
+                    title.c_str(), title.size(),
+                    COLOR2FLAGS(WHITE) | CENTERED);
 
   if (hasFocus()) {
-    dc->drawSolidRect(0, 0, width(), height(), 2, CHECKBOX_COLOR);
+    dc->drawSolidRect(0, 0, width(), height(), 2, COLOR2FLAGS(WHITE));
   }
 }
 

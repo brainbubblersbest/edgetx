@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -22,8 +23,8 @@
 #include "tabsgroup.h"
 
 const ZoneOption OPTIONS_THEME_DEFAULT[] = {
-  { STR_BACKGROUND_COLOR, ZoneOption::Color, OPTION_VALUE_UNSIGNED(WHITE) },
-  { STR_MAIN_COLOR, ZoneOption::Color, OPTION_VALUE_UNSIGNED(RED) },
+  { STR_BACKGROUND_COLOR, ZoneOption::Color, OPTION_VALUE_UNSIGNED(COLOR_THEME_PRIMARY2) },
+  { STR_MAIN_COLOR, ZoneOption::Color, OPTION_VALUE_UNSIGNED(COLOR_THEME_WARNING) },
   { nullptr, ZoneOption::Bool }
 };
 
@@ -40,45 +41,23 @@ class FlyskyTheme: public OpenTxTheme
     {
       TRACE("Load FlySky theme colors");
 
-      lcdColorTable[DEFAULT_COLOR_INDEX] = BLACK;
-      lcdColorTable[DEFAULT_BGCOLOR_INDEX] = WHITE;
-      lcdColorTable[FOCUS_COLOR_INDEX] = WHITE;
-      lcdColorTable[FOCUS_BGCOLOR_INDEX] = RED;
-      lcdColorTable[TEXT_STATUSBAR_COLOR_INDEX] = WHITE;
-      lcdColorTable[LINE_COLOR_INDEX] = GREY;
-      lcdColorTable[CHECKBOX_COLOR_INDEX] = RGB(0, 71, 157);
-      lcdColorTable[SCROLLBAR_COLOR_INDEX] = RGB(0, 71, 157);
-      lcdColorTable[MENU_BGCOLOR_INDEX] = DARKBLUE;
-      lcdColorTable[MENU_COLOR_INDEX] = WHITE;
-      lcdColorTable[MENU_TITLE_DISABLE_COLOR_INDEX] = RGB(GET_RED(RED)>>1, GET_GREEN(RED)>>1, GET_BLUE(RED)>>1);
-      lcdColorTable[HEADER_COLOR_INDEX] = DARKGREY;
-      lcdColorTable[ALARM_COLOR_INDEX] = RED;
-      lcdColorTable[HIGHLIGHT_COLOR_INDEX] = YELLOW;
-      lcdColorTable[TEXT_DISABLE_COLOR_INDEX] = GREY;
-      lcdColorTable[DISABLE_COLOR_INDEX] = LIGHTGREY;
-      lcdColorTable[CURVE_COLOR_INDEX] = RED;
-      lcdColorTable[CURVE_AXIS_COLOR_INDEX] = LIGHTGREY;
-      lcdColorTable[CURVE_CURSOR_COLOR_INDEX] = RED;
-      lcdColorTable[TRIM_BGCOLOR_INDEX] = RED;
-      lcdColorTable[TRIM_SHADOW_COLOR_INDEX] = BLACK;
-      lcdColorTable[MAINVIEW_PANES_COLOR_INDEX] = WHITE;
-      lcdColorTable[MAINVIEW_GRAPHICS_COLOR_INDEX] = RED;
+      lcdColorTable[DEFAULT_COLOR_INDEX] = RGB(18, 94, 153);
 
-      // The menu header (top bar)
-      lcdColorTable[HEADER_BGCOLOR_INDEX] = DARKBLUE;
-      lcdColorTable[HEADER_ICON_BGCOLOR_INDEX] = RGB(0, 71, 157);
-      lcdColorTable[HEADER_CURRENT_BGCOLOR_INDEX] = RGB(2, 114, 250);
-
-      // The menu title
-      lcdColorTable[TITLE_BGCOLOR_INDEX] = RGB(0, 71, 157);
-
-      lcdColorTable[OVERLAY_COLOR_INDEX] = BLACK;
-      lcdColorTable[BARGRAPH1_COLOR_INDEX] = RED;
-      lcdColorTable[BARGRAPH2_COLOR_INDEX] = RGB(167, 167, 167);
-      lcdColorTable[BARGRAPH_BGCOLOR_INDEX] = RGB(222, 222, 222);
+      lcdColorTable[COLOR_THEME_PRIMARY1_INDEX] = RGB(0, 0, 0);
+      lcdColorTable[COLOR_THEME_PRIMARY2_INDEX] = RGB(255, 255, 255);
+      lcdColorTable[COLOR_THEME_PRIMARY3_INDEX] = RGB(12, 63, 102);
+      lcdColorTable[COLOR_THEME_SECONDARY1_INDEX] = RGB(18, 94, 153);
+      lcdColorTable[COLOR_THEME_SECONDARY2_INDEX] = RGB(182, 224, 242);
+      lcdColorTable[COLOR_THEME_SECONDARY3_INDEX] = RGB(228, 238, 242);
+      lcdColorTable[COLOR_THEME_FOCUS_INDEX] = RGB(20, 161, 229);
+      lcdColorTable[COLOR_THEME_EDIT_INDEX] = RGB(0, 153, 9);
+      lcdColorTable[COLOR_THEME_ACTIVE_INDEX] = RGB(255, 222, 0);
+      lcdColorTable[COLOR_THEME_WARNING_INDEX] = RGB(224, 0, 0);
+      lcdColorTable[COLOR_THEME_DISABLED_INDEX] = RGB(140, 140, 140);
+      lcdColorTable[CUSTOM_COLOR_INDEX] = RGB(170, 85, 0);
     }
 
-    void loadMenuIcon(uint8_t index, const char * filename, uint32_t color=MENU_COLOR) const
+    void loadMenuIcon(uint8_t index, const char * filename, uint32_t color=COLOR_THEME_SECONDARY1) const
     {
       TRACE("loadMenuIcon %s", getFilePath(filename));
 
@@ -94,14 +73,14 @@ class FlyskyTheme: public OpenTxTheme
           delete menuIconNormal[index];
           menuIconNormal[index] = new BitmapBuffer(BMP_RGB565, width, height);
           if (menuIconNormal[index]) {
-            menuIconNormal[index]->clear(HEADER_BGCOLOR);
+            menuIconNormal[index]->clear(COLOR_THEME_FOCUS);
             menuIconNormal[index]->drawMask(0, 0, mask, color);
           }
 
           delete menuIconSelected[index];
           menuIconSelected[index] = new BitmapBuffer(BMP_RGB565, width, height);
           if (menuIconSelected[index]) {
-            menuIconSelected[index]->clear(HEADER_CURRENT_BGCOLOR);
+            menuIconSelected[index]->clear(COLOR_THEME_FOCUS);
             menuIconSelected[index]->drawMask(0, 0, mask, color);
           }
         }
@@ -109,7 +88,7 @@ class FlyskyTheme: public OpenTxTheme
           delete menuIconNormal[index];
           menuIconNormal[index] = new BitmapBuffer(BMP_RGB565, MENU_HEADER_BUTTON_WIDTH, MENU_HEADER_BUTTON_WIDTH);
           if (menuIconNormal[index]) {
-            menuIconNormal[index]->clear(HEADER_BGCOLOR);
+            menuIconNormal[index]->clear(COLOR_THEME_FOCUS);
             menuIconNormal[index]->drawMask((MENU_HEADER_BUTTON_WIDTH-width)/2, (MENU_HEADER_BUTTON_WIDTH-width)/2, mask, color);
           }
 
@@ -117,9 +96,9 @@ class FlyskyTheme: public OpenTxTheme
           menuIconSelected[index] = new BitmapBuffer(BMP_RGB565, MENU_HEADER_BUTTON_WIDTH, MENU_HEADER_BUTTON_WIDTH);
           if (menuIconSelected[index]) {
             if (index < ICON_RADIO)
-              menuIconSelected[index]->clear(HEADER_CURRENT_BGCOLOR /*HEADER_LOGO_BGCOLOR*/);
+              menuIconSelected[index]->clear(COLOR_THEME_FOCUS /*HEADER_LOGO_BGCOLOR*/);
             else
-              menuIconSelected[index]->clear(HEADER_CURRENT_BGCOLOR);
+              menuIconSelected[index]->clear(COLOR_THEME_FOCUS);
             menuIconSelected[index]->drawMask((MENU_HEADER_BUTTON_WIDTH-width)/2, (MENU_HEADER_BUTTON_WIDTH-height)/2, mask, color);
           }
         }
@@ -129,7 +108,7 @@ class FlyskyTheme: public OpenTxTheme
     void loadIcons() const
     {
 #if defined(LOG_TELEMETRY) || defined(WATCHDOG_DISABLED)
-      loadMenuIcon(ICON_OPENTX, "mask_opentx_testmode.png", DEFAULT_COLOR);
+      loadMenuIcon(ICON_OPENTX, "mask_opentx_testmode.png", COLOR_THEME_SECONDARY1);
 #else
       loadMenuIcon(ICON_OPENTX, "mask_edgetx.png");
 #endif
@@ -171,6 +150,11 @@ class FlyskyTheme: public OpenTxTheme
       loadMenuIcon(ICON_THEME_VIEW3, "mask_theme_view3.png");
       loadMenuIcon(ICON_THEME_VIEW4, "mask_theme_view4.png");
       loadMenuIcon(ICON_THEME_VIEW5, "mask_theme_view5.png");
+      loadMenuIcon(ICON_THEME_VIEW6, "mask_theme_view6.png");
+      loadMenuIcon(ICON_THEME_VIEW7, "mask_theme_view7.png");
+      loadMenuIcon(ICON_THEME_VIEW8, "mask_theme_view8.png");
+      loadMenuIcon(ICON_THEME_VIEW9, "mask_theme_view9.png");
+      loadMenuIcon(ICON_THEME_VIEW10, "mask_theme_view10.png");
       loadMenuIcon(ICON_THEME_ADD_VIEW, "mask_theme_add_view.png");
       loadMenuIcon(ICON_MONITOR, "mask_monitor.png");
       loadMenuIcon(ICON_MONITOR_CHANNELS1, "mask_monitor_channels1.png");
@@ -187,16 +171,16 @@ class FlyskyTheme: public OpenTxTheme
         currentMenuBackground = new BitmapBuffer(BMP_RGB565, 36, 53);
       }
       if (currentMenuBackground) {
-        currentMenuBackground->drawSolidFilledRect(0, 0, currentMenuBackground->width(), MENU_HEADER_HEIGHT, HEADER_BGCOLOR);
-        currentMenuBackground->drawSolidFilledRect(0, MENU_HEADER_HEIGHT, currentMenuBackground->width(), MENU_TITLE_TOP - MENU_HEADER_HEIGHT, DEFAULT_BGCOLOR);
-        currentMenuBackground->drawSolidFilledRect(0, MENU_TITLE_TOP, currentMenuBackground->width(), currentMenuBackground->height() - MENU_TITLE_TOP, TITLE_BGCOLOR);
-        currentMenuBackground->drawMask(0, 0, background, HEADER_CURRENT_BGCOLOR);
-        currentMenuBackground->drawMask(0, 0, shadow, TRIM_SHADOW_COLOR);
-        currentMenuBackground->drawMask(10, 39, dot, MENU_COLOR);
+        currentMenuBackground->drawSolidFilledRect(0, 0, currentMenuBackground->width(), MENU_HEADER_HEIGHT, COLOR_THEME_FOCUS);
+        currentMenuBackground->drawSolidFilledRect(0, MENU_HEADER_HEIGHT, currentMenuBackground->width(), MENU_TITLE_TOP - MENU_HEADER_HEIGHT, COLOR_THEME_SECONDARY3);
+        currentMenuBackground->drawSolidFilledRect(0, MENU_TITLE_TOP, currentMenuBackground->width(), currentMenuBackground->height() - MENU_TITLE_TOP, COLOR_THEME_SECONDARY1);
+        currentMenuBackground->drawMask(0, 0, background, COLOR_THEME_FOCUS);
+        currentMenuBackground->drawMask(0, 0, shadow, COLOR_THEME_PRIMARY1);
+        currentMenuBackground->drawMask(10, 39, dot, COLOR_THEME_SECONDARY1);
       }
 
       delete topleftBitmap;
-      topleftBitmap = BitmapBuffer::loadMaskOnBackground("topleft.png", TITLE_BGCOLOR, HEADER_BGCOLOR);
+      topleftBitmap = BitmapBuffer::loadMaskOnBackground("topleft.png", COLOR_THEME_SECONDARY1, COLOR_THEME_FOCUS);
 
       delete background;
       delete shadow;
@@ -217,7 +201,7 @@ class FlyskyTheme: public OpenTxTheme
 
       // Model Selection screen
       // delete modelselIconBitmap;
-      // modelselIconBitmap = BitmapBuffer::loadMaskOnBackground("modelsel/mask_iconback.png", TITLE_BGCOLOR, DEFAULT_BGCOLOR);
+      // modelselIconBitmap = BitmapBuffer::loadMaskOnBackground("modelsel/mask_iconback.png", COLOR_THEME_SECONDARY1, COLOR_THEME_SECONDARY3);
       // if (modelselIconBitmap) {
       //   BitmapBuffer * bitmap = BitmapBuffer::loadBitmap(getFilePath("modelsel/icon_default.png"));
       //   modelselIconBitmap->drawBitmap(20, 8, bitmap);
@@ -244,41 +228,41 @@ class FlyskyTheme: public OpenTxTheme
 
       // Channels monitor screen
       delete chanMonLockedBitmap;
-      chanMonLockedBitmap = BitmapBuffer::loadMaskOnBackground("mask_monitor_lockch.png", DEFAULT_COLOR, DEFAULT_BGCOLOR);
+      chanMonLockedBitmap = BitmapBuffer::loadMaskOnBackground("mask_monitor_lockch.png", COLOR_THEME_SECONDARY1, COLOR_THEME_SECONDARY3);
 
       delete chanMonInvertedBitmap;
-      chanMonInvertedBitmap = BitmapBuffer::loadMaskOnBackground("mask_monitor_inver.png", DEFAULT_COLOR, DEFAULT_BGCOLOR);
+      chanMonInvertedBitmap = BitmapBuffer::loadMaskOnBackground("mask_monitor_inver.png", COLOR_THEME_SECONDARY1, COLOR_THEME_SECONDARY3);
 
       // Mixer setup screen
       delete mixerSetupMixerBitmap;
-      mixerSetupMixerBitmap = BitmapBuffer::loadMaskOnBackground("mask_sbar_mixer.png", MENU_COLOR, HEADER_BGCOLOR);
+      mixerSetupMixerBitmap = BitmapBuffer::loadMaskOnBackground("mask_sbar_mixer.png", COLOR_THEME_SECONDARY1, COLOR_THEME_FOCUS);
 
       delete mixerSetupToBitmap;
-      mixerSetupToBitmap = BitmapBuffer::loadMaskOnBackground("mask_sbar_to.png", MENU_COLOR, HEADER_BGCOLOR);
+      mixerSetupToBitmap = BitmapBuffer::loadMaskOnBackground("mask_sbar_to.png", COLOR_THEME_SECONDARY1, COLOR_THEME_FOCUS);
 
       delete mixerSetupOutputBitmap;
-      mixerSetupOutputBitmap = BitmapBuffer::loadMaskOnBackground("mask_sbar_output.png", MENU_COLOR, HEADER_BGCOLOR);
+      mixerSetupOutputBitmap = BitmapBuffer::loadMaskOnBackground("mask_sbar_output.png", COLOR_THEME_SECONDARY1, COLOR_THEME_FOCUS);
 
       delete mixerSetupAddBitmap;
-      mixerSetupAddBitmap = BitmapBuffer::loadMaskOnBackground(getFilePath("mask_mplex_add.png"), DEFAULT_COLOR, DEFAULT_BGCOLOR);
+      mixerSetupAddBitmap = BitmapBuffer::loadMaskOnBackground(getFilePath("mask_mplex_add.png"), COLOR_THEME_SECONDARY1, COLOR_THEME_SECONDARY3);
 
       delete mixerSetupMultiBitmap;
-      mixerSetupMultiBitmap = BitmapBuffer::loadMaskOnBackground(getFilePath("mask_mplex_multi.png"), DEFAULT_COLOR, DEFAULT_BGCOLOR);
+      mixerSetupMultiBitmap = BitmapBuffer::loadMaskOnBackground(getFilePath("mask_mplex_multi.png"), COLOR_THEME_SECONDARY1, COLOR_THEME_SECONDARY3);
 
       delete mixerSetupReplaceBitmap;
-      mixerSetupReplaceBitmap = BitmapBuffer::loadMaskOnBackground(getFilePath("mask_mplex_replace.png"), DEFAULT_COLOR, DEFAULT_BGCOLOR);
+      mixerSetupReplaceBitmap = BitmapBuffer::loadMaskOnBackground(getFilePath("mask_mplex_replace.png"), COLOR_THEME_SECONDARY1, COLOR_THEME_SECONDARY3);
 
       delete mixerSetupLabelIcon;
       mixerSetupLabelIcon = BitmapBuffer::loadMask(getFilePath("mask_textline_label.png"));
 
-      delete mixerSetupCurveIcon;
-      mixerSetupCurveIcon = BitmapBuffer::loadMask(getFilePath("mask_textline_curve.png"));
+      // delete mixerSetupCurveIcon;
+      // mixerSetupCurveIcon = BitmapBuffer::loadMask(getFilePath("mask_textline_curve.png"));
 
       delete mixerSetupSwitchIcon;
       mixerSetupSwitchIcon = BitmapBuffer::loadMask(getFilePath("mask_textline_switch.png"));
 
-      delete mixerSetupFlightmodeIcon;
-      mixerSetupFlightmodeIcon = BitmapBuffer::loadMask(getFilePath("mask_textline_fm.png"));
+      // delete mixerSetupFlightmodeIcon;
+      // mixerSetupFlightmodeIcon = BitmapBuffer::loadMask(getFilePath("mask_textline_fm.png"));
 
 //      delete mixerSetupSlowIcon;
 //      mixerSetupSlowIcon = BitmapBuffer::loadMask(getFilePath("mask_textline_slow.png"));
@@ -300,7 +284,7 @@ class FlyskyTheme: public OpenTxTheme
       update();
     }
 
-    virtual void update() const override
+    virtual void update(bool reload = true) const override
     {
       TRACE("TODO THEME::UPDATE()");
 
@@ -308,21 +292,21 @@ class FlyskyTheme: public OpenTxTheme
       uint32_t color = g_eeGeneral.themeData.options[1].unsignedValue;
       uint32_t bg_color = UNEXPECTED_SHUTDOWN() ? WHITE : g_eeGeneral.themeData.options[0].unsignedValue;
 
-      lcdColorTable[DEFAULT_BGCOLOR_INDEX] = bg_color;
-      lcdColorTable[FOCUS_BGCOLOR_INDEX] = color;
-      lcdColorTable[CHECKBOX_COLOR_INDEX] = color;
-      lcdColorTable[SCROLLBAR_COLOR_INDEX] = color;
-      lcdColorTable[CURVE_COLOR_INDEX] = color;
-      lcdColorTable[CURVE_CURSOR_COLOR_INDEX] = color;
-      lcdColorTable[TITLE_BGCOLOR_INDEX] = color;
-      lcdColorTable[MENU_TITLE_DISABLE_COLOR_INDEX] =
+      lcdColorTable[COLOR_THEME_SECONDARY3_INDEX] = bg_color;
+      lcdColorTable[COLOR_THEME_FOCUS_INDEX] = color;
+      lcdColorTable[COLOR_THEME_FOCUS_INDEX] = color;
+      lcdColorTable[COLOR_THEME_PRIMARY3_INDEX] = color;
+      lcdColorTable[COLOR_THEME_SECONDARY1_INDEX] = color;
+      lcdColorTable[COLOR_THEME_WARNING_INDEX] = color;
+      lcdColorTable[COLOR_THEME_SECONDARY1_INDEX] = color;
+      lcdColorTable[COLOR_THEME_PRIMARY3_INDEX] =
           RGB(GET_RED(color)>>1, GET_GREEN(color)>>1, GET_BLUE(color)>>1);
-      lcdColorTable[TRIM_BGCOLOR_INDEX] = color;
-      lcdColorTable[MAINVIEW_GRAPHICS_COLOR_INDEX] = color;
+      lcdColorTable[COLOR_THEME_FOCUS_INDEX] = color;
+      lcdColorTable[COLOR_THEME_SECONDARY1_INDEX] = color;
       #define DARKER(x)     ((x * 70) / 100)
-      lcdColorTable[HEADER_BGCOLOR_INDEX] = RGB(DARKER(GET_RED(color)), DARKER(GET_GREEN(color)), DARKER(GET_BLUE(color)));
-      lcdColorTable[HEADER_ICON_BGCOLOR_INDEX] = color;
-      lcdColorTable[HEADER_CURRENT_BGCOLOR_INDEX] = color;
+      lcdColorTable[COLOR_THEME_FOCUS_INDEX] = RGB(DARKER(GET_RED(color)), DARKER(GET_GREEN(color)), DARKER(GET_BLUE(color)));
+      lcdColorTable[COLOR_THEME_SECONDARY1_INDEX] = color;
+      lcdColorTable[COLOR_THEME_FOCUS_INDEX] = color;
 #endif
       loadIcons();
       loadThemeBitmaps();
@@ -344,7 +328,7 @@ class FlyskyTheme: public OpenTxTheme
       if (topleftBitmap) {
         dc->drawBitmap(0, 0, topleftBitmap);
         uint16_t width = topleftBitmap->width();
-        dc->drawSolidFilledRect(width, 0, LCD_W - width, MENU_HEADER_HEIGHT, MENU_BGCOLOR);
+        dc->drawSolidFilledRect(width, 0, LCD_W - width, MENU_HEADER_HEIGHT, COLOR_THEME_PRIMARY2);
       }
     }
 
@@ -355,10 +339,10 @@ class FlyskyTheme: public OpenTxTheme
       //        dc->drawBitmap(0, 0, topleftBitmap);
       //        uint16_t width = topleftBitmap->width();
       //        dc->drawSolidFilledRect(width, 0, LCD_W-width,
-      //        MENU_HEADER_HEIGHT, HEADER_BGCOLOR);
+      //        MENU_HEADER_HEIGHT, COLOR_THEME_FOCUS);
       //      }
       //      else {
-      dc->drawSolidFilledRect(0, 0, LCD_W, MENU_HEADER_HEIGHT, HEADER_BGCOLOR);
+      dc->drawSolidFilledRect(0, 0, LCD_W, MENU_HEADER_HEIGHT, COLOR_THEME_FOCUS);
       //      }
       //
       //      if (icon == ICON_OPENTX)
@@ -368,12 +352,12 @@ class FlyskyTheme: public OpenTxTheme
       //
       dc->drawSolidFilledRect(0, MENU_HEADER_HEIGHT, LCD_W,
                               MENU_TITLE_TOP - MENU_HEADER_HEIGHT,
-                              DEFAULT_BGCOLOR);  // the white separation line
+                              COLOR_THEME_SECONDARY3);  // the white separation line
       dc->drawSolidFilledRect(0, MENU_TITLE_TOP, LCD_W, MENU_TITLE_HEIGHT,
-                              TITLE_BGCOLOR);  // the title line background
+                              COLOR_THEME_SECONDARY1);  // the title line background
                                                //
       if (title) {
-        dc->drawText(MENUS_MARGIN_LEFT, MENU_TITLE_TOP + 2, title, MENU_COLOR);
+        dc->drawText(MENUS_MARGIN_LEFT, MENU_TITLE_TOP + 1, title, COLOR_THEME_SECONDARY1);
       }
     }
 
@@ -387,54 +371,47 @@ class FlyskyTheme: public OpenTxTheme
       return state == STATE_DEFAULT ? menuIconNormal[index] : menuIconSelected[index];
     }
 
-    void drawPageHeader(BitmapBuffer *dc, std::vector<PageTab *> &tabs,
-                        uint8_t currentIndex) const override
+    void drawCurrentMenuBackground(BitmapBuffer *dc) const override
     {
-      uint8_t padding_left = 4;
-
-      dc->drawSolidFilledRect(0, 0, 4, MENU_HEADER_BUTTON_WIDTH,
-                              HEADER_BGCOLOR);
-      for (unsigned i = 0; i < tabs.size(); i++) {
-        dc->drawBitmap(
-            padding_left + i * MENU_HEADER_BUTTON_WIDTH, 0,
-            theme->getIcon(tabs[i]->getIcon(),
-                           currentIndex == i ? STATE_PRESSED : STATE_DEFAULT));
-      }
-      //      coord_t x = padding_left + MENU_HEADER_BUTTON_WIDTH * tabs.size();
-      //      coord_t w = width() - x;
-      //      if (w > 0) {
-      //        dc->drawSolidFilledRect(x, 0, w, MENU_HEADER_BUTTON_WIDTH,
-      //        HEADER_BGCOLOR);
-      //      }
+//      uint8_t padding_left = 4;
+//
+//      dc->drawSolidFilledRect(0, 0, 4, MENU_HEADER_BUTTON_WIDTH,
+//                              COLOR_THEME_FOCUS);
+//      for (unsigned i = 0; i < tabs.size(); i++) {
+//        dc->drawBitmap(
+//            padding_left + i * MENU_HEADER_BUTTON_WIDTH, 0,
+//            theme->getIcon(tabs[i]->getIcon(),
+//                           currentIndex == i ? STATE_PRESSED : STATE_DEFAULT));
+//      }
     }
 
     void drawMenuDatetime(BitmapBuffer * dc) const
     {
-      dc->drawSolidVerticalLine(DATETIME_SEPARATOR_X, 7, 31, FOCUS_COLOR);
+      dc->drawSolidVerticalLine(DATETIME_SEPARATOR_X, 7, 31, COLOR_THEME_PRIMARY2);
 
+      const TimerOptions timerOptions = {.options = SHOW_TIME};
       struct gtm t;
       gettime(&t);
       char str[10];
 
-#if defined(TRANSLATIONS_CN)
+#if defined(TRANSLATIONS_CN) || defined(TRANSLATIONS_TW)
       sprintf(str, "%d" TR_MONTH "%d", t.tm_mon + 1, t.tm_mday);
 #else
-      const char * const STR_MONTHS[] = TR_MONTHS;
       sprintf(str, "%d %s", t.tm_mday, STR_MONTHS[t.tm_mon]);
 #endif
-      dc->drawText(DATETIME_MIDDLE, DATETIME_LINE1, str, FONT(XS)|FOCUS_COLOR|CENTERED);
+      dc->drawText(DATETIME_MIDDLE, DATETIME_LINE1, str, FONT(XS)|COLOR_THEME_PRIMARY2|CENTERED);
 
-      getTimerString(str, getValue(MIXSRC_TX_TIME));
-      dc->drawText(DATETIME_MIDDLE, DATETIME_LINE2, str, FONT(XS)|FOCUS_COLOR|CENTERED);
+      getTimerString(str, getValue(MIXSRC_TX_TIME), timerOptions);
+      dc->drawText(DATETIME_MIDDLE, DATETIME_LINE2, str, FONT(XS)|COLOR_THEME_PRIMARY2|CENTERED);
     }
 
     void drawProgressBar(BitmapBuffer *dc, coord_t x, coord_t y, coord_t w,
                          coord_t h, int value, int total) const override
     {
-      dc->drawSolidRect(x, y, w, h, 1, DEFAULT_COLOR);
+      dc->drawSolidRect(x, y, w, h, 1, COLOR_THEME_SECONDARY1);
       if (value > 0) {
         int width = (w * value) / total;
-        dc->drawSolidFilledRect(x + 2, y + 2, width - 4, h - 4, CHECKBOX_COLOR);
+        dc->drawSolidFilledRect(x + 2, y + 2, width - 4, h - 4, COLOR_THEME_FOCUS);
       }
     }
 

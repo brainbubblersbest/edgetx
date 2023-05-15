@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,7 +27,10 @@
 #include "translations.h"
 
 #include "widgets/widgets_container_impl.h"
+#include "view_main_decoration.h"
 #include "layout.h"
+
+#include <memory>
 
 #define LAYOUT_COMMON_OPTIONS                                       \
   {STR_TOP_BAR, ZoneOption::Bool, OPTION_VALUE_BOOL(true)},         \
@@ -38,9 +42,18 @@
 #define LAYOUT_OPTIONS_END \
   { nullptr, ZoneOption::Bool }
 
-class ViewMainDecoration;
-
 typedef WidgetsContainerImpl<MAX_LAYOUT_ZONES, MAX_LAYOUT_OPTIONS> LayoutBase;
+
+extern const ZoneOption defaultZoneOptions[];
+
+#define LAYOUT_MAP_DIV      60
+#define LAYOUT_MAP_0        0
+#define LAYOUT_MAP_1QTR     15
+#define LAYOUT_MAP_1THIRD   20
+#define LAYOUT_MAP_HALF     30
+#define LAYOUT_MAP_2THIRD   40
+#define LAYOUT_MAP_3QTR     45
+#define LAYOUT_MAP_FULL     60
 
 class Layout: public LayoutBase
 {
@@ -48,7 +61,8 @@ class Layout: public LayoutBase
 
   public:
 
-    Layout(const LayoutFactory * factory, PersistentData * persistentData);
+    Layout(Window* parent, const LayoutFactory * factory, PersistentData * persistentData,
+           uint8_t zoneCount, uint8_t* zoneMap);
 
 #if defined(DEBUG_WINDOWS)
     std::string getName() const override
@@ -93,33 +107,102 @@ class Layout: public LayoutBase
     void setSlidersVisible(bool visible);
     void setFlightModeVisible(bool visible);
 
+    // Update from theme settings
+    void updateFromTheme() override;
+
     // Updates settings for trims, sliders, pots, etc...
     void adjustLayout() override;
 
   protected:
     const LayoutFactory * factory  = nullptr;
-    ViewMainDecoration* decoration = nullptr;
+    std::unique_ptr<ViewMainDecoration> decoration;
+    uint8_t zoneCount;
+    uint8_t* zoneMap = nullptr;
+
+    enum DecorationSettings {
+        DECORATION_NONE       = 0x00,
+        DECORATION_TOPBAR     = 0x01,
+        DECORATION_SLIDERS    = 0x02,
+        DECORATION_TRIMS      = 0x04,
+        DECORATION_FLIGHTMODE = 0x08,
+        DECORATION_MIRRORED   = 0x10,
+        DECORATION_UNKNOWN    = 0xFF
+    };
 
     // Decoration settings bitmask to detect updates
-    uint8_t  decorationSettings = 255;
+    uint8_t  decorationSettings = DECORATION_UNKNOWN;
 
     // Last time we refreshed the window
     uint32_t lastRefresh = 0;
   
     // Get the available space for widgets
     rect_t getMainZone() const;
+
+    unsigned int getZonesCount() const override { return zoneCount; }
+    rect_t getZone(unsigned int index) const override;
 };
+
+#if LCD_W > LCD_H
+#define BM_W    51
+#define BM_H    25
+#else
+#define BM_W    22
+#define BM_H    34
+#endif
 
 template<class T>
 class BaseLayoutFactory: public LayoutFactory
 {
   public:
-    BaseLayoutFactory(const char * id, const char * name, const uint8_t * bitmap, const ZoneOption * options):
+    BaseLayoutFactory(const char * id, const char * name,
+                      const ZoneOption * options, uint8_t zoneCount, uint8_t* zoneMap):
       LayoutFactory(id, name),
-      bitmap(bitmap),
-      options(options)
+      options(options),
+      zoneCount(zoneCount),
+      zoneMap(zoneMap)
     {
+      this->bitmap = (uint8_t*)malloc(align32(BM_W * BM_H + 2 * sizeof(uint16_t) + 4));
+
+      uint16_t* hdr = (uint16_t*)this->bitmap;
+      hdr[0] = BM_W;
+      hdr[1] = BM_H;
+
+      uint8_t* bm = (uint8_t*)(this->bitmap + 2 * sizeof(uint16_t));
+      memset(bm, 0, BM_W * BM_H);
+
+      memset(bm, 0xFF, BM_W);
+      memset(bm+((BM_H-1)*BM_W), 0xFF, BM_W);
+
+      for (int y = 1; y < BM_H - 1; y += 1) {
+        bm[y*BM_W] = 0xFF;
+        bm[y*BM_W+BM_W-1] = 0xFF;
+      }
+
+      for (int i = 0; i < zoneCount * 4; i += 4) {
+        uint8_t xo = BM_W * zoneMap[i] / LAYOUT_MAP_DIV;
+        uint8_t yo = BM_H * zoneMap[i+1] / LAYOUT_MAP_DIV;
+        uint8_t w = BM_W * zoneMap[i+2] / LAYOUT_MAP_DIV;
+        uint8_t h = (BM_H * zoneMap[i+3] + LAYOUT_MAP_DIV/2) / LAYOUT_MAP_DIV;
+
+        if (yo > 0)
+          memset(bm+(yo*BM_W+xo), 0xFF, w);
+        if (xo > 0) {
+          for (int y = 0; y < h; y += 1) {
+            bm[(yo+y)*BM_W+xo] = 0xFF;
+          }
+        }
+      }
     }
+
+    ~BaseLayoutFactory()
+    {
+      if (bitmap) {
+        free((void*)bitmap);
+        bitmap = nullptr;
+      }
+    }
+
+    const uint8_t* getBitmap() const override { return bitmap; }
 
     void drawThumb(BitmapBuffer * dc, uint16_t x, uint16_t y, uint32_t flags) const override
     {
@@ -131,40 +214,51 @@ class BaseLayoutFactory: public LayoutFactory
       return options;
     }
 
-    Layout * create(Layout::PersistentData * persistentData) const override
+    Layout * create(Window* parent, Layout::PersistentData * persistentData) const override
     {
-      initPersistentData(persistentData);
-      Layout * layout = new T(this, persistentData);
+      initPersistentData(persistentData, true);
+      Layout * layout = new T(parent, this, persistentData, zoneCount, zoneMap);
       if (layout) {
         layout->create();
       }
       return layout;
     }
 
-    Layout * load(Layout::PersistentData * persistentData) const override
+    Layout * load(Window* parent, Layout::PersistentData * persistentData) const override
     {
-      Layout * layout = new T(this, persistentData);
+      initPersistentData(persistentData, false);
+      Layout * layout = new T(parent, this, persistentData, zoneCount, zoneMap);
       if (layout) {
         layout->load();
       }
       return layout;
     }
 
-    void initPersistentData(Layout::PersistentData * persistentData) const override
+    void initPersistentData(Layout::PersistentData* persistentData,
+                            bool setDefault) const override
     {
-      memset(persistentData, 0, sizeof(Layout::PersistentData));
+      if (setDefault) {
+        memset(persistentData, 0, sizeof(Layout::PersistentData));
+      }
       if (options) {
         int i = 0;
-        for (const ZoneOption * option = options; option->name; option++, i++) {
-          TRACE("LayoutFactory::initPersistentData() setting option '%s'", option->name);
-          // TODO compiler bug? The CPU freezes ... persistentData->options[i++] = option->deflt;
-          memcpy(&persistentData->options[i].value, &option->deflt, sizeof(ZoneOptionValue));
-          persistentData->options[i].type = zoneValueEnumFromType(option->type);
+        for (const ZoneOption* option = options; option->name; option++, i++) {
+          TRACE("LayoutFactory::initPersistentData() setting option '%s'",
+                option->name);
+          // TODO compiler bug? The CPU freezes ... persistentData->options[i++]
+          // = option->deflt;
+          auto optVal = &persistentData->options[i];
+          if (setDefault) {
+            memcpy(&optVal->value, &option->deflt, sizeof(ZoneOptionValue));
+          }
+          optVal->type = zoneValueEnumFromType(option->type);
         }
       }
     }
 
   protected:
-    const uint8_t * bitmap;
+    const uint8_t * bitmap = nullptr;
     const ZoneOption * options;
+    uint8_t zoneCount;
+    uint8_t* zoneMap;
 };

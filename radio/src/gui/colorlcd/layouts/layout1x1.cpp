@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,32 +22,10 @@
 #include "layout.h"
 #include "layout_factory_impl.h"
 
-const uint8_t LBM_LAYOUT_1x1[] = {
-#include "mask_layout1x1.lbm"
+static uint8_t zmap[] = {
+    LAYOUT_MAP_0, LAYOUT_MAP_0, LAYOUT_MAP_FULL, LAYOUT_MAP_FULL,
 };
 
-const ZoneOption OPTIONS_LAYOUT_1x1[] = {
-  LAYOUT_COMMON_OPTIONS,
-  LAYOUT_OPTIONS_END
-};
-
-class Layout1x1: public Layout
-{
-  public:
-    Layout1x1(const LayoutFactory * factory, Layout::PersistentData * persistentData):
-      Layout(factory, persistentData)
-    {
-    }
-
-    unsigned int getZonesCount() const override
-    {
-      return 1;
-    }
-
-    rect_t getZone(unsigned int index) const override
-    {
-      return getMainZone();
-    }
-};
-
-BaseLayoutFactory<Layout1x1> layout1x1("Layout1x1", "Fullscreen", LBM_LAYOUT_1x1, OPTIONS_LAYOUT_1x1);
+BaseLayoutFactory<Layout> layout1x1("Layout1x1", STR_WIDGET_FULLSCREEN,
+                                    defaultZoneOptions,
+                                    1, zmap);

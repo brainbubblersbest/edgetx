@@ -38,6 +38,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QDir>
+#include <QRegularExpression>
 
 using namespace Helpers;
 
@@ -305,10 +306,34 @@ void Helpers::exportAppSettings(QWidget * dlgParent)
     exportAppSettings(dlgParent);
 }
 
+unsigned int Helpers::getBitmappedValue(const unsigned int & field, const unsigned int index, const unsigned int numbits, const unsigned int offset)
+{
+  int mask = -1;
+  mask = mask << numbits;
+  mask = ~mask;
+  return (field >> (numbits * index + offset)) & (unsigned int)mask;
+}
+
+void Helpers::setBitmappedValue(unsigned int & field, unsigned int value, unsigned int index, unsigned int numbits, unsigned int offset)
+{
+  int mask = -1;
+  mask = mask << numbits;
+  mask = ~mask;
+
+  unsigned int fieldmask = ((unsigned int)mask << (numbits * index + offset));
+  field = (field & ~fieldmask) | (value << (numbits * index + offset));
+}
+
+#ifdef __APPLE__
+// Flag when simulator is running
+static bool simulatorRunning = false;
+bool isSimulatorRunning() { return simulatorRunning; }
+#endif
+
 void startSimulation(QWidget * parent, RadioData & radioData, int modelIdx)
 {
-  QString fwId = SimulatorLoader::findSimulatorByFirmwareName(getCurrentFirmware()->getId());
-  if (fwId.isEmpty()) {
+  QString simulatorId = SimulatorLoader::findSimulatorByName(getCurrentFirmware()->getSimulatorId());
+  if (simulatorId.isEmpty()) {
     QMessageBox::warning(NULL,
                          CPN_STR_TTL_WARNING,
                          QCoreApplication::translate("Companion", "Simulator for this firmware is not yet available"));
@@ -323,11 +348,14 @@ void startSimulation(QWidget * parent, RadioData & radioData, int modelIdx)
     simuData->setCurrentModel(modelIdx);
   }
 
-  SimulatorMainWindow * dialog = new SimulatorMainWindow(parent, fwId, flags);
+  SimulatorMainWindow * dialog = new SimulatorMainWindow(parent, simulatorId, flags);
   dialog->setWindowModality(Qt::ApplicationModal);
   dialog->setAttribute(Qt::WA_DeleteOnClose);
 
   QObject::connect(dialog, &SimulatorMainWindow::destroyed, [simuData] (void) {
+#ifdef __APPLE__
+    simulatorRunning = false;
+#endif
     // TODO simuData and Horus tmp directory is deleted on simulator close OR we could use it to get back data from the simulation
     delete simuData;
   });
@@ -340,6 +368,9 @@ void startSimulation(QWidget * parent, RadioData & radioData, int modelIdx)
     dialog->deleteLater();
   }
    else if (dialog->setRadioData(simuData)) {
+#ifdef __APPLE__
+    simulatorRunning = true;
+#endif
     dialog->show();
   }
   else {
@@ -584,18 +615,18 @@ TableLayout::TableLayout(QWidget * parent, int rowCount, const QStringList & hea
 #endif
 }
 
-void TableLayout::addWidget(int row, int column, QWidget * widget)
+void TableLayout::addWidget(int row, int column, QWidget * widget, Qt::Alignment alignment)
 {
 #if defined(TABLE_LAYOUT)
   QHBoxLayout * layout = new QHBoxLayout(tableWidget);
   layout->addWidget(widget);
   addLayout(row, column, layout);
 #else
-  gridWidget->addWidget(widget, row + 1, column);
+  gridWidget->addWidget(widget, row + 1, column, alignment);
 #endif
 }
 
-void TableLayout::addLayout(int row, int column, QLayout * layout)
+void TableLayout::addLayout(int row, int column, QLayout * layout, Qt::Alignment alignment)
 {
 #if defined(TABLE_LAYOUT)
   layout->setContentsMargins(1, 3, 1, 3);
@@ -603,7 +634,7 @@ void TableLayout::addLayout(int row, int column, QLayout * layout)
   containerWidget->setLayout(layout);
   tableWidget->setCellWidget(row, column, containerWidget);
 #else
-  gridWidget->addLayout(layout, row + 1, column);
+  gridWidget->addLayout(layout, row + 1, column, alignment);
 #endif
 }
 
@@ -654,6 +685,14 @@ void TableLayout::pushColumnsLeft(int col)
 #endif
 }
 
+void TableLayout::setColumnStretch(int col, int stretch)
+{
+#if defined(TABLE_LAYOUT)
+#else
+  gridWidget->setColumnStretch(col, stretch);
+#endif
+}
+
 QString Helpers::getChecklistsPath()
 {
   return QDir::toNativeSeparators(g.profile[g.id()].sdPath() + "/MODELS/");   // TODO : add sub folder to constants
@@ -699,4 +738,216 @@ QString Helpers::removeAccents(const QString & str)
       result.replace(it.value().toString(), it.key());
   }
   return result;
+}
+
+/*
+  SemanticVersion
+
+  Based on Semantic Versioning 2.0.0 refer https://semver.org/
+*/
+
+SemanticVersion::SemanticVersion(const QString vers)
+{
+  fromString(vers);
+}
+
+bool SemanticVersion::fromString(QString vers)
+{
+  if (!isValid(vers))
+    return false;
+
+  vers = vers.trimmed();
+
+  if (vers.toLower().startsWith("v"))
+    vers = vers.mid(1);
+
+  QStringList strl = vers.split(".");
+  version.major = strl.at(0).toInt();
+  version.minor = strl.at(1).toInt();
+
+  if (strl.count() > 2) {
+    if (!strl.at(2).contains("-")) {
+      version.patch = strl.at(2).toInt();
+    } else {
+      QStringList ptch = strl.at(2).toLower().split("-");
+      version.patch = ptch.at(0).toInt();
+
+      int offset = 0;
+      QString relType;
+
+      for (int i = 0; i < ptch.at(1).size(); i++) {
+        QString c(ptch.at(1).mid(i, 1));
+        if (c >= "0" && c <= "9") {
+          break;
+        } else if (c == ".") {
+          offset++;
+          break;
+        }
+
+        offset++;
+        relType.append(c);
+      }
+
+      version.preReleaseType = preReleaseTypeToInt(relType);
+
+      if (version.preReleaseType > -1 && offset < ptch.at(1).size())
+        version.preReleaseNumber = ptch.at(1).mid(offset).toInt();
+      else
+        version.preReleaseType = PR_NONE;
+    }
+  }
+
+  //qDebug() << "vers:" << vers << "toString:" << toString() << "toInt:" << toInt();
+
+  return true;
+}
+
+SemanticVersion& SemanticVersion::operator=(const SemanticVersion& rhs)
+{
+  version.major = rhs.version.major;
+  version.minor = rhs.version.minor;
+  version.patch = rhs.version.patch;
+  version.preReleaseType = rhs.version.preReleaseType;
+  version.preReleaseNumber = rhs.version.preReleaseNumber;
+  return *this;
+}
+
+bool SemanticVersion::isValid(const QString vers)
+{
+  QString v(vers);
+
+  v = v.trimmed();
+  if (v.toLower().startsWith("v"))
+    v = v.mid(1);
+
+#if 0
+  //  Keep for testing full standard
+  //  Note: regexp adapted for Qt ie extra escaping
+  QRegularExpression rx1("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$");
+
+  //  Qt only test as not all patterns supported and can change in later releases
+  if (!rx1.isValid()) {
+    qDebug() << "Full standard is an invalid Qt regular expression";
+    return false;
+  }
+
+  if (!rx1.match(v).hasMatch()) {
+    qDebug() << vers << "is not a valid Semantic Version - ";
+    return false;
+  }
+#endif // 0
+
+  //  we only support a subset of the standard alpha, beta, rc with period optional and number optional
+  //  format: major.minor.patch[-[alpha|beta|rc][.|][n|]]
+
+  QRegularExpression rx2("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(alpha|beta|rc)\\.?(0|[1-9]\\d*)?)*$");
+
+  //  Qt only test as not all patterns supported and can change in later releases
+  if (!rx2.isValid()) {
+    qDebug() << "Standard subset is an invalid Qt regular expression";
+    return false;
+  }
+
+  if (!rx2.match(v.toLower()).hasMatch()) {
+    //qDebug() << vers << "is not a valid Semantic Version subset - ";
+    return false;
+  }
+
+  return isValid();
+}
+
+bool SemanticVersion::isValid()
+{
+  //  range checks to support 32 bit OS when components compounded
+  if (version.major < 0 || version.major > 255 || version.minor < 0 || version.minor > 255 || version.patch < 0 || version.patch > 255 ||
+      version.preReleaseType < 0 || version.preReleaseType > PR_NONE || version.preReleaseNumber < 0 || version.preReleaseNumber > 15) {
+    qDebug() << "Cannot convert to supported Semantec Version";
+    version = SemanticVersion().version;
+    return false;
+  }
+
+  return true;
+}
+
+QString SemanticVersion::toString() const
+{
+  QString ret(QString("%1.%2.%3").arg(version.major).arg(version.minor).arg(version.patch));
+
+  if (version.preReleaseType != PR_NONE) {
+    ret = QString("%1-%2").arg(ret).arg(preReleaseTypeToString());
+    if (version.preReleaseNumber > 0)
+      ret = QString("%1.%2").arg(ret).arg(version.preReleaseNumber);
+  }
+
+  return ret;
+}
+
+int SemanticVersion::compare(const SemanticVersion& other)
+{
+  if (version.major != other.version.major) {
+    return version.major - other.version.major;
+  }
+
+  if (version.minor != other.version.minor) {
+    return version.minor - other.version.minor;
+  }
+
+  if (version.patch != other.version.patch) {
+    return version.patch - other.version.patch;
+  }
+
+  if (version.preReleaseType != other.version.preReleaseType) {
+    return version.preReleaseType - other.version.preReleaseType;
+  }
+
+  if (version.preReleaseNumber != other.version.preReleaseNumber) {
+    return version.preReleaseNumber - other.version.preReleaseNumber;
+  }
+
+  return 0;
+}
+
+unsigned int SemanticVersion::toInt() const
+{
+  //  limit to 32 bits for OS backward compatibility
+  unsigned int val = 0;
+  setBitmappedValue(val, version.major, 0, 8, 24);
+  setBitmappedValue(val, version.minor, 0, 8, 16);
+  setBitmappedValue(val, version.patch, 0, 8, 8);
+  setBitmappedValue(val, version.preReleaseType, 0, 4, 4);
+  setBitmappedValue(val, version.preReleaseNumber, 0, 4);
+  return val;
+}
+
+bool SemanticVersion::fromInt(const unsigned int val)
+{
+  //  assumption val was generated by toInt() but validate anyway
+  version.major = Helpers::getBitmappedValue(val, 0, 8, 24);
+  version.minor = Helpers::getBitmappedValue(val, 0, 8, 16);
+  version.patch = Helpers::getBitmappedValue(val, 0, 8, 8);
+  version.preReleaseType = Helpers::getBitmappedValue(val, 0, 4, 4);
+  version.preReleaseNumber = Helpers::getBitmappedValue(val, 0, 4);
+  return isValid();
+}
+
+StatusDialog::StatusDialog(QWidget * parent, const QString title, QString msgtext, const int width) :
+  QDialog(parent)
+{
+  setWindowTitle(title);
+  QVBoxLayout *layout = new QVBoxLayout(this);
+  msg = new QLabel(this);
+  msg->setFixedWidth(width);
+  msg->setContentsMargins(50, 50, 50, 50);
+  update(msgtext);
+  layout->addWidget(msg);
+  show();
+}
+
+StatusDialog::~StatusDialog()
+{
+}
+
+void StatusDialog::update(QString text)
+{
+  msg->setText(text);
 }

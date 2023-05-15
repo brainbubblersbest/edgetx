@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,7 +27,7 @@
 class TextWidget: public Widget
 {
   public:
-    TextWidget(const WidgetFactory * factory, FormGroup * parent, const rect_t & rect, Widget::PersistentData * persistentData):
+    TextWidget(const WidgetFactory* factory, Window* parent, const rect_t & rect, Widget::PersistentData* persistentData):
       Widget(factory, parent, rect, persistentData)
     {
     }
@@ -53,10 +54,11 @@ class TextWidget: public Widget
 
 const ZoneOption TextWidget::options[] = {
   { STR_TEXT, ZoneOption::String, OPTION_VALUE_STRING(TEXT_WIDGET_DEFAULT_LABEL) },
-  { STR_COLOR, ZoneOption::Color, OPTION_VALUE_UNSIGNED(DEFAULT_COLOR>>16) },
+  { STR_COLOR, ZoneOption::Color, OPTION_VALUE_UNSIGNED(COLOR_THEME_SECONDARY1>>16) },
   { STR_SIZE, ZoneOption::TextSize, OPTION_VALUE_UNSIGNED(0) },
   { STR_SHADOW, ZoneOption::Bool, OPTION_VALUE_BOOL(false)  },
   { nullptr, ZoneOption::Bool }
 };
 
-BaseWidgetFactory<TextWidget> textWidget("Text", TextWidget::options);
+BaseWidgetFactory<TextWidget> textWidget("Text", TextWidget::options,
+                                         STR_WIDGET_TEXT);

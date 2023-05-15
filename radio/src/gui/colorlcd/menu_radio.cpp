@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -28,6 +29,7 @@
 #include "radio_trainer.h"
 #include "radio_version.h"
 #include "radio_hardware.h"
+#include "radio_theme.h"
 #include "myeeprom.h"
 
 RadioMenu::RadioMenu():
@@ -36,8 +38,14 @@ RadioMenu::RadioMenu():
   addTab(new RadioToolsPage());
   addTab(new RadioSdManagerPage());
   addTab(new RadioSetupPage());
+  addTab(new ThemeSetupPage());
   addTab(new SpecialFunctionsPage(g_eeGeneral.customFn));
   addTab(new RadioTrainerPage());
   addTab(new RadioHardwarePage());
   addTab(new RadioVersionPage());
+}
+
+RadioMenu::~RadioMenu()
+{
+    storageCheck(true);
 }

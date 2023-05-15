@@ -132,7 +132,10 @@ void SimulatedUIWidget::onLcdChange(bool backlightEnable)
   if (!m_lcd || !m_lcd->isVisible())
     return;
 
-  m_lcd->onLcdChanged(backlightEnable);
+  uint8_t* lcdBuf = m_simulator->getLcd();
+  m_lcd->onLcdChanged(lcdBuf, backlightEnable);
+  m_simulator->lcdFlushed();
+
   setLightOn(backlightEnable);
 }
 
@@ -165,6 +168,7 @@ void SimulatedUIWidget::wheelEvent(QWheelEvent * event)
   // steps can be negative or positive to determine direction (negative is UP/LEFT scroll)
   QPoint numSteps = event->angleDelta() / 8 / 15 * -1;  // one step per 15deg
   emit simulatorWheelEvent(numSteps.y());
+  event->accept();
 }
 
 void SimulatedUIWidget::mousePressEvent(QMouseEvent * event)
@@ -187,7 +191,11 @@ void SimulatedUIWidget::setLcd(LcdWidget * lcd)
 {
   m_lcd = lcd;
   Firmware * firmware = getCurrentFirmware();
-  m_lcd->setData(m_simulator->getLcd(), firmware->getCapability(LcdWidth), firmware->getCapability(LcdHeight), firmware->getCapability(LcdDepth));
+
+  auto width = firmware->getCapability(LcdWidth);
+  auto height = firmware->getCapability(LcdHeight);
+  auto depth = firmware->getCapability(LcdDepth);
+  m_lcd->setData(width, height, depth);
 
   if (!m_backlightColors.size())
     return;
@@ -197,6 +205,7 @@ void SimulatedUIWidget::setLcd(LcdWidget * lcd)
     m_backLight = 0;
 
   m_lcd->setBackgroundColor(m_backlightColors.at(m_backLight));
+  connect(m_lcd, &LcdWidget::touchEvent, m_simulator, &SimulatorInterface::touchEvent);
 }
 
 void SimulatedUIWidget::connectScrollActions()

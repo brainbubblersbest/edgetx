@@ -1,29 +1,3 @@
-macro(today RESULT)
-  if(WIN32)
-    execute_process(COMMAND "cmd" " /C date /T" OUTPUT_VARIABLE ${RESULT})
-    string(REGEX REPLACE "[^0-9]*([0-9]+)[^0-9]([0-9]+)[^0-9]([0-9]+).*" "\\1-\\2-\\3" ${RESULT} ${${RESULT}})
-  elseif(UNIX)
-    execute_process(COMMAND "date" "+%Y-%m-%d" OUTPUT_VARIABLE ${RESULT})
-    string(REGEX REPLACE "(....)-(..)-(..).*" "\\1-\\2-\\3" ${RESULT} ${${RESULT}})
-  else(WIN32)
-    message(WARNING "date not implemented")
-    set(${RESULT} 00-00-0000)
-  endif(WIN32)
-endmacro(today)
-
-macro(now RESULT)
-  if(WIN32)
-    execute_process(COMMAND "cmd" " /C time /T" OUTPUT_VARIABLE ${RESULT})
-    string(REGEX REPLACE "(..):(..).*" "\\1:\\2:00" ${RESULT} ${${RESULT}})
-  elseif(UNIX)
-    execute_process(COMMAND "date" "+%H:%M:%S" OUTPUT_VARIABLE ${RESULT})
-    string(REGEX REPLACE "(..):(..):(..).*" "\\1:\\2:\\3" ${RESULT} ${${RESULT}})
-  else(WIN32)
-    message(WARNING "time not implemented")
-    set(${RESULT} 00:00:00)
-  endif(WIN32)
-endmacro(now)
-
 find_package(Git)
 
 macro(git_id RESULT)
@@ -73,3 +47,44 @@ macro(PrintTargetReport targetName)
     message("--------------")
   endif()
 endmacro(PrintTargetReport)
+
+function(AddCompilerFlags output)
+  get_property(flags DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
+  foreach(flag ${flags})
+    set(ARGS ${ARGS} -D${flag})
+  endforeach()
+
+  get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+  foreach(dir ${dirs})
+    set(ARGS ${ARGS} -I${dir})
+  endforeach()
+
+  # Add hotfix for arm64
+  set(ARGS ${ARGS} -Wno-asm-operand-widths -Wno-pragma-once-outside-header)
+
+  set(${output} ${${output}} ${ARGS} PARENT_SCOPE)
+endfunction()
+
+function(GenerateDatacopy source output)
+
+  set(GEN_DATACOPY ${RADIO_DIRECTORY}/util/generate_datacopy.py)
+  set(GEN_DATACOPY_DEPEND ${CMAKE_CURRENT_SOURCE_DIR}/${source} ${GEN_DATACOPY})
+
+  # Fetch defines / include directories in use
+  AddCompilerFlags(GEN_DATACOPY_ARGS)
+
+  set(GEN_DATACOPY_ARGS
+    # source file MUST be the first argument
+    ${CMAKE_CURRENT_SOURCE_DIR}/${source}
+    -DBACKUP ${GEN_DATACOPY_ARGS} ${SYSROOT_ARG})
+
+  set(GEN_DATACOPY_CMD
+    ${PYTHON_EXECUTABLE} ${GEN_DATACOPY} ${GEN_DATACOPY_ARGS})
+  
+  add_custom_command(
+    OUTPUT ${output}
+    COMMAND ${GEN_DATACOPY_CMD} > ${output}
+    DEPENDS ${GEN_DATACOPY_DEPEND}
+    )
+
+endfunction()

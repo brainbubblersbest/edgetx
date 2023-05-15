@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,14 +19,27 @@
  * GNU General Public License for more details.
  */
 
+#include "dataconstants.h"
 #include "tabsgroup.h"
+enum MultiModuleType : short;
 
-class RadioSdManagerPage: public PageTab {
-  public:
-    RadioSdManagerPage();
+class FileBrowser;
+class FilePreview;
 
-    void build(FormWindow * window) override;
+class RadioSdManagerPage : public PageTab
+{
+  FileBrowser* browser = nullptr;
+  FilePreview* preview = nullptr;
+  
+ public:
+  RadioSdManagerPage();
+  void build(FormWindow* window) override;
 
-  protected:
-    void rebuild(FormWindow * window);
+ protected:
+  void fileAction(const char* path, const char* name, const char* fullpath);
+  
+  void BootloaderUpdate(const char* fn);
+  void FrSkyFirmwareUpdate(const char* fn, ModuleIndex module);
+  void MultiFirmwareUpdate(const char* fn, ModuleIndex module,
+                           MultiModuleType type);
 };

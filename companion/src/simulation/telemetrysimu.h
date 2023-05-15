@@ -63,6 +63,7 @@ class TelemetrySimulator : public QWidget
     void setupDataFields();
     void onSimulateToggled(bool isChecked);
     void onLogTimerEvent();
+    void onGpsRunLoop();
     void onLoadLogFile();
     void onPlay();
     void onRewind();
@@ -79,6 +80,7 @@ class TelemetrySimulator : public QWidget
     Ui::TelemetrySimulator * ui;
     QTimer timer;
     QTimer logTimer;
+    QTimer gpsTimer;
     SimulatorInterface *simulator;
     bool m_simuStarted;
     bool m_logReplayEnable;
@@ -169,19 +171,20 @@ class TelemetrySimulator : public QWidget
     class FlvssEmulator
     {
       public:
-        uint32_t setAllCells_GetNextPair(double cellValues[6]);
-        static const uint32_t MAXCELLS = 6;
+        static const uint32_t MAXCELLS = 8;
+        uint32_t setAllCells_GetNextPair(double cellValues[MAXCELLS]);
 
       private:
         void encodeAllCells();
         void splitIntoCells(double totalVolts);
         static uint32_t encodeCellPair(uint8_t cellNum, uint8_t firstCellNo, double cell1, double cell2);
-        double cellFloats[6];
+        double cellFloats[MAXCELLS];
         uint32_t nextCellNum;
         uint32_t numCells;
         uint32_t cellData1;
         uint32_t cellData2;
         uint32_t cellData3;
+        uint32_t cellData4;
     };  // FlvssEmulator
 
     class GPSEmulator
@@ -207,6 +210,11 @@ class TelemetrySimulator : public QWidget
         uint32_t encodeLatLon(double latLon, bool isLat);
         uint32_t encodeDateTime(uint8_t yearOrHour, uint8_t monthOrMinute, uint8_t dayOrSecond, bool isDate);
     };  // GPSEmulator
+private slots:
+    void on_saveTelemetryvalues_clicked();
+    void on_loadTelemetryvalues_clicked();
+    void on_GPSpushButton_clicked();
+    void on_gps_course_valueChanged(double arg1);
 };  // TelemetrySimulator
 
 #endif // _TELEMETRYSIMU_H_

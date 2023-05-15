@@ -29,6 +29,7 @@
 #include <QTime>
 #include <QElapsedTimer>
 #include <QStandardItemModel>
+#include <QDialog>
 
 extern const QColor colors[CPN_MAX_CURVES];
 
@@ -113,12 +114,19 @@ namespace Helpers
   QString getChecklistFilename(const ModelData * model);
   QString getChecklistFilePath(const ModelData * model);
   QString removeAccents(const QString & str);
+  unsigned int getBitmappedValue(const unsigned int & field, const unsigned int index = 0, const unsigned int numbits = 1, const unsigned int offset = 0);
+  void setBitmappedValue(unsigned int & field, unsigned int value, unsigned int index = 0, unsigned int numbits = 1, unsigned int offset = 0);
 
 }  // namespace Helpers
 
 // TODO : move globals to Helpers namespace
 
 void startSimulation(QWidget * parent, RadioData & radioData, int modelIdx);
+
+#ifdef __APPLE__
+// Flag when simulator is running
+bool isSimulatorRunning();
+#endif
 
 // Format a pixmap to fit on the current firmware
 QPixmap makePixMap(const QImage & image);
@@ -186,14 +194,15 @@ public:
   TableLayout(QWidget * parent, int rowCount, const QStringList & headerLabels);
   // ~TableLayout() ;
 
-  void addWidget(int row, int column, QWidget * widget);
-  void addLayout(int row, int column, QLayout * layout);
+  void addWidget(int row, int column, QWidget * widget, Qt::Alignment alignment = Qt::Alignment());
+  void addLayout(int row, int column, QLayout * layout, Qt::Alignment alignment = Qt::Alignment());
 
   void resizeColumnsToContents();
   void setColumnWidth(int col, int width);
   void setColumnWidth(int col, QString str);
   void pushRowsUp(int row);
   void pushColumnsLeft(int col);
+  void setColumnStretch(int col, int stretch);
 
 private:
 #if defined(TABLE_LAYOUT)
@@ -237,3 +246,83 @@ private:
 };
 
 extern Stopwatch gStopwatch;
+
+class SemanticVersion
+{
+  public:
+    explicit SemanticVersion(const QString vers);
+    explicit SemanticVersion() {}
+    ~SemanticVersion() {}
+
+    bool isValid(const QString vers);
+    bool isValid();
+    bool fromString(const QString vers);
+    QString toString() const;
+    unsigned int toInt() const;
+    bool fromInt(const unsigned int val);
+
+    SemanticVersion& operator=(const SemanticVersion& rhs);
+
+    bool operator==(const SemanticVersion& rhs) {
+      return compare(rhs) == 0;
+    }
+
+    bool operator!=(const SemanticVersion& rhs) {
+      return compare(rhs) != 0;
+    }
+
+    bool operator>(const SemanticVersion& rhs) {
+      return compare(rhs) > 0;
+    }
+
+    bool operator>=(const SemanticVersion& rhs) {
+      return compare(rhs) >= 0;
+    }
+
+    bool operator<(const SemanticVersion& rhs) {
+      return compare(rhs) < 0;
+    }
+
+    bool operator<=(const SemanticVersion& rhs) {
+      return compare(rhs) <= 0;
+    }
+
+  private:
+    enum PreReleaseTypes {
+      PR_ALPHA = 0,
+      PR_BETA,
+      PR_RC,
+      PR_NONE
+    };
+
+    const QStringList PreReleaseTypesStringList = { "alpha", "beta", "rc"};
+
+    struct Version {
+      int major            = 0;
+      int minor            = 0;
+      int patch            = 0;
+      int preReleaseType   = PR_NONE;
+      int preReleaseNumber = 0;
+    };
+
+    Version version;
+
+    int compare(const SemanticVersion& other);
+    inline QString preReleaseTypeToString() const { return PreReleaseTypesStringList.value(version.preReleaseType, ""); }
+    inline int preReleaseTypeToInt(QString preRelType) const { return PreReleaseTypesStringList.indexOf(preRelType); }
+
+};
+
+class StatusDialog: public QDialog
+{
+    Q_OBJECT
+
+  public:
+    StatusDialog(QWidget * parent = nullptr, const QString title = "", QString msgtext = "", const int width = 200);
+    virtual ~StatusDialog();
+
+    void update(QString text);
+
+  private:
+    QLabel *msg;
+};

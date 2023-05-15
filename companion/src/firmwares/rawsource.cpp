@@ -96,6 +96,10 @@ RawSourceRange RawSource::getRange(const ModelData * model, const GeneralSetting
         result.max = 24 * 60 * result.step - 60;  // 23:59:00 with 1-minute resolution
         result.unit = tr("s");
       }
+      else if (index == 2) {   //GPS
+        result.max = 30000;
+        result.min = -result.max;
+      }
       else {      // Timers 1 - 3
         result.step = 1;
         result.max = 9 * 60 * 60 - 1;  // 8:59:59 (to match firmware)
@@ -137,7 +141,7 @@ QString RawSource::toString(const ModelData * model, const GeneralSettings * con
   };
 
   static const QString special[] = {
-    tr("Batt"), tr("Time"), tr("Timer1"), tr("Timer2"), tr("Timer3"),
+    tr("Batt"), tr("Time"), tr("GPS"), tr("Reserved1"), tr("Reserved2"), tr("Reserved3"), tr("Reserved4")
   };
 
   static const QString rotary[]  = { tr("REa"), tr("REb") };
@@ -172,7 +176,7 @@ QString RawSource::toString(const ModelData * model, const GeneralSettings * con
         else if (isStick(&genAryIdx))
           result = QString(generalSettings->stickName[genAryIdx]);
       }
-      if (result.isEmpty())
+      if (result.trimmed().isEmpty())
         result = Boards::getAnalogInputName(board, index);
       return result;
 
@@ -187,9 +191,16 @@ QString RawSource::toString(const ModelData * model, const GeneralSettings * con
 
     case SOURCE_TYPE_SWITCH:
       if (generalSettings)
-        result = QString(generalSettings->switchName[index]);
+        result = QString(generalSettings->switchName[index]).trimmed();
       if (result.isEmpty())
         result = Boards::getSwitchInfo(board, index).name;
+      return result;
+
+    case SOURCE_TYPE_FUNCTIONSWITCH:
+      if (model)
+        result = QString(model->functionSwitchNames[index]).trimmed();
+      if (result.isEmpty())
+        result = tr("SW%1").arg(index + 1);
       return result;
 
     case SOURCE_TYPE_CUSTOM_SWITCH:
@@ -208,11 +219,11 @@ QString RawSource::toString(const ModelData * model, const GeneralSettings * con
         return LimitData().nameToString(index);
 
     case SOURCE_TYPE_SPECIAL:
-      if (index >= SOURCE_TYPE_SPECIAL_TIMER1_IDX && index <= SOURCE_TYPE_SPECIAL_TIMER1_IDX + CPN_MAX_TIMERS - 1) {
+      if (index >= SOURCE_TYPE_SPECIAL_FIRST_TIMER && index <= SOURCE_TYPE_SPECIAL_LAST_TIMER) {
         if (model)
-          result = model->timers[index - SOURCE_TYPE_SPECIAL_TIMER1_IDX].nameToString(index - SOURCE_TYPE_SPECIAL_TIMER1_IDX);
+          result = model->timers[index - SOURCE_TYPE_SPECIAL_FIRST_TIMER].nameToString(index - SOURCE_TYPE_SPECIAL_FIRST_TIMER);
         else
-          result = TimerData().nameToString(index - SOURCE_TYPE_SPECIAL_TIMER1_IDX);
+          result = TimerData().nameToString(index - SOURCE_TYPE_SPECIAL_FIRST_TIMER);
       }
       else
         result = CHECK_IN_ARRAY(special, index);
@@ -236,6 +247,9 @@ QString RawSource::toString(const ModelData * model, const GeneralSettings * con
         return model->gvarData[index].nameToString(index);
       else
         return GVarData().nameToString(index);
+
+    case SOURCE_TYPE_SPACEMOUSE:
+      return tr("sm%1").arg(QChar('A' + index));
 
     default:
       return QString(CPN_STR_UNKNOWN_ITEM);
@@ -289,7 +303,7 @@ bool RawSource::isSlider(int * sliderIndex, Board::Type board) const
 
 bool RawSource::isTimeBased(Board::Type board) const
 {
-  return (type == SOURCE_TYPE_SPECIAL && index > 0);
+  return (type == SOURCE_TYPE_SPECIAL && index >= SOURCE_TYPE_SPECIAL_FIRST_TIMER && index <= SOURCE_TYPE_SPECIAL_LAST_TIMER);
 }
 
 bool RawSource::isAvailable(const ModelData * const model, const GeneralSettings * const gs, Board::Type board) const
@@ -305,8 +319,21 @@ bool RawSource::isAvailable(const ModelData * const model, const GeneralSettings
   if (type == SOURCE_TYPE_SWITCH && index >= b.getCapability(Board::Switches))
     return false;
 
+  if (type == SOURCE_TYPE_FUNCTIONSWITCH)
+    if (!model || index >= b.getCapability(Board::FunctionSwitches))
+      return false;
+
+  if (type == SOURCE_TYPE_SPECIAL && index >= SOURCE_TYPE_SPECIAL_FIRST_RESERVED && index <= SOURCE_TYPE_SPECIAL_LAST_RESERVED)
+    return false;
+
   if (model) {
+    if (type == SOURCE_TYPE_FUNCTIONSWITCH && !model->isFunctionSwitchSourceAllowed(index))
+      return false;
+
     if (type == SOURCE_TYPE_VIRTUAL_INPUT && !model->isInputValid(index))
+      return false;
+
+    if (type == SOURCE_TYPE_PPM && model->trainerMode == TRAINER_MODE_OFF)
       return false;
 
     if (type == SOURCE_TYPE_CUSTOM_SWITCH && model->logicalSw[index].isEmpty())
@@ -331,6 +358,12 @@ bool RawSource::isAvailable(const ModelData * const model, const GeneralSettings
   if (type == SOURCE_TYPE_TRIM && index >= b.getCapability(Board::NumTrims))
     return false;
 
+  if (type == SOURCE_TYPE_SPACEMOUSE &&
+     (index >= CPN_MAX_SPACEMOUSE ||
+     (!(gs->serialPort[GeneralSettings::SP_AUX1] == GeneralSettings::AUX_SERIAL_SPACEMOUSE ||
+        gs->serialPort[GeneralSettings::SP_AUX2] == GeneralSettings::AUX_SERIAL_SPACEMOUSE))))
+    return false;
+
   return true;
 }
 
@@ -343,8 +376,10 @@ RawSource RawSource::convert(RadioDataConversionState & cstate)
   if (type == SOURCE_TYPE_STICK) {
     QStringList fromStickList(getStickList(cstate.fromBoard));
     QStringList toStickList(getStickList(cstate.toBoard));
-    index = toStickList.indexOf(fromStickList.at(oldData.id));
-    // index set to -1 if no match found
+    if (oldData.id < fromStickList.count())
+      index = toStickList.indexOf(fromStickList.at(oldData.id));
+    else
+      index = -1;
     // perform forced mapping
   }
 
@@ -408,4 +443,39 @@ QStringList RawSource::getSwitchList(Boards board) const
     ret.append(board.getSwitchInfo(i).name);
   }
   return ret;
+}
+
+// static
+StringTagMappingTable RawSource::getSpecialTypesLookupTable()
+{
+  StringTagMappingTable tbl;
+
+tbl.insert(tbl.end(), {
+                          {std::to_string(SOURCE_TYPE_SPECIAL_TX_BATT),    "TX_VOLTAGE"},
+                          {std::to_string(SOURCE_TYPE_SPECIAL_TX_TIME),    "TX_TIME"},
+                          {std::to_string(SOURCE_TYPE_SPECIAL_TX_GPS),     "TX_GPS"},
+                          {std::to_string(SOURCE_TYPE_SPECIAL_RESERVED1),  "RESERVED1"},
+                          {std::to_string(SOURCE_TYPE_SPECIAL_RESERVED2),  "RESERVED2"},
+                          {std::to_string(SOURCE_TYPE_SPECIAL_RESERVED3),  "RESERVED3"},
+                          {std::to_string(SOURCE_TYPE_SPECIAL_RESERVED4),  "RESERVED4"},
+                          {std::to_string(SOURCE_TYPE_SPECIAL_TIMER1),     "TIMER1"},
+                          {std::to_string(SOURCE_TYPE_SPECIAL_TIMER2),     "TIMER2"},
+                          {std::to_string(SOURCE_TYPE_SPECIAL_TIMER3),     "TIMER3"},
+                          });
+
+  return tbl;
+}
+
+// static
+StringTagMappingTable RawSource::getCyclicLookupTable()
+{
+  StringTagMappingTable tbl;
+
+tbl.insert(tbl.end(), {
+                          {"0", "CYC1"},
+                          {"1", "CYC2"},
+                          {"2", "CYC3"},
+                          });
+
+  return tbl;
 }

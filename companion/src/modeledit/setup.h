@@ -31,7 +31,10 @@ namespace Ui {
   class Setup;
   class Timer;
   class Module;
+  class FunctionSwitches;
 }
+
+class AutoLineEdit;
 
 class TimerPanel : public ModelPanel
 {
@@ -50,6 +53,7 @@ class TimerPanel : public ModelPanel
     void onItemModelAboutToBeUpdated();
     void onItemModelUpdateComplete();
     void onCountdownBeepChanged(int index);
+    void onModeChanged(int index);
 
   signals:
     void nameChanged();
@@ -66,7 +70,8 @@ class ModulePanel : public ModelPanel
   Q_OBJECT
 
   public:
-    ModulePanel(QWidget * parent, ModelData & model, ModuleData & module, GeneralSettings & generalSettings, Firmware * firmware, int moduleIdx);
+    ModulePanel(QWidget * parent, ModelData & model, ModuleData & module, GeneralSettings & generalSettings, Firmware * firmware, int moduleIdx,
+                FilteredItemModelFactory * panelFilteredItemModels = nullptr);
     virtual ~ModulePanel();
     virtual void update();
 
@@ -81,7 +86,6 @@ class ModulePanel : public ModelPanel
 
   private slots:
     void setupFailsafes();
-    void on_trainerMode_currentIndexChanged(int index);
     void onProtocolChanged(int index);
     void on_ppmDelay_editingFinished();
     void on_channelsCount_editingFinished();
@@ -95,6 +99,7 @@ class ModulePanel : public ModelPanel
     void onSubTypeChanged();
     void on_autoBind_stateChanged(int state);
     void on_disableChMap_stateChanged(int state);
+    void on_raw12bits_stateChanged(int state);
     void on_racingMode_stateChanged(int state);
     void on_disableTelem_stateChanged(int state);
     void on_lowPower_stateChanged(int state);
@@ -108,6 +113,8 @@ class ModulePanel : public ModelPanel
     void updateFailsafe(unsigned channel);
     void on_optionValue_editingFinished();
     void onClearAccessRxClicked();
+    void on_chkOption_stateChanged(int state);
+    void on_cboOption_currentIndexChanged(int value);
 
   private:
     enum FailsafeValueDisplayTypes { FAILSAFE_DISPLAY_PERCENT = 1, FAILSAFE_DISPLAY_USEC = 2 };
@@ -125,6 +132,37 @@ class ModulePanel : public ModelPanel
     QMap<int, ChannelFailsafeWidgetsGroup> failsafeGroupsMap;
     static quint8 failsafesValueDisplayType;  // FailsafeValueDisplayTypes
     void updateFailsafeUI(unsigned channel, quint8 updtSb);
+};
+
+class FunctionSwitchesPanel : public ModelPanel
+{
+    Q_OBJECT
+
+  public:
+    FunctionSwitchesPanel(QWidget * parent, ModelData & model, GeneralSettings & generalSettings, Firmware * firmware);
+    virtual ~FunctionSwitchesPanel();
+
+    virtual void update();
+    void update(int index);
+
+  signals:
+    void updateDataModels();
+
+  private slots:
+    void on_nameEditingFinished();
+    void on_configCurrentIndexChanged(int index);
+    void on_startPosnCurrentIndexChanged(int index);
+    void on_groupChanged(int value);
+    void on_alwaysOnGroupChanged(int value);
+
+  private:
+    Ui::FunctionSwitches * ui;
+    QVector<AutoLineEdit *> aleNames;
+    QVector<QComboBox *> cboConfigs;
+    QVector<QComboBox *> cboStartupPosns;
+    QVector<QSpinBox *> sbGroups;
+    QVector<QCheckBox *> cbAlwaysOnGroups;
+    int switchcnt;
 };
 
 class SetupPanel : public ModelPanel
@@ -148,6 +186,8 @@ class SetupPanel : public ModelPanel
     void on_extendedLimits_toggled(bool checked);
     void on_extendedTrims_toggled(bool checked);
     void on_throttleWarning_toggled(bool checked);
+    void on_enableCustomThrottleWarning_toggled(bool checked);
+    void on_customThrottleWarningPosition_valueChanged(int value);
     void on_throttleReverse_toggled(bool checked);
     void on_displayText_toggled(bool checked);
     void on_gfEnabled_toggled(bool checked);
@@ -173,6 +213,8 @@ class SetupPanel : public ModelPanel
     void onItemModelAboutToBeUpdated();
     void onItemModelUpdateComplete();
     void onModuleUpdateItemModels();
+    void onFunctionSwitchesUpdateItemModels();
+    void on_jitterFilter_currentIndexChanged(int index);
 
   private:
     Ui::Setup *ui;
@@ -182,6 +224,8 @@ class SetupPanel : public ModelPanel
     QVector<QCheckBox *> centerBeepCheckboxes;
     ModulePanel * modules[CPN_MAX_MODULES + 1];
     TimerPanel * timers[CPN_MAX_TIMERS];
+    FunctionSwitchesPanel * funcswitches;
+
     void updateStartupSwitches();
     void updatePotWarnings();
     void updateBeepCenter();

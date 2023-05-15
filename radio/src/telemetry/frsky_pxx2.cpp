@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -20,11 +21,85 @@
 
 #include "opentx.h"
 
+#if defined(PXX2)
+
 #if defined(LIBOPENUI)
   #include "libopenui.h"
 #endif
 
-void processGetHardwareInfoFrame(uint8_t module, const uint8_t * frame)
+#include "pulses/pxx2.h"
+#include "pulses/pxx2_transport.h"
+
+static_assert(PXX2_FRAME_MAXLENGTH <= INTMODULE_FIFO_SIZE, "");
+
+static const char * const PXX2ModulesNames[] = {
+  "---",
+  "XJT",
+  "ISRM",
+  "ISRM-PRO",
+  "ISRM-S",
+  "R9M",
+  "R9MLite",
+  "R9MLite-PRO",
+  "ISRM-N",
+  "ISRM-S-X9",
+  "ISRM-S-X10E",
+  "XJT Lite",
+  "ISRM-S-X10S",
+  "ISRM-X9LiteS"
+};
+
+const char * getPXX2ModuleName(uint8_t modelId)
+{
+  if (modelId < DIM(PXX2ModulesNames))
+    return PXX2ModulesNames[modelId];
+  else
+    return PXX2ModulesNames[0];
+}
+
+static const char * const PXX2ReceiversNames[] = {
+  "---",
+  "X8R",
+  "RX8R",
+  "RX8R-PRO",
+  "RX6R",
+  "RX4R",
+  "G-RX8",
+  "G-RX6",
+  "X6R",
+  "X4R",
+  "X4R-SB",
+  "XSR",
+  "XSR-M",
+  "RXSR",
+  "S6R",
+  "S8R",
+  "XM",
+  "XM+",
+  "XMR",
+  "R9",
+  "R9-SLIM",
+  "R9-SLIM+",
+  "R9-MINI",
+  "R9-MM",
+  "R9-STAB", // R9-STAB has OTA
+  "R9-MINI-OTA", // this one has OTA (different bootloader)
+  "R9-MM-OTA", // this one has OTA (different bootloader)
+  "R9-SLIM+-OTA", // this one has OTA (different bootloader)
+  "Archer-X", // this one has OTA (internal module)
+  "R9MX", // this one has OTA
+  "R9SX", // this one has OTA
+};
+
+const char * getPXX2ReceiverName(uint8_t modelId)
+{
+  if (modelId < DIM(PXX2ReceiversNames))
+    return PXX2ReceiversNames[modelId];
+  else
+    return PXX2ReceiversNames[0];
+}
+
+static void processGetHardwareInfoFrame(uint8_t module, const uint8_t * frame)
 {
   if (moduleState[module].mode != MODULE_MODE_GET_HARDWARE_INFO) {
     return;
@@ -53,7 +128,7 @@ void processGetHardwareInfoFrame(uint8_t module, const uint8_t * frame)
   }
 }
 
-void processModuleSettingsFrame(uint8_t module, const uint8_t * frame)
+static void processModuleSettingsFrame(uint8_t module, const uint8_t * frame)
 {
   if (moduleState[module].mode != MODULE_MODE_MODULE_SETTINGS) {
     return;
@@ -73,7 +148,7 @@ void processModuleSettingsFrame(uint8_t module, const uint8_t * frame)
   moduleState[module].mode = MODULE_MODE_NORMAL;
 }
 
-void processReceiverSettingsFrame(uint8_t module, const uint8_t * frame)
+static void processReceiverSettingsFrame(uint8_t module, const uint8_t * frame)
 {
   if (moduleState[module].mode != MODULE_MODE_RECEIVER_SETTINGS) {
     return;
@@ -110,31 +185,29 @@ void processReceiverSettingsFrame(uint8_t module, const uint8_t * frame)
   moduleState[module].mode = MODULE_MODE_NORMAL;
 }
 
-void processRegisterFrame(uint8_t module, const uint8_t * frame)
+static void processRegisterFrame(uint8_t module, const uint8_t * frame)
 {
   if (moduleState[module].mode != MODULE_MODE_REGISTER) {
     return;
   }
 
+  PXX2ModuleSetup& mod = reusableBuffer.moduleSetup.pxx2;
   switch(frame[3]) {
     case 0x00:
-      if (reusableBuffer.moduleSetup.pxx2.registerStep == REGISTER_INIT) {
+      if (mod.registerStep == REGISTER_INIT) {
         // RX_NAME follows, we store it for the next step
-        str2zchar(reusableBuffer.moduleSetup.pxx2.registerRxName, (const char *)&frame[4], PXX2_LEN_RX_NAME);
-        reusableBuffer.moduleSetup.pxx2.registerLoopIndex = frame[12];
-        reusableBuffer.moduleSetup.pxx2.registerStep = REGISTER_RX_NAME_RECEIVED;
-#if defined(COLORLCD)
-        pushEvent(EVT_REFRESH);
-#endif
+        memcpy(mod.registerRxName, (const char *)&frame[4], PXX2_LEN_RX_NAME);
+        mod.registerLoopIndex = frame[12];
+        mod.registerStep = REGISTER_RX_NAME_RECEIVED;
       }
       break;
 
     case 0x01:
-      if (reusableBuffer.moduleSetup.pxx2.registerStep == REGISTER_RX_NAME_SELECTED) {
+      if (mod.registerStep == REGISTER_RX_NAME_SELECTED) {
         // RX_NAME + PASSWORD follow, we check they are good
-        if (memcmp(&frame[4], reusableBuffer.moduleSetup.pxx2.registerRxName, PXX2_LEN_RX_NAME) == 0 &&
+        if (memcmp(&frame[4], mod.registerRxName, PXX2_LEN_RX_NAME) == 0 &&
             memcmp(&frame[12], g_model.modelRegistrationID, PXX2_LEN_REGISTRATION_ID) == 0) {
-          reusableBuffer.moduleSetup.pxx2.registerStep = REGISTER_OK;
+          mod.registerStep = REGISTER_OK;
           moduleState[module].mode = MODULE_MODE_NORMAL;
 #if !defined(COLORLCD)
           POPUP_INFORMATION(STR_REG_OK);
@@ -145,7 +218,7 @@ void processRegisterFrame(uint8_t module, const uint8_t * frame)
   }
 }
 
-void processBindFrame(uint8_t module, const uint8_t * frame)
+static void processBindFrame(uint8_t module, const uint8_t * frame)
 {
   if (moduleState[module].mode != MODULE_MODE_BIND) {
     return;
@@ -196,7 +269,7 @@ void processBindFrame(uint8_t module, const uint8_t * frame)
   }
 }
 
-void processResetFrame(uint8_t module, const uint8_t * frame)
+static void processResetFrame(uint8_t module, const uint8_t * frame)
 {
   if (moduleState[module].mode != MODULE_MODE_RESET) {
     return;
@@ -209,12 +282,10 @@ void processResetFrame(uint8_t module, const uint8_t * frame)
   moduleState[module].mode = MODULE_MODE_NORMAL;
 }
 
-void processTelemetryFrame(uint8_t module, const uint8_t * frame)
+static void processTelemetryFrame(uint8_t module, const uint8_t * frame)
 {
-  uint8_t origin = (module << 2) + (frame[3] & 0x03);
-  if (origin != TELEMETRY_ENDPOINT_SPORT) {
-    sportProcessTelemetryPacketWithoutCrc(origin, &frame[4]);
-  }
+  uint8_t origin = frame[3] & 0x03;
+  sportProcessTelemetryPacketWithoutCrc(module, origin, &frame[4]);
 }
 
 #if defined(INTERNAL_MODULE_PXX2) && defined(ACCESS_DENIED) && !defined(SIMU)
@@ -225,7 +296,8 @@ extern "C" {
 
 volatile int16_t authenticateFrames = 0;
 
-void processAuthenticationFrame(uint8_t module, const uint8_t * frame)
+static void processAuthenticationFrame(uint8_t module, const uint8_t * frame,
+                                       const etx_serial_driver_t* drv, void* ctx)
 {
   uint8_t cryptoType = frame[3];
   uint8_t messageDigest[16] = {0};
@@ -241,11 +313,14 @@ void processAuthenticationFrame(uint8_t module, const uint8_t * frame)
 
   if (INTERNAL_MODULE == module &&
       access_denied(cryptoType, frame + 4, messageDigest)) {
+
     moduleState[module].mode = MODULE_MODE_AUTHENTICATION;
-    Pxx2Pulses &pxx2 = intmodulePulsesData.pxx2;
-    pxx2.setupAuthenticationFrame(module, cryptoType,
-                                  (const uint8_t *)messageDigest);
-    intmoduleSendBuffer(pxx2.getData(), pxx2.getSize());
+
+    uint8_t* module_buffer = pulsesGetModuleBuffer(module);
+    Pxx2Pulses pxx2(module_buffer);
+    pxx2.setupAuthenticationFrame(module, cryptoType, (const uint8_t *)messageDigest);    
+    drv->sendBuffer(ctx, module_buffer, pxx2.getSize());
+
     // we remain in AUTHENTICATION mode to avoid a CHANNELS frame is sent at the
     // end of the mixing process
     authenticateFrames++;
@@ -264,10 +339,10 @@ void processAuthenticationFrame(uint8_t module, const uint8_t * frame)
 }
 
 #else
-#define processAuthenticationFrame(module, frame)
+#define processAuthenticationFrame(module, frame, drv, ctx)
 #endif
 
-void processSpectrumAnalyserFrame(uint8_t module, const uint8_t * frame)
+static void processSpectrumAnalyserFrame(uint8_t module, const uint8_t * frame)
 {
   if (moduleState[module].mode != MODULE_MODE_SPECTRUM_ANALYSER) {
     return;
@@ -294,7 +369,7 @@ void processSpectrumAnalyserFrame(uint8_t module, const uint8_t * frame)
   }
 }
 
-void processPowerMeterFrame(uint8_t module, const uint8_t * frame)
+static void processPowerMeterFrame(uint8_t module, const uint8_t * frame)
 {
   if (moduleState[module].mode != MODULE_MODE_POWER_METER) {
     return;
@@ -306,7 +381,7 @@ void processPowerMeterFrame(uint8_t module, const uint8_t * frame)
   }
 }
 
-void processOtaUpdateFrame(uint8_t module, const uint8_t * frame)
+static void processOtaUpdateFrame(uint8_t module, const uint8_t * frame)
 {
   if (moduleState[module].mode != MODULE_MODE_OTA_UPDATE) {
     return;
@@ -332,7 +407,8 @@ void processOtaUpdateFrame(uint8_t module, const uint8_t * frame)
   }
 }
 
-void processModuleFrame(uint8_t module, const uint8_t *frame)
+static void processModuleFrame(uint8_t module, const uint8_t *frame,
+                               const etx_serial_driver_t* drv, void* ctx)
 {
   switch (frame[2]) {
     case PXX2_TYPE_ID_HW_INFO:
@@ -360,7 +436,7 @@ void processModuleFrame(uint8_t module, const uint8_t *frame)
       break;
 
     case PXX2_TYPE_ID_AUTHENTICATION:
-      processAuthenticationFrame(module, frame);
+      processAuthenticationFrame(module, frame, drv, ctx);
       break;
 
     case PXX2_TYPE_ID_RESET:
@@ -369,7 +445,7 @@ void processModuleFrame(uint8_t module, const uint8_t *frame)
   }
 }
 
-void processToolsFrame(uint8_t module, const uint8_t * frame)
+static void processToolsFrame(uint8_t module, const uint8_t * frame)
 {
   switch (frame[2]) {
     case PXX2_TYPE_ID_POWER_METER:
@@ -382,16 +458,13 @@ void processToolsFrame(uint8_t module, const uint8_t * frame)
   }
 }
 
-void processPXX2Frame(uint8_t module, const uint8_t * frame)
+void processPXX2Frame(uint8_t module, const uint8_t * frame,
+                      const etx_serial_driver_t* drv, void* ctx)
 {
-  LOG_TELEMETRY_WRITE_START();
-  for (uint8_t i = 0; i < 1 + frame[0]; i++) {
-    LOG_TELEMETRY_WRITE_BYTE(frame[i]);
-  }
 
   switch (frame[1]) {
     case PXX2_TYPE_C_MODULE:
-      processModuleFrame(module, frame);
+      processModuleFrame(module, frame, drv, ctx);
       break;
 
     case PXX2_TYPE_C_POWER_METER:
@@ -406,3 +479,5 @@ void processPXX2Frame(uint8_t module, const uint8_t * frame)
       break;
   }
 }
+
+#endif

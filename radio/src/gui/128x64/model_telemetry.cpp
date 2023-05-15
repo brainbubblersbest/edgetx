@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -22,9 +23,6 @@
 
 enum MenuModelTelemetryFrskyItems {
   ITEM_TELEMETRY_PROTOCOL_TYPE,
-#if defined(REVX)
-  ITEM_TELEMETRY_INVERTED_SERIAL,
-#endif
   ITEM_TELEMETRY_RSSI_LABEL,
   ITEM_TELEMETRY_RSSI_SOURCE,
   ITEM_TELEMETRY_RSSI_ALARM1,
@@ -63,17 +61,13 @@ enum MenuModelTelemetryFrskyItems {
   #define VARIO_ROWS
 #endif
 
-#if defined(PCBTARANIS)
+#if defined(HARDWARE_EXTERNAL_MODULE)
   #define TELEMETRY_TYPE_ROW           (!IS_INTERNAL_MODULE_ENABLED() && g_model.moduleData[EXTERNAL_MODULE].type == MODULE_TYPE_PPM) ? (uint8_t)0 : HIDDEN_ROW
 #else
-  #define TELEMETRY_TYPE_ROW           (g_model.moduleData[EXTERNAL_MODULE].type == MODULE_TYPE_PPM) ? (uint8_t)0 : HIDDEN_ROW
+  #define TELEMETRY_TYPE_ROW           HIDDEN_ROW
 #endif
 
-#if defined(REVX)
-  #define TELEMETRY_TYPE_ROWS          TELEMETRY_TYPE_ROW, TELEMETRY_TYPE_ROW,
-#else
   #define TELEMETRY_TYPE_ROWS          TELEMETRY_TYPE_ROW,
-#endif
 
 void onSensorMenu(const char * result)
 {
@@ -180,17 +174,15 @@ void menuModelTelemetry(event_t event)
     switch (k) {
       case ITEM_TELEMETRY_PROTOCOL_TYPE:
         lcdDrawTextAlignedLeft(y, STR_TELEMETRY_TYPE);
-        lcdDrawTextAtIndex(TELEM_COL2, y, STR_TELEMETRY_PROTOCOLS, g_model.telemetryProtocol, attr);
+        lcdDrawTextAtIndex(TELEM_COL2, y, STR_TELEMETRY_PROTOCOLS,
+                           g_model.telemetryProtocol, attr);
         if (attr) {
-          g_model.telemetryProtocol = checkIncDec(event, g_model.telemetryProtocol, PROTOCOL_TELEMETRY_FIRST, PROTOCOL_TELEMETRY_LAST, EE_MODEL, isTelemetryProtocolAvailable);
+          g_model.telemetryProtocol = checkIncDec(
+              event, g_model.telemetryProtocol, PROTOCOL_TELEMETRY_FIRST,
+              PROTOCOL_TELEMETRY_LAST, EE_MODEL, isTelemetryProtocolAvailable);
         }
         break;
 
-#if defined(REVX)
-      case ITEM_TELEMETRY_INVERTED_SERIAL:
-        g_model.moduleData[EXTERNAL_MODULE].invertedSerial = editCheckBox(g_model.moduleData[EXTERNAL_MODULE].invertedSerial, TELEM_COL2, y, STR_INVERTED_SERIAL, attr, event);
-        break;
-#endif
 
       case ITEM_TELEMETRY_SENSORS_LABEL:
         lcdDrawTextAlignedLeft(y, STR_TELEMETRY_SENSORS);
@@ -261,18 +253,18 @@ void menuModelTelemetry(event_t event)
       {
         bool warning = (k==ITEM_TELEMETRY_RSSI_ALARM1);
         lcdDrawTextAlignedLeft(y, (warning ? STR_LOWALARM : STR_CRITICALALARM));
-        lcdDrawNumber(TELEM_COL3, y, warning? g_model.rssiAlarms.getWarningRssi() : g_model.rssiAlarms.getCriticalRssi(), attr, 3);
+        lcdDrawNumber(TELEM_COL3, y, warning? g_model.rfAlarms.warning : g_model.rfAlarms.critical, attr, 3);
         if (attr && s_editMode>0) {
           if (warning)
-            CHECK_INCDEC_MODELVAR(event, g_model.rssiAlarms.warning, -30, 30);
+            CHECK_INCDEC_MODELVAR(event, g_model.rfAlarms.warning, 0, 100);
           else
-            CHECK_INCDEC_MODELVAR(event, g_model.rssiAlarms.critical, -30, 30);
+            CHECK_INCDEC_MODELVAR(event, g_model.rfAlarms.critical, 0, 100);
         }
         break;
       }
 
       case ITEM_TELEMETRY_DISABLE_ALARMS:
-        g_model.rssiAlarms.disabled = editCheckBox(g_model.rssiAlarms.disabled, TELEM_COL3, y, STR_DISABLE_ALARM, attr, event);
+        g_model.disableTelemetryWarning = editCheckBox(g_model.disableTelemetryWarning, TELEM_COL3, y, STR_DISABLE_ALARM, attr, event);
         break;
 
 #if defined(VARIO)

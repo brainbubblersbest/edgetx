@@ -5,45 +5,106 @@ if(NOT SIMU_TARGET)
   return()
 endif()
 
-foreach(FILE ${SRC})
-  set(SIMU_SRC ${SIMU_SRC} ../../${FILE})
-endforeach()
-
-set(SIMU_SRC
-  ${SIMU_SRC}
+set(SIMU_DRIVERS
   simpgmspace.cpp
   simueeprom.cpp
   simufatfs.cpp
   simudisk.cpp
   simulcd.cpp
+  module_drivers.cpp
+  led_driver.cpp
+  backlight_driver.cpp
+  gyro_driver.cpp
+  bt_driver.cpp
   )
 
-if(SIMU_DISKIO)
-  set(SIMU_SRC ${SIMU_SRC} ../../${FATFS_DIR}/ff.c ../../${FATFS_DIR}/option/ccsbcs.c)
-endif()
 
-remove_definitions(-DCLI)
-
-if(SDL_FOUND)
-  include_directories(${SDL_INCLUDE_DIR})
+if(SDL2_FOUND)
+  include_directories(${SDL2_INCLUDE_DIRS})
   add_definitions(-DJOYSTICKS)
+  if(TARGET SDL2::SDL2)
+    set(SDL2_LIBRARIES SDL2::SDL2)
+  endif()
 endif()
 
 if(SIMU_LUA_COMPILER)
   add_definitions(-DLUA_COMPILER)
 endif()
 
+if(SIMU_BOOTLOADER)
+  add_definitions(-DSIMU_BOOTLOADER)
+  set(SIMU_DRIVERS ${SIMU_DRIVERS}
+    ../../targets/common/arm/stm32/bootloader/bin_files.cpp
+    ../../targets/common/arm/stm32/bootloader/boot.cpp
+    ../../targets/${TARGET_DIR}/bootloader/boot_menu.cpp
+    ../../thirdparty/libopenui/thirdparty/lz4/lz4.c
+    )
+endif()
+
+# Pack all simu driver sources into an object lib
+add_library(simu_drivers OBJECT EXCLUDE_FROM_ALL
+  ${SIMU_DRIVERS})
+
+get_property(SIMU_SRC_OPTIONS
+  TARGET radiolib_native
+  PROPERTY INTERFACE_COMPILE_OPTIONS)
+
+target_compile_options(simu_drivers PRIVATE ${SIMU_SRC_OPTIONS})
+
+set_property(TARGET simu_drivers PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+# Replace SIMU_SRC with the objects from radiolib_native & simu_drivers
+set(SIMU_SRC
+  $<TARGET_OBJECTS:radiolib_native>
+  $<TARGET_OBJECTS:simu_drivers>
+  )
+set(SIMU_SRC ${SIMU_SRC} PARENT_SCOPE)
+
+# Set the options as well in parent scope to be used by unit tests
+set(SIMU_SRC_OPTIONS ${SIMU_SRC_OPTIONS} PARENT_SCOPE)
+
 if(Qt5Widgets_FOUND)
-  set(SIMULATOR_FLAVOUR opentx-${FLAVOUR})
+  set(SIMULATOR_FLAVOUR edgetx-${FLAVOUR})
   set(SIMULATOR_TARGET ${SIMULATOR_FLAVOUR}-simulator)
+
   add_definitions(-DSIMULATOR_FLAVOUR="${SIMULATOR_FLAVOUR}")
   include_directories(${COMPANION_SRC_DIRECTORY} ${COMPANION_SRC_DIRECTORY}/simulation)
-  qt5_wrap_cpp(SIMULATOR_SRC ${COMPANION_SRC_DIRECTORY}/simulation/simulatorinterface.h opentxsimulator.h)
+
+  qt5_wrap_cpp(SIMULATOR_SRC
+    ${COMPANION_SRC_DIRECTORY}/simulation/simulatorinterface.h
+    opentxsimulator.h
+    )
   list(APPEND SIMULATOR_SRC ${SIMU_SRC} opentxsimulator.cpp)
   add_library(${SIMULATOR_TARGET} SHARED ${SIMULATOR_SRC})
-  add_dependencies(${SIMULATOR_TARGET} ${RADIO_DEPENDENCIES})
-  target_compile_definitions(${SIMULATOR_TARGET} PUBLIC ${APP_COMMON_DEFINES})  # set in top-level CMakeLists
-  target_link_libraries(${SIMULATOR_TARGET} ${SDL_LIBRARY} Qt5::Core)
+
+  target_compile_options(${SIMULATOR_TARGET} PRIVATE ${SIMU_SRC_OPTIONS})
+  target_compile_definitions(${SIMULATOR_TARGET} PUBLIC ${APP_COMMON_DEFINES})
+  target_link_libraries(${SIMULATOR_TARGET} ${SDL2_LIBRARIES} Qt5::Core)
+
+  # Remove debug symbols on release builds
+  if(NOT CLANG)
+    if("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
+      add_custom_command(TARGET ${SIMULATOR_TARGET} POST_BUILD
+        COMMAND ${CMAKE_STRIP} $<TARGET_FILE:${SIMULATOR_TARGET}>)
+    endif()
+  endif()
+
+  add_custom_command(
+    TARGET ${SIMULATOR_TARGET} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/plugins/
+    COMMAND ${CMAKE_COMMAND} -E copy
+            $<TARGET_FILE:${SIMULATOR_TARGET}> ${CMAKE_BINARY_DIR}/plugins/
+    )
+
+  # Introduced at 2.5 - TODO replace with a code change
+  # When compiled shared simulators using libopenui and Companion have classes named MainWindow
+  # When the simulator is launched from Companion the runtime dynamic linking can result in Companion overiding the simulator
+  # and crashing the simulator under some OSes
+  # The flag forces the runtime linker to always look for references in the simulator first
+  if (NOT CLANG)
+    target_link_options(${SIMULATOR_TARGET} PRIVATE "LINKER:-Bsymbolic")
+  endif()
+  #
   add_custom_target(libsimulator DEPENDS ${SIMULATOR_TARGET})
 
   # Prepare the "all-simu-libs" target to build simulator libraries for *every* supported PCB type (PCB_TYPES list)
@@ -59,9 +120,7 @@ if(Qt5Widgets_FOUND)
   set(all_libs_cmd ${CMAKE_COMMAND} -E echo "Building all simulator libraries")
   foreach(pcb ${PCB_TYPES})
     set(pcbrev "")
-    if(pcb STREQUAL SKY9X)
-      set(pcbrev "-DPCBREV=REVC")
-    elseif(pcb STREQUAL X12S)
+    if(pcb STREQUAL X12S)
       set(pcbrev "-DPCBREV=13")
     endif()
     set(all_libs_cmd ${all_libs_cmd} && ${CMAKE_COMMAND} -DPCB=${pcb} ${pcbrev} -Wno-dev ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR} && ${CMAKE_COMMAND} --build . --target libsimulator -- ${mkflags})
@@ -88,6 +147,10 @@ else()
   endif()
   set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
+  if(ASAN)
+    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fsanitize=address")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address")
+  endif()
 endif()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${WARNING_FLAGS}")
@@ -96,18 +159,14 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${WARNING_FLAGS}")
 use_cxx11()  # ensure gnu++11 in CXX_FLAGS with CMake < 3.1
 
 if(FOX_FOUND)
-  if(SIMU_DISKIO)
-    set(SIMU_SRC ${SIMU_SRC} ${FATFS_DIR}/FatFs/ff.c ${FATFS_DIR}/option/ccsbcs.c)
-  endif()
-  add_executable(simu WIN32 ${SIMU_SRC} ${RADIO_SRC_DIR}/simu.cpp)
-  add_dependencies(simu ${RADIO_DEPENDENCIES})
-  
+  add_executable(simu WIN32
+    EXCLUDE_FROM_ALL
+    ${SIMU_SRC}
+    ${RADIO_SRC_DIR}/simu.cpp)
+
   target_include_directories(simu PUBLIC ${FOX_INCLUDE_DIR} )
-  target_link_libraries(simu ${FOX_LIBRARY} pthread ${SDL_LIBRARY})
-  target_compile_definitions(simu PUBLIC -DSIMU)
-  if(SIMU_DISKIO)
-    target_compile_definitions(simu PUBLIC -DSIMU_DISKIO)
-  endif()
+  target_link_libraries(simu ${FOX_LIBRARY} pthread ${SDL2_LIBRARIES})
+  target_compile_options(simu PRIVATE -DSIMU)
 endif()
 
 if(APPLE)

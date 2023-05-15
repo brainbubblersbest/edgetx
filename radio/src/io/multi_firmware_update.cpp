@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -20,11 +21,17 @@
 
 #if !defined(DISABLE_MULTI_UPDATE)
 
+#include "hal.h"
+#include "hal/module_port.h"
+
 #include <stdio.h>
 #include "opentx.h"
 #include "multi_firmware_update.h"
 #include "stk500.h"
 #include "debug.h"
+#include "timers_driver.h"
+
+#include <memory>
 
 #if defined(LIBOPENUI)
   #include "libopenui.h"
@@ -32,172 +39,125 @@
   #include "libopenui/src/libopenui_file.h"
 #endif
 
+#if defined(MULTI_PROTOLIST)
+  #include "io/multi_protolist.h"
+#endif
+
 #define UPDATE_MULTI_EXT_BIN ".bin"
 
 class MultiFirmwareUpdateDriver
 {
-  public:
-    MultiFirmwareUpdateDriver() {}
-    const char * flashFirmware(FIL * file, const char * label, ProgressHandler progressHandler) const;
+  ModuleIndex module;
+  MultiModuleType type;
 
-  protected:
-    virtual void moduleOn() const = 0;
-    virtual void init(bool inverted) const = 0;
-    virtual bool getByte(uint8_t & byte) const = 0;
-    virtual void sendByte(uint8_t byte) const = 0;
-    virtual void clear() const = 0;
-    virtual void deinit(bool inverted) const {}
+  etx_module_state_t* mod_st = nullptr;
 
-  private:
-    bool getRxByte(uint8_t & byte) const;
-    bool checkRxByte(uint8_t byte) const;
-    const char * waitForInitialSync(bool& inverted) const;
-    const char * getDeviceSignature(uint8_t * signature) const;
-    const char * loadAddress(uint32_t offset) const;
-    const char * progPage(uint8_t * buffer, uint16_t size) const;
-    void leaveProgMode(bool inverted) const;
+  bool init();
+  bool getByte(uint8_t& byte) const;
+  void sendByte(uint8_t byte) const;
+  void sendBuffer(uint8_t* buffer, uint16_t size) const;
+  void clear() const;
+  void deinit();
+
+  bool getRxByte(uint8_t& byte) const;
+  bool checkRxByte(uint8_t byte) const;
+  const char* waitForInitialSync();
+  const char* getDeviceSignature(uint8_t* signature) const;
+  const char* loadAddress(uint32_t offset) const;
+  const char* progPage(uint8_t* buffer, uint16_t size) const;
+  void leaveProgMode();
+
+ public:
+  MultiFirmwareUpdateDriver(ModuleIndex module, MultiModuleType type) :
+      module(module), type(type)
+  {
+  }
+
+  const char* flashFirmware(FIL* file, const char* label,
+                            ProgressHandler progressHandler);
 };
 
-#if defined(INTERNAL_MODULE_MULTI)
-class MultiInternalUpdateDriver: public MultiFirmwareUpdateDriver
+static const etx_serial_init serialInitParams = {
+  .baudrate = 57600,
+  .encoding = ETX_Encoding_8N1,
+  .direction = ETX_Dir_TX_RX,
+  .polarity = ETX_Pol_Normal,
+};
+
+bool MultiFirmwareUpdateDriver::init()
 {
-  public:
-    MultiInternalUpdateDriver() {}
-
-  protected:
-    void moduleOn() const override
-    {
-      INTERNAL_MODULE_ON();
+  if (type == MULTI_TYPE_MULTIMODULE && module == INTERNAL_MODULE) {
+    // duplex internal USART
+    mod_st = modulePortInitSerial(INTERNAL_MODULE, ETX_MOD_PORT_UART, &serialInitParams);
+  } else if (type == MULTI_TYPE_MULTIMODULE && module == EXTERNAL_MODULE) {
+    // TX on PPM (inverted softserial)
+    etx_serial_init params(serialInitParams);
+    params.direction = ETX_Dir_TX;
+    params.polarity = ETX_Pol_Inverted;
+    mod_st = modulePortInitSerial(EXTERNAL_MODULE, ETX_MOD_PORT_UART, &params);
+    if (!mod_st) {
+      params.polarity = ETX_Pol_Normal;
+      mod_st = modulePortInitSerial(EXTERNAL_MODULE, ETX_MOD_PORT_SOFT_INV, &params);
+      if (!mod_st) return false;
     }
-
-    void init(bool inverted) const override
-    {
-      intmoduleSerialStart(57600, true, USART_Parity_No, USART_StopBits_1, USART_WordLength_8b);
+    // RX on S.PORT (inverted softserial)
+    params.direction = ETX_Dir_RX;
+    params.polarity = ETX_Pol_Inverted;
+    if (!modulePortInitSerial(EXTERNAL_MODULE, ETX_MOD_PORT_SPORT, &params)) {
+      params.polarity = ETX_Pol_Normal;
+      if (!modulePortInitSerial(EXTERNAL_MODULE, ETX_MOD_PORT_SPORT_INV, &params)) {
+        modulePortDeInit(mod_st);
+        return false;
+      }
     }
+  } else if (type == MULTI_TYPE_ELRS && module == EXTERNAL_MODULE) {
+    // half-duplex on S.PORT USART
+    mod_st = modulePortInitSerial(EXTERNAL_MODULE, ETX_MOD_PORT_SPORT, &serialInitParams);
+  }
 
-    bool getByte(uint8_t & byte) const override
-    {
-      return intmoduleFifo.pop(byte);
-    }
+  if (!mod_st) return false;
 
-    void sendByte(uint8_t byte) const override
-    {
-      intmoduleSendByte(byte);
-    }
+  modulePortSetPower(module, true);
+  return true;
+}
 
-    void clear() const override
-    {
-      intmoduleFifo.clear();
-    }
-
-    void deinit(bool inverted) const override
-    {
-      clear();
-    }
-};
-
-static const MultiInternalUpdateDriver multiInternalUpdateDriver;
-#endif
-
-class MultiExternalUpdateDriver: public MultiFirmwareUpdateDriver
+bool MultiFirmwareUpdateDriver::getByte(uint8_t & byte) const
 {
-  public:
-    MultiExternalUpdateDriver() {}
+  auto drv = modulePortGetSerialDrv(mod_st->rx);
+  auto ctx = modulePortGetCtx(mod_st->rx);
+  return drv->getByte(ctx, &byte) > 0;
+}
 
-  protected:
-    void moduleOn() const override
-    {
-      EXTERNAL_MODULE_ON();
-    }
-
-    void init(bool inverted) const override
-    {
-#if !defined(EXTMODULE_USART)
-      GPIO_InitTypeDef GPIO_InitStructure;
-      GPIO_InitStructure.GPIO_Pin = EXTMODULE_TX_GPIO_PIN;
-      GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-      GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-      GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-      GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-      GPIO_Init(EXTMODULE_TX_GPIO, &GPIO_InitStructure);
-#endif
-
-      if (inverted)
-        telemetryPortInvertedInit(57600);
-      else
-        telemetryPortInit(57600, TELEMETRY_SERIAL_WITHOUT_DMA);
-    }
-
-    bool getByte(uint8_t & byte) const override
-    {
-      return telemetryGetByte(&byte);
-    }
-
-    void sendByte(uint8_t byte) const override
-    {
-#if defined(HARDWARE_EXTERNAL_MODULE)
-      extmoduleSendInvertedByte(byte);
-#endif
-    }
-
-    void clear() const override
-    {
-      telemetryClearFifo();
-    }
-
-    void deinit(bool inverted) const override
-    {
-      if (inverted)
-        telemetryPortInvertedInit(0);
-      else
-        telemetryPortInit(0, 0);
-
-      clear();
-    }
-};
-
-static const MultiExternalUpdateDriver multiExternalUpdateDriver;
-
-class MultiExtSportUpdateDriver: public MultiFirmwareUpdateDriver
+void MultiFirmwareUpdateDriver::sendByte(uint8_t byte) const
 {
-  public:
-    MultiExtSportUpdateDriver(): MultiFirmwareUpdateDriver() {}
+  auto drv = modulePortGetSerialDrv(mod_st->tx);
+  auto ctx = modulePortGetCtx(mod_st->tx);
+  drv->sendByte(ctx, byte);
+}
 
-  protected:
-    void moduleOn() const override
-    {
-      EXTERNAL_MODULE_ON();
-    }
+void MultiFirmwareUpdateDriver::sendBuffer(uint8_t* buffer, uint16_t size) const
+{
+  auto drv = modulePortGetSerialDrv(mod_st->tx);
+  auto ctx = modulePortGetCtx(mod_st->tx);
 
-    void init(bool inverted) const override
-    {
-      telemetryPortInit(57600, TELEMETRY_SERIAL_WITHOUT_DMA);
-    }
+  drv->waitForTxCompleted(ctx);
+  drv->sendBuffer(ctx, buffer, size);
+  drv->waitForTxCompleted(ctx);
+}
 
-    bool getByte(uint8_t & byte) const override
-    {
-      return telemetryGetByte(&byte);
-    }
+void MultiFirmwareUpdateDriver::clear() const
+{
+  auto drv = modulePortGetSerialDrv(mod_st->rx);
+  auto ctx = modulePortGetCtx(mod_st->rx);
+  drv->clearRxBuffer(ctx);
+}
 
-    void sendByte(uint8_t byte) const override
-    {
-      sportSendByte(byte);
-      telemetryPortSetDirectionInput();
-    }
-
-    void clear() const override
-    {
-      telemetryClearFifo();
-    }
-
-    void deinit(bool inverted) const override
-    {
-      telemetryPortInit(0, 0);
-      clear();
-    }
-};
-
-static const MultiExtSportUpdateDriver multiExtSportUpdateDriver;
+void MultiFirmwareUpdateDriver::deinit()
+{
+  clear();
+  modulePortSetPower(module, false);
+  modulePortDeInit(mod_st);
+}
 
 bool MultiFirmwareUpdateDriver::getRxByte(uint8_t & byte) const
 {
@@ -224,7 +184,7 @@ bool MultiFirmwareUpdateDriver::checkRxByte(uint8_t byte) const
   return getRxByte(rxchar) ? rxchar == byte : false;
 }
 
-const char * MultiFirmwareUpdateDriver::waitForInitialSync(bool & inverted) const
+const char * MultiFirmwareUpdateDriver::waitForInitialSync()
 {
   uint8_t byte;
   int retries = 200;
@@ -236,13 +196,6 @@ const char * MultiFirmwareUpdateDriver::waitForInitialSync(bool & inverted) cons
   clear();
   do {
 
-    // Invert at half-time
-    if (retries == 100) {
-      deinit(inverted);
-      inverted = !inverted;
-      init(inverted);
-    }
-
     // Send sync request
     sendByte(STK_GET_SYNC);
     sendByte(CRC_EOP);
@@ -253,21 +206,21 @@ const char * MultiFirmwareUpdateDriver::waitForInitialSync(bool & inverted) cons
   } while ((byte != STK_INSYNC) && --retries);
 
   if (!retries) {
-    return "NoSync";
+    return STR_DEVICE_NO_RESPONSE;
   }
 
   if (byte != STK_INSYNC) {
 #if defined(DEBUG_EXT_MODULE_FLASH)
     TRACE("[byte != STK_INSYNC]");
 #endif
-    return "NoSync";
+    return STR_DEVICE_NO_RESPONSE;
   }
 
   if (!checkRxByte(STK_OK)) {
 #if defined(DEBUG_EXT_MODULE_FLASH)
     TRACE("[!checkRxByte(STK_OK)]");
 #endif
-    return "NoSync";
+    return STR_DEVICE_NO_RESPONSE;
   }
 
   // avoids sending STK_READ_SIGN with STK_OK
@@ -280,17 +233,18 @@ const char * MultiFirmwareUpdateDriver::waitForInitialSync(bool & inverted) cons
 
 const char * MultiFirmwareUpdateDriver::getDeviceSignature(uint8_t * signature) const
 {
+  clear();
+
   // Read signature
   sendByte(STK_READ_SIGN);
   sendByte(CRC_EOP);
-  clear();
 
   if (!checkRxByte(STK_INSYNC))
-    return "NoSync";
+    return STR_DEVICE_NO_RESPONSE;
 
   for (uint8_t i = 0; i < 4; i++) {
     if (!getRxByte(signature[i])) {
-      return "NoSignature";
+      return STR_DEVICE_FILE_WRONG_SIG;
     }
   }
 
@@ -305,7 +259,7 @@ const char * MultiFirmwareUpdateDriver::loadAddress(uint32_t offset) const
   sendByte(CRC_EOP);
 
   if (!checkRxByte(STK_INSYNC) || !checkRxByte(STK_OK)) {
-    return "NoSync";
+    return STR_DEVICE_NO_RESPONSE;
   }
 
   // avoids sending next page back-to-back with STK_OK
@@ -326,14 +280,12 @@ const char * MultiFirmwareUpdateDriver::progPage(uint8_t * buffer, uint16_t size
   // flash/eeprom flag
   sendByte(0);
 
-  for (uint16_t i = 0; i < size; i++) {
-    sendByte(buffer[i]);
-  }
+  sendBuffer(buffer, size);
 
   sendByte(CRC_EOP);
 
   if (!checkRxByte(STK_INSYNC))
-    return "NoSync";
+    return STR_DEVICE_NO_RESPONSE;
 
   uint8_t byte;
   uint8_t retries = 4;
@@ -343,22 +295,23 @@ const char * MultiFirmwareUpdateDriver::progPage(uint8_t * buffer, uint16_t size
   } while (!byte && --retries);
 
   if (!retries || (byte != STK_OK))
-    return "NoPageSync";
+    return STR_DEVICE_WRONG_REQUEST;
 
   return nullptr;
 }
 
-void MultiFirmwareUpdateDriver::leaveProgMode(bool inverted) const
+void MultiFirmwareUpdateDriver::leaveProgMode()
 {
   sendByte(STK_LEAVE_PROGMODE);
   sendByte(CRC_EOP);
 
   // eat last sync byte
   checkRxByte(STK_INSYNC);
-  deinit(inverted);
+  deinit();
 }
 
-const char * MultiFirmwareUpdateDriver::flashFirmware(FIL * file, const char * label, ProgressHandler progressHandler) const
+const char* MultiFirmwareUpdateDriver::flashFirmware(
+    FIL* file, const char* label, ProgressHandler progressHandler)
 {
 #if defined(SIMU)
   for (uint16_t i = 0; i < 100; i++) {
@@ -370,25 +323,22 @@ const char * MultiFirmwareUpdateDriver::flashFirmware(FIL * file, const char * l
 #endif
 
   const char * result = nullptr;
-  moduleOn();
-
-  bool inverted = true; //false; // true
-  init(inverted);
+  if (!init()) return "Initialisation error";
 
   /* wait 500ms for power on */
   watchdogSuspend(500 /*5s*/);
   RTOS_WAIT_MS(500);
 
-  result = waitForInitialSync(inverted);
+  result = waitForInitialSync();
   if (result) {
-    leaveProgMode(inverted);
+    leaveProgMode();
     return result;
   }
 
   unsigned char signature[4]; // 3 bytes signature + STK_OK
   result = getDeviceSignature(signature);
   if (result) {
-    leaveProgMode(inverted);
+    leaveProgMode();
     return result;
   }
 
@@ -397,8 +347,8 @@ const char * MultiFirmwareUpdateDriver::flashFirmware(FIL * file, const char * l
   uint32_t writeOffset = 0;
 
   if (signature[0] != 0x1E) {
-    leaveProgMode(inverted);
-    return "Wrong signature";
+    leaveProgMode();
+    return STR_DEVICE_FILE_WRONG_SIG;
   }
 
   if (signature[1] == 0x55 && signature[2] == 0xAA) {
@@ -412,7 +362,7 @@ const char * MultiFirmwareUpdateDriver::flashFirmware(FIL * file, const char * l
     UINT count = 0;
     memclear(buffer, pageSize);
     if (f_read(file, buffer, pageSize, &count) != FR_OK) {
-      result = "Error reading file";
+      result = STR_DEVICE_FILE_ERROR;
       break;
     }
 
@@ -438,7 +388,7 @@ const char * MultiFirmwareUpdateDriver::flashFirmware(FIL * file, const char * l
     progressHandler(label, STR_WRITING, file->fptr, file->obj.objsize);
   }
 
-  leaveProgMode(inverted);
+  leaveProgMode();
   return result;
 }
 
@@ -459,7 +409,7 @@ const char * MultiFirmwareInformation::readV1Signature(const char * buffer)
   else if (!memcmp(buffer, "multi-orx", 9))
     boardType = FIRMWARE_MULTI_ORX;
   else
-    return "Wrong format";
+    return STR_DEVICE_FILE_WRONG_SIG;
 
   if (buffer[MULTI_SIGN_BOOTLOADER_SUPPORT_OFFSET] == 'b')
     optibootSupport = true;
@@ -507,7 +457,7 @@ const char * MultiFirmwareInformation::readV2Signature(const char * buffer)
   }
 
   if (cursor - beg < 8)
-    return "Invalid signature";
+    return STR_DEVICE_FILE_WRONG_SIG;
 
   boardType = options & 0x3;
   optibootSupport = options & 0x80 ? true : false;
@@ -527,7 +477,7 @@ const char * MultiFirmwareInformation::readMultiFirmwareInformation(const char *
 {
   FIL file;
   if (f_open(&file, filename, FA_READ) != FR_OK)
-    return "Error opening file";
+    return STR_DEVICE_FILE_ERROR;
 
   const char * err = readMultiFirmwareInformation(&file);
   f_close(&file);
@@ -541,11 +491,11 @@ const char * MultiFirmwareInformation::readMultiFirmwareInformation(FIL * file)
   UINT count;
 
   if (f_size(file) < MULTI_SIGN_SIZE)
-    return "File too small";
+    return STR_DEVICE_FILE_ERROR;
 
   f_lseek(file, f_size(file) - MULTI_SIGN_SIZE);
   if (f_read(file, buffer, MULTI_SIGN_SIZE, &count) != FR_OK || count != MULTI_SIGN_SIZE) {
-    return "Error reading file";
+    return STR_DEVICE_FILE_ERROR;
   }
 
   if (!memcmp(buffer, "multi-x", 7)) {
@@ -560,7 +510,7 @@ bool MultiDeviceFirmwareUpdate::flashFirmware(const char * filename, ProgressHan
   FIL file;
 
   if (f_open(&file, filename, FA_READ) != FR_OK) {
-    POPUP_WARNING("Not a valid file");
+    POPUP_WARNING(STR_DEVICE_FILE_ERROR);
     return false;
   }
 
@@ -568,11 +518,12 @@ bool MultiDeviceFirmwareUpdate::flashFirmware(const char * filename, ProgressHan
     MultiFirmwareInformation firmwareFile;
     if (firmwareFile.readMultiFirmwareInformation(&file)) {
       f_close(&file);
-      POPUP_WARNING("Not a valid file");
+      POPUP_WARNING(STR_DEVICE_FILE_ERROR);
       return false;
     }
     f_lseek(&file, 0);
 
+#if defined(HARDWARE_EXTERNAL_MODULE)
     if (module == EXTERNAL_MODULE) {
       if (!firmwareFile.isMultiExternalFirmware()) {
         f_close(&file);
@@ -580,39 +531,29 @@ bool MultiDeviceFirmwareUpdate::flashFirmware(const char * filename, ProgressHan
         return false;
       }
     }
-    else {
+#endif
+
+#if defined(HARDWARE_INTERNAL_MODULE)
+    if (module == INTERNAL_MODULE) {
       if (!firmwareFile.isMultiInternalFirmware()) {
         f_close(&file);
         POPUP_WARNING(STR_NEEDS_FILE, STR_INT_MULTI_SPEC);
         return false;
       }
     }
+#endif
   }
 
-  const MultiFirmwareUpdateDriver * driver = &multiExternalUpdateDriver;
-#if defined(INTERNAL_MODULE_MULTI)
-  if (module == INTERNAL_MODULE)
-    driver = &multiInternalUpdateDriver;
-#endif
-  if (type == MULTI_TYPE_ELRS)
-    driver = &multiExtSportUpdateDriver;
+  pulsesStop();
 
-  pausePulses();
-
-#if defined(HARDWARE_INTERNAL_MODULE)
-  uint8_t intPwr = IS_INTERNAL_MODULE_ON();
-  INTERNAL_MODULE_OFF();
+#if defined(MULTI_PROTOLIST)
+  for (uint8_t i = 0; i < MAX_MODULES; i++) {
+    MultiRfProtocols::removeInstance(i);
+  }
 #endif
 
-#if defined(HARDWARE_EXTERNAL_MODULE)
-  uint8_t extPwr = IS_EXTERNAL_MODULE_ON();
-  EXTERNAL_MODULE_OFF();
-#endif
-
-#if defined(SPORT_UPDATE_PWR_GPIO)
-  uint8_t spuPwr = IS_SPORT_UPDATE_POWER_ON();
-  SPORT_UPDATE_POWER_OFF();
-#endif
+  // switch S.PORT power OFF if supported
+  modulePortSetPower(SPORT_MODULE, false);
 
   progressHandler(getBasename(filename), STR_DEVICE_RESET, 0, 0);
 
@@ -620,21 +561,12 @@ bool MultiDeviceFirmwareUpdate::flashFirmware(const char * filename, ProgressHan
   watchdogSuspend(500 /*5s*/);
   RTOS_WAIT_MS(3000);
 
-  const char * result = driver->flashFirmware(&file, getBasename(filename), progressHandler);
+  MultiFirmwareUpdateDriver driver(module, type);
+  const char * result = driver.flashFirmware(&file, getBasename(filename), progressHandler);
   f_close(&file);
 
   AUDIO_PLAY(AU_SPECIAL_SOUND_BEEP1);
   BACKLIGHT_ENABLE();
-
-#if defined(HARDWARE_INTERNAL_MODULE)
-  INTERNAL_MODULE_OFF();
-#endif
-  EXTERNAL_MODULE_OFF();
-  SPORT_UPDATE_POWER_OFF();
-
-  /* wait 2s off */
-  watchdogSuspend(500 /*5s*/);
-  RTOS_WAIT_MS(2000);
 
   if (result) {
     POPUP_WARNING(STR_FIRMWARE_UPDATE_ERROR, result);
@@ -643,30 +575,17 @@ bool MultiDeviceFirmwareUpdate::flashFirmware(const char * filename, ProgressHan
     POPUP_INFORMATION(STR_FIRMWARE_UPDATE_SUCCESS);
   }
 
-  // reset telemetry protocol
-  telemetryInit(255);
+  watchdogSuspend(50 /*500ms*/);
+  pulsesStart();
 
-#if defined(HARDWARE_INTERNAL_MODULE)
-  if (intPwr) {
-    INTERNAL_MODULE_ON();
-    setupPulsesInternalModule();
-  }
-#endif
-
-#if defined(HARDWARE_EXTERNAL_MODULE)
-  if (extPwr) {
-    EXTERNAL_MODULE_ON();
-    setupPulsesExternalModule();
-  }
-#endif
-
-#if defined(SPORT_UPDATE_PWR_GPIO)
-  if (spuPwr) {
-    SPORT_UPDATE_POWER_ON();
-  }
-#endif
-
-  resumePulses();
+// TODO: S.PORT power control
+//       -> where is it actually turned ON normally?
+//
+// #if defined(SPORT_UPDATE_PWR_GPIO)
+//   if (spuPwr) {
+//     SPORT_UPDATE_POWER_ON();
+//   }
+// #endif
 
   return result == nullptr;
 }

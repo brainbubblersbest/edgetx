@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,22 +27,27 @@
 TimeEdit::TimeEdit(Window * parent, const rect_t & rect, int32_t vmin, int32_t vmax, std::function<int32_t()> getValue, std::function<void(int32_t)> setValue):
   NumberEdit(parent, rect, vmin, vmax, std::move(getValue), std::move(setValue))
 {
+  setDisplayHandler([=] (int value) {
+    TimerOptions timerOptions;
+    timerOptions.options = (textFlags & TIMEHOUR) != 0 ? SHOW_TIME : SHOW_TIMER;
+    return std::string(getTimerString(this->getValue(), timerOptions));
+  });
 }
 
-void TimeEdit::paint(BitmapBuffer * dc)
-{
-  FormField::paint(dc);
+// void TimeEdit::paint(BitmapBuffer * dc)
+// {
+//   FormField::paint(dc);
 
-  LcdFlags textColor;
-  if (editMode)
-    textColor = FOCUS_COLOR;
-  else if (hasFocus())
-    textColor = FOCUS_COLOR;
-  else
-    textColor = DEFAULT_COLOR;
+//   LcdFlags textColor;
+//   if (editMode)
+//     textColor = COLOR_THEME_PRIMARY2;
+//   else if (hasFocus())
+//     textColor = COLOR_THEME_PRIMARY2;
+//   else
+//     textColor = COLOR_THEME_SECONDARY1;
 
-  dc->drawText(FIELD_PADDING_LEFT, FIELD_PADDING_TOP,
-               getTimerString(getValue(), (textFlags & TIMEHOUR) != 0),
-               textColor);
-}
-
+//   TimerOptions timerOptions;
+//   timerOptions.options = (textFlags & TIMEHOUR) != 0 ? SHOW_TIME : SHOW_TIMER;
+//   dc->drawText(FIELD_PADDING_LEFT, FIELD_PADDING_TOP,
+//                getTimerString(getValue(), timerOptions), textColor);
+// }

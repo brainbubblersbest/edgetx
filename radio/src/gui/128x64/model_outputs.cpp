@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -66,7 +67,6 @@ enum MenuModelOutputsItems {
 #endif
 
 #define LIMITS_CURVE_POS          17*FW+1
-#define LIMITS_MIN_MAX_OFFSET 1000
 #define CONVERT_US_MIN_MAX(x) ((int16_t(x)*128)/25)
 #define MIN_MAX_ATTR          attr
 
@@ -116,7 +116,7 @@ void menuModelLimitsOne(event_t event)
     uint8_t i = k + menuVerticalOffset;
     uint8_t attr = (sub==i ? (s_editMode>0 ? BLINK|INVERS : INVERS) : 0);
     uint8_t active = (attr && s_editMode > 0) ;
-    int limit = (g_model.extendedLimits ? LIMIT_EXT_MAX : 1000);
+    int limit = (g_model.extendedLimits ? LIMIT_EXT_MAX : LIMIT_STD_MAX);
 
     switch (i) {
       case ITEM_OUTPUTONE_CH_NAME:
@@ -155,7 +155,7 @@ void menuModelLimitsOne(event_t event)
 
       case ITEM_OUTPUTONE_DIR:
       {
-        lcdDrawTextAlignedLeft(y, TR_LIMITS_HEADERS_DIRECTION);
+        lcdDrawTextAlignedLeft(y, STR_LIMITS_HEADERS_DIRECTION);
         lcdDrawTextAtIndex(LIMITS_ONE_2ND_COLUMN, y, STR_MMMINV, ld->revert, attr);
         if (active) {
           CHECK_INCDEC_MODELVAR_ZERO(event, ld->revert, 1);
@@ -184,7 +184,8 @@ void menuModelLimitsOne(event_t event)
 #if defined(PPM_LIMITS_SYMETRICAL)
       case ITEM_OUTPUTONE_SYMETRICAL:
         lcdDrawTextAlignedLeft(y, TR_LIMITS_HEADERS_SUBTRIMMODE);
-        lcdDrawChar(LIMITS_ONE_2ND_COLUMN, y, ld->symetrical ? '=' : '\206', attr);
+        lcdDrawSizedText(LIMITS_ONE_2ND_COLUMN, y,
+                         ld->symetrical ? "=" : STR_CHAR_DELTA, 2, attr);
         if (active) {
           CHECK_INCDEC_MODELVAR_ZERO(event, ld->symetrical, 1);
         }
@@ -333,7 +334,7 @@ void menuModelLimits(event_t event)
           break;
 
         case ITEM_OUTPUTS_SYMETRICAL:
-          lcdDrawChar(LCD_W-FW, y, ld->symetrical ? '=' : '\206', 0);
+          lcdDrawSizedText(LCD_W-FW, y, ld->symetrical ? "=" : STR_CHAR_DELTA, 2, 0);
           break;
       }
     }

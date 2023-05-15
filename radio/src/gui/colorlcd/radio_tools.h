@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -20,16 +21,18 @@
 
 #include "tabsgroup.h"
 
-class RadioToolsPage: public PageTab {
-  public:
-    RadioToolsPage();
+class RadioToolsPage : public PageTab
+{
+ public:
+  RadioToolsPage();
 
-    void build(FormWindow * window) override;
+  void build(FormWindow* window) override;
 
-    void checkEvents() override;
+  void checkEvents() override;
 
-  protected:
-    static void rebuild(FormWindow * window);
-    FormWindow * window = nullptr;
-    uint8_t waiting = 0;
+ protected:
+  void rebuild(FormWindow* window);
+  FormWindow* window = nullptr;
+  uint8_t waiting = 0;
+  uint8_t linesCount = 0;
 };

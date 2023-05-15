@@ -14,6 +14,16 @@ boards = {
         "PCBREV": "TLITE",
         "DEFAULT_MODE": "2",
     },
+    "TLITEF4": {
+        "PCB": "X7",
+        "PCBREV": "TLITEF4",
+        "DEFAULT_MODE": "2",
+    },
+    "TPRO": {
+        "PCB": "X7",
+        "PCBREV": "TPRO",
+        "DEFAULT_MODE": "2",
+    },
     "T12": {
         "PCB": "X7",
         "PCBREV": "T12",
@@ -31,26 +41,12 @@ boards = {
         "INTERNAL_MODULE_MULTI": "YES",
         "DEFAULT_MODE": "2",
     },
-    "T16_FS": {
-        "PCB": "X10",
-        "PCBREV": "T16",
-        "INTERNAL_MODULE_MULTI": "YES",
-        "DEFAULT_MODE": "2",
-        "FLYSKY_HALL_STICKS": "YES",
-    },    
     "T18": {
         "PCB": "X10",
         "PCBREV": "T18",
         "INTERNAL_MODULE_MULTI": "YES",
         "DEFAULT_MODE": "2",
     },
-    "T18_FS": {
-        "PCB": "X10",
-        "PCBREV": "T18",
-        "INTERNAL_MODULE_MULTI": "YES",
-        "DEFAULT_MODE": "2",
-        "FLYSKY_HALL_STICKS": "YES",
-    },    
 }
 
 translations = [
@@ -79,7 +75,7 @@ def build(board, translation, srcdir):
         suffix = "" if index == 0 else "_%d" % index
         filename = "output/firmware_%s_%s_%s%s.bin" % (board.lower(), translation.lower(), timestamp(), suffix)
         if not os.path.exists(filename):
-            shutil.copy("%s/firmware.bin" % path, filename)
+            shutil.copy("%s/arm-none-eabi/firmware.bin" % path, filename)
             break
         index += 1
     shutil.rmtree(path)

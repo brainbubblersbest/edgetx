@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -28,6 +29,7 @@
 
 class SetupWidgetsPage;
 class SetupTopBarWidgetsPage;
+class ViewMainMenu;
 
 class ViewMain: public Window
 {
@@ -45,6 +47,8 @@ class ViewMain: public Window
       return _instance;
     }
 
+    static ViewMain* getInstance() { return _instance; }
+
 #if defined(DEBUG_WINDOWS)
     std::string getName() const override
     {
@@ -52,17 +56,21 @@ class ViewMain: public Window
     }
 #endif
 
+    void addMainView(Window* view, uint32_t viewId);
+
+    void enableTopbar();
+    void disableTopbar();
     void updateTopbarVisibility();
+    bool enableWidgetSelect(bool enable);
+    
+    // Update after theme loaded / changed
+    void updateFromTheme();
 
     // Get the available space in the middle of the screen
     // (without topbar)
     rect_t getMainZone(rect_t zone, bool hasTopbar) const;
 
     unsigned getMainViewsCount() const;
-    void setMainViewsCount(unsigned views);
-
-    coord_t getMainViewLeftPos(unsigned view) const;
-  
     unsigned getCurrentMainView() const;
     void setCurrentMainView(unsigned view);
 
@@ -71,15 +79,21 @@ class ViewMain: public Window
 
     Topbar* getTopbar();
   
-#if defined(HARDWARE_KEYS)
     void onEvent(event_t event) override;
-#endif
-  
+    void onClicked() override;
+    void onCancel() override;
+
   protected:
     static ViewMain * _instance;
 
-    unsigned    views = 0;
+    lv_obj_t*   tile_view = nullptr;
     TopbarImpl* topbar = nullptr;
+    bool        widget_select = false;
+    lv_timer_t* widget_select_timer = nullptr;
+    ViewMainMenu* viewMainMenu = nullptr;
+
+    void paint(BitmapBuffer * dc) override;
+    void deleteLater(bool detach = true, bool trash = true) override;
 
     // Widget setup requires special permissions ;-)
     friend class SetupWidgetsPage;
@@ -88,20 +102,11 @@ class ViewMain: public Window
     // Set topbar visibility [0.0 -> 1.0]
     void setTopbarVisible(float visible);
 
-    void setScrollPositionX(coord_t value) override;
-    void setScrollPositionY(coord_t value) override;
-
-#if defined(HARDWARE_TOUCH)
-    unsigned char prevSlideState = 0;
-    unsigned int  startSlidePage = 0;
-
-    bool onTouchSlide(coord_t x, coord_t y, coord_t startX, coord_t startY, coord_t slideX, coord_t slideY) override;
-    bool onTouchEnd(coord_t x, coord_t y) override;
-#endif
-
-    void paint(BitmapBuffer * dc) override;
-
     void openMenu();
+    void refreshWidgetSelectTimer();
+
+    static void long_pressed(lv_event_t* e);
+    static void ws_timer(lv_timer_t* t);
 };
 
 #endif // _VIEW_MAIN_H_

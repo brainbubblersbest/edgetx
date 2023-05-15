@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -22,10 +23,11 @@
 
 extern const char * eepromFile;
 
-#if !defined(EEPROM) && defined(SDCARD)
+#if defined(RTC_BACKUP_RAM)
+#include "storage/rtc_backup.h"
 namespace Backup {
 #define BACKUP
-#include "datastructs.h"
+#include "datastructs_private.h"
 PACK(struct RamBackupUncompressed {
   ModelData model;
   RadioData radio;
@@ -44,7 +46,9 @@ TEST(Storage, BackupAndRestore)
 }
 #endif
 
-#if defined(EEPROM_RLC)
+#if defined(EEPROM) && defined(EEPROM_RLC)
+#include "storage/eeprom_rlc.h"
+
 TEST(Eeprom, 100_random_writes)
 {
   eepromFile = NULL; // in memory

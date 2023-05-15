@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -28,16 +29,9 @@
 
 #define CRLF "\r\n"
 
-#if defined(CLI)
-#include "cli.h"
-#else
 #include "serial.h"
-#endif
 
-extern volatile uint32_t g_tmr10ms;
-
-uint8_t auxSerialTracesEnabled();
-uint8_t aux2SerialTracesEnabled();
+EXTERN_C(extern volatile uint32_t g_tmr10ms);
 
 #if defined(SIMU)
   typedef void (*traceCallbackFunc)(const char * text);
@@ -46,16 +40,14 @@ uint8_t aux2SerialTracesEnabled();
 #elif defined(SEMIHOSTING)
   #include <stdio.h>
   #define debugPrintf(...) printf(__VA_ARGS__)
-#elif defined(DEBUG) && defined(CLI)
-  #define debugPrintf(...) do { if (cliTracesEnabled) serialPrintf(__VA_ARGS__); } while(0)
 #elif defined(DEBUG)
-  #define debugPrintf(...) do { serialPrintf(__VA_ARGS__); } while(0)
+  #define debugPrintf(...) do { dbgSerialPrintf(__VA_ARGS__); } while(0)
 #else
   #define debugPrintf(...)
 #endif
 
-#define TRACE_TIME_FORMAT     "%0.2f "
-#define TRACE_TIME_VALUE      ((float)g_tmr10ms / 100)
+#define TRACE_TIME_FORMAT     "%0.2fs: "
+#define TRACE_TIME_VALUE      ((float)g_tmr10ms / 100.0)
 
 #define TRACE_NOCRLF(...)     debugPrintf(__VA_ARGS__)
 #define TRACE(f_, ...)        debugPrintf((TRACE_TIME_FORMAT f_ CRLF), TRACE_TIME_VALUE, ##__VA_ARGS__)
@@ -90,6 +82,12 @@ uint8_t aux2SerialTracesEnabled();
 #else
   #define TRACE_LUA_INTERNALS(...)
   #define TRACE_LUA_INTERNALS_WITH_LINEINFO(L, f_, ...)
+#endif
+
+#if defined(DEBUG_YAML)
+#define TRACE_YAML(f_, ...) TRACE(f_, ##__VA_ARGS__)
+#else
+#define TRACE_YAML(f_, ...)
 #endif
 
 #if defined(DEBUG) && !defined(SIMU)
@@ -318,25 +316,6 @@ extern struct InterruptCounters interruptCounters;
 
 #endif //#if defined(DEBUG_INTERRUPTS)
 
-#if defined(DEBUG_TASKS)
-
-#define DEBUG_TASKS_LOG_SIZE    512
-
-// each 32bit is used as:
-//    top 8 bits: task id
-//    botom 24 bits: system tick counter
-extern uint32_t taskSwitchLog[DEBUG_TASKS_LOG_SIZE];
-extern uint16_t taskSwitchLogPos;
-
-#if defined(__cplusplus)
-extern "C" {
-#endif
-extern void CoTaskSwitchHook(uint8_t taskID);
-#if defined(__cplusplus)
-}
-#endif
-
-#endif // #if defined(DEBUG_TASKS)
 
 
 #if defined(DEBUG_TIMERS)
@@ -410,6 +389,11 @@ enum DebugTimers {
   debugTimerAudioIterval,
   debugTimerAudioDuration,
   debugTimerAudioConsume,
+  debugTimerYamlScan,
+
+#if defined(SPACEMOUSE)
+  debugTimerSpacemouseWakeup,
+#endif
 
   DEBUG_TIMERS_COUNT
 };
@@ -431,10 +415,6 @@ extern const char * const debugTimerNames[DEBUG_TIMERS_COUNT];
 #define DEBUG_TIMER_SAMPLE(timer)
 
 #endif //#if defined(DEBUG_TIMERS)
-
-#if !defined(SIMU)
-extern uint32_t debugCounter1ms;
-#endif
 
 #endif // _DEBUG_H_
 

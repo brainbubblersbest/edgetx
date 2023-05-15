@@ -1,8 +1,9 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   th9x - http://code.google.com/p/th9x 
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
  *
@@ -55,12 +56,6 @@ void saveTimers();
 void restoreTimers();
 
 void evalTimers(int16_t throttle, uint8_t tick10ms);
-
-extern volatile tmr10ms_t g_tmr10ms;
-static inline tmr10ms_t get_tmr10ms()
-{
-  return g_tmr10ms;
-}
 
 int16_t throttleSource2Source(int16_t thrSrc);
 int16_t source2ThrottleSource(int16_t src);

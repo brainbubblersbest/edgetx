@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -237,7 +238,7 @@ void menuModelReceiverOptions(event_t event)
             // Bargraph
             if (channel <= channelMax) {
               int32_t channelValue = channelOutputs[channel];
-  #if !defined(PCBX7) // X7 LCD doesn't like too many horizontal lines
+  #if !(defined(PCBX7) || defined(PCBX9LITE) || defined(PCBX9LITES)) // X7/X9 LCD doesn't like too many horizontal lines
               lcdDrawRect(RECEIVER_OPTIONS_2ND_COLUMN, y + 2, wbar + 1, 4);
   #endif
               auto lenChannel = limit<uint8_t>(1, (abs(channelValue) * wbar / 2 + lim / 2) / lim, wbar / 2);

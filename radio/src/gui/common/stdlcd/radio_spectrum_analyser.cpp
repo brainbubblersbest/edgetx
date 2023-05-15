@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,6 +20,7 @@
  */
 
 #include "opentx.h"
+#include "timers_driver.h"
 
 extern uint8_t g_moduleIdx;
 
@@ -42,7 +44,9 @@ void menuRadioSpectrumAnalyser(event_t event)
   if (menuEvent) {
     lcdDrawCenteredText(LCD_H/2, STR_STOPPING);
     lcdRefresh();
+#if defined(PXX2)
     moduleState[g_moduleIdx].readModuleInformation(&reusableBuffer.moduleSetup.pxx2.moduleInformation, PXX2_HW_INFO_TX_ID, PXX2_HW_INFO_TX_ID);
+#endif
     /* wait 1s to resume normal operation before leaving */
     watchdogSuspend(500 /*5s*/);
     RTOS_WAIT_MS(1000);

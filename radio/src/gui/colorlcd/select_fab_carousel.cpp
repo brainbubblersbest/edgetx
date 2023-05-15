@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -20,26 +21,20 @@
 
 #include "select_fab_carousel.h"
 
-SelectFabCarousel::SelectFabCarousel(Window* parent):
+SelectFabCarousel::SelectFabCarousel(Window* parent) :
     FormGroup(parent, {}, FORM_FORWARD_FOCUS | NO_SCROLLBAR)
 {
-    setPageWidth(FAB_BUTTON_SIZE + SELECT_BUTTON_BORDER);
-    setHeight(FAB_BUTTON_SIZE + 2 * PAGE_LINE_HEIGHT + SELECT_BUTTON_BORDER / 2);
-}
+  setFlexLayout(LV_FLEX_FLOW_ROW_WRAP);
 
-void SelectFabCarousel::setMaxButtons(uint8_t max)
-{
-  maxButtons = max;
-  setWidth(maxButtons * pageWidth);
+  coord_t w = parent->width() * 0.8;
+  w -= w % (FAB_BUTTON_SIZE + SELECT_BUTTON_BORDER);
+  lv_obj_set_width(lvobj, w);
+
+  lv_obj_set_style_max_height(lvobj, lv_pct(85), 0);
 }
 
 void SelectFabCarousel::addButton(uint8_t icon, const char* title,
                                   std::function<uint8_t(void)> pressHandler)
 {
-  coord_t y_pos = 0;
-  coord_t x_pos = pageWidth * buttons;
-  buttons++;
-
-  new SelectFabButton(this, x_pos, y_pos, icon, title, pressHandler);
-  setInnerWidth(pageWidth * buttons);
+  new SelectFabButton(this, icon, title, pressHandler);
 }

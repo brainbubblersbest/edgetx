@@ -86,23 +86,21 @@ int SimulatorLoader::registerSimulators(const QDir & dir)
 
 void SimulatorLoader::registerSimulators()
 {
-  QDir dir(".");
+  QDir dir(QCoreApplication::applicationDirPath());
   if (registerSimulators(dir)) {
     return;
   }
 
 #if defined(__APPLE__)
   dir = QLibraryInfo::location(QLibraryInfo::PrefixPath) + "/Resources";
-#elif (!defined __GNUC__)
-  char name[MAX_PATH];
-  GetModuleFileName(NULL, name, MAX_PATH);
-  QString path(name);
-  path.truncate(path.lastIndexOf('\\'));
-  dir.setPath(path);
 #else
-  dir.setPath(SIMULATOR_LIB_SEARCH_PATH);
+  if (QDir::isAbsolutePath(SIMULATOR_LIB_SEARCH_PATH)) {
+    dir.setPath(SIMULATOR_LIB_SEARCH_PATH);
+  } else {
+    dir.setPath(QCoreApplication::applicationDirPath() + "/" SIMULATOR_LIB_SEARCH_PATH);
+  }
 #endif
-  registerSimulators(dir);
+  registerSimulators(dir.absolutePath());
 }
 
 void SimulatorLoader::unregisterSimulators()
@@ -111,7 +109,7 @@ void SimulatorLoader::unregisterSimulators()
     delete lib;
 }
 
-QString SimulatorLoader::findSimulatorByFirmwareName(const QString & name)
+QString SimulatorLoader::findSimulatorByName(const QString & name)
 {
   int pos;
   QString ret;
@@ -135,7 +133,7 @@ QString SimulatorLoader::findSimulatorByFirmwareName(const QString & name)
 SimulatorInterface * SimulatorLoader::loadSimulator(const QString & name)
 {
   SimulatorInterface * si = NULL;
-  QString libname = findSimulatorByFirmwareName(name);
+  QString libname = findSimulatorByName(name);
 
   if (libname.isEmpty()) {
     qWarning() << "Simulator" << name << "not found.";
@@ -168,7 +166,7 @@ bool SimulatorLoader::unloadSimulator(const QString & name)
 {
   bool ret = false;
 #if SIMULATOR_INTERFACE_LOADER_DYNAMIC
-  QString simuName = findSimulatorByFirmwareName(name);
+  QString simuName = findSimulatorByName(name);
   if (simuName.isEmpty())
     return ret;
 

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -17,7 +18,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 
 #ifndef OPENTX_OPTIONS_H
 #define OPENTX_OPTIONS_H
@@ -44,9 +44,6 @@ static const char * const options[] = {
 #if defined(FAI_CHOICE)
   "FAIchoice",
 #endif
-#if defined(MODULE_PROTOCOL_FLEX)
-  "flexr9m",
-#endif
 #if defined(AFHDS3)
   "afhds3",
 #endif
@@ -64,6 +61,9 @@ static const char * const options[] = {
 #endif
 #if defined(INTERNAL_GPS)
   "internalgps",
+#endif
+#if defined(SPACEMOUSE)
+  "spacemouse",
 #endif
 #if defined(INTERNAL_MODULE_PPM)
   "internalppm",
@@ -95,14 +95,18 @@ static const char * const options[] = {
 #if defined(SHUTDOWN_CONFIRMATION)
   "shutdownconfirm",
 #endif
-#if defined(HARDWARE_EXTERNAL_ACCESS_MOD)
-  "externalaccessmod",
-#endif
-#if defined(FLYSKY_HALL_STICKS)
-  "flyskyhallsticks",
+#if defined(IMU_LSM6DS33)
+  "lsm6ds33",
 #endif
 #if defined(BIND_KEY)
   "bindkey",
+#endif
+#if defined(CLI)
+    "cli",
+#endif
+#if defined(ENABLE_SERIAL_PASSTHROUGH)
+    "passthrough",
+    "cli",
 #endif
   nullptr //sentinel
 };

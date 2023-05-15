@@ -18,41 +18,38 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _MODELSLIST_H_
-#define _MODELSLIST_H_
+#pragma once
 
 #include "eeprominterface.h"
 #include <QAbstractItemModel>
 #include <QMimeData>
 #include <QUuid>
 
-class TreeItem
+class ModelListItem
 {
   public:
-    enum TreeItemFlags { MarkedForCut = 0x01 };
+    enum ModelListItemFlags { MarkedForCut = 0x01 };
 
-    explicit TreeItem(const QVector<QVariant> & itemData);
-    explicit TreeItem(TreeItem * parent, int categoryIndex, int modelIndex);
-    ~TreeItem();
+    explicit ModelListItem(const QVector<QVariant> & itemData);
+    explicit ModelListItem(ModelListItem * parent, int modelIndex);
+    ~ModelListItem();
 
-    TreeItem * child(int number);
+    ModelListItem * child(int number);
     int childCount() const;
     int columnCount() const;
     QVariant data(int column) const;
-    TreeItem * appendChild(int categoryIndex, int modelIndex);
-    TreeItem * insertChild(const int row, int categoryIndex, int modelIndex);
+    ModelListItem * appendChild( int modelIndex);
+    ModelListItem * insertChild(const int row, int modelIndex);
     bool removeChildren(int position, int count);
     bool insertChildren(int row, int count);
 
     int childNumber() const;
     bool setData(int column, const QVariant &value);
 
-    TreeItem * parent() { return parentItem; }
-    void setParent(TreeItem * p) { parentItem = p; }
+    ModelListItem * parent() { return parentItem; }
+    void setParent(ModelListItem * p) { parentItem = p; }
     int getModelIndex() const { return modelIndex; }
     void setModelIndex(int value) { modelIndex = value; }
-    int getCategoryIndex() const { return categoryIndex; }
-    void setCategoryIndex(int value) { categoryIndex = value; }
     void setHighlightRX(int value) { highlightRX = value; }
     bool isHighlightRX() const { return highlightRX; }
 
@@ -60,21 +57,19 @@ class TreeItem
     void setFlags(const quint16 & value) { flags = value; }
     void setFlag(const quint16 & flag, const bool on = true);
 
-    bool isCategory() const;
     bool isModel() const;
 
   private:
-    QList<TreeItem*> childItems;
+    QList<ModelListItem*> childItems;
     QVector<QVariant> itemData;
-    TreeItem * parentItem;
-    int categoryIndex;
+    ModelListItem * parentItem;
     int modelIndex;
     quint16 flags;
     bool highlightRX;
 };
 
 
-class TreeModel : public QAbstractItemModel
+class ModelsListModel : public QAbstractItemModel
 {
     Q_OBJECT
 
@@ -84,8 +79,8 @@ class TreeModel : public QAbstractItemModel
       quint16 dataVersion;
     };
 
-    TreeModel(RadioData * radioData, QObject *parent = 0);
-    virtual ~TreeModel();
+    ModelsListModel(RadioData * radioData, QObject *parent = 0);
+    virtual ~ModelsListModel();
 
     virtual QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const Q_DECL_OVERRIDE;
     virtual QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const Q_DECL_OVERRIDE;
@@ -125,12 +120,8 @@ class TreeModel : public QAbstractItemModel
     static int countModelsInMimeData(const QMimeData * mimeData);
 
     QModelIndex getIndexForModel(const int modelIndex, QModelIndex parent = QModelIndex());
-    QModelIndex getIndexForCategory(const int categoryIndex);
-    int getAvailableEEpromSize();
     int getModelIndex(const QModelIndex & index) const;
-    int getCategoryIndex(const QModelIndex & index) const;
     int rowNumber(const QModelIndex & index = QModelIndex()) const;
-    bool isCategoryType(const QModelIndex & index) const;
     bool isModelType(const QModelIndex & index) const;
 
   public slots:
@@ -148,14 +139,11 @@ class TreeModel : public QAbstractItemModel
     void onRowsRemoved(const QModelIndex & parent, int first, int last);
 
   private:
-    TreeItem * getItem(const QModelIndex & index) const;
+    ModelListItem * getItem(const QModelIndex & index) const;
     bool isModelIdUnique(unsigned modelId, unsigned module, unsigned protocol);
 
-    TreeItem * rootItem;
+    ModelListItem * rootItem;
     RadioData * radioData;
-    int availableEEpromSize;
     MimeHeaderData mimeHeaderData;
-    bool hasCategories;
+    bool hasLabels;
 };
-
-#endif // _MODELSLIST_H_

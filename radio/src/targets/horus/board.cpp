@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,30 +19,36 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "board.h"
+#include "boards/generic_stm32/module_ports.h"
+#include "boards/generic_stm32/intmodule_heartbeat.h"
 
 #include "hal/adc_driver.h"
+#include "hal/trainer_driver.h"
+
+#include "timers_driver.h"
+#include "dataconstants.h"
+#include "opentx_types.h"
+#include "globals.h"
+#include "sdcard.h"
+#include "debug.h"
+
+#include <string.h>
 
 #if !defined(PCBX12S)
-  #include "../common/arm/stm32/stm32_hal_adc.h"
+  #include "stm32_hal_adc.h"
   #define ADC_DRIVER stm32_hal_adc_driver
 #else
   #include "x12s_adc_driver.h"
   #define ADC_DRIVER x12s_adc_driver
 #endif
 
-#if defined(__cplusplus)
-extern "C" {
+#if defined(FLYSKY_GIMBAL)
+  #include "flysky_gimbal_driver.h"
 #endif
-#include "usb_dcd_int.h"
-#include "usb_bsp.h"
-#if defined(__cplusplus)
-}
-#endif
-
-extern void flysky_hall_stick_init( void );
 
 HardwareOptions hardwareOptions;
+bool boardBacklightOn = false;
 
 void watchdogInit(unsigned int duration)
 {
@@ -53,60 +60,8 @@ void watchdogInit(unsigned int duration)
   IWDG->KR = 0xCCCC;      // start
 }
 
-#if defined(AUX_SERIAL_PWR_GPIO)
-void auxSerialPowerOn()
-{
-  GPIO_SetBits(AUX_SERIAL_PWR_GPIO, AUX_SERIAL_PWR_GPIO_PIN);
-}
-
-void auxSerialPowerOff()
-{
-  GPIO_ResetBits(AUX_SERIAL_PWR_GPIO, AUX_SERIAL_PWR_GPIO_PIN);
-}
-#endif
-#if defined(AUX2_SERIAL_PWR_GPIO)
-void aux2SerialPowerOn()
-{
-  GPIO_SetBits(AUX2_SERIAL_PWR_GPIO, AUX2_SERIAL_PWR_GPIO_PIN);
-}
-
-void aux2SerialPowerOff()
-{
-  GPIO_ResetBits(AUX2_SERIAL_PWR_GPIO, AUX2_SERIAL_PWR_GPIO_PIN);
-}
-#endif
-
-
-#if HAS_SPORT_UPDATE_CONNECTOR()
-void sportUpdateInit()
-{
-  GPIO_InitTypeDef GPIO_InitStructure;
-  GPIO_InitStructure.GPIO_Pin = SPORT_UPDATE_PWR_GPIO_PIN;
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
-  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
-  GPIO_Init(SPORT_UPDATE_PWR_GPIO, &GPIO_InitStructure);
-}
-
-void sportUpdatePowerOn()
-{
-  GPIO_SetBits(SPORT_UPDATE_PWR_GPIO, SPORT_UPDATE_PWR_GPIO_PIN);
-}
-
-void sportUpdatePowerOff()
-{
-  GPIO_ResetBits(SPORT_UPDATE_PWR_GPIO, SPORT_UPDATE_PWR_GPIO_PIN);
-}
-
-void sportUpdatePowerInit()
-{
-  if (g_eeGeneral.sportUpdatePower == 1)
-    sportUpdatePowerOn();
-  else
-    sportUpdatePowerOff();
-}
-#endif
+#if !defined(BOOT)
+#include "opentx.h"
 
 void boardInit()
 {
@@ -120,8 +75,8 @@ void boardInit()
                          AUDIO_RCC_AHB1Periph |
                          KEYS_RCC_AHB1Periph |
                          ADC_RCC_AHB1Periph |
-#if defined(FLYSKY_HALL_STICKS)                         
-                         FLYSKY_HALL_RCC_AHB1Periph |                         
+#if defined(FLYSKY_GIMBAL)
+                         FLYSKY_HALL_RCC_AHB1Periph |
 #endif
                          AUX_SERIAL_RCC_AHB1Periph |
                          AUX2_SERIAL_RCC_AHB1Periph |
@@ -132,11 +87,7 @@ void boardInit()
                          HAPTIC_RCC_AHB1Periph |
                          INTMODULE_RCC_AHB1Periph |
                          EXTMODULE_RCC_AHB1Periph |
-                         I2C_RCC_AHB1Periph |
-                         GPS_RCC_AHB1Periph |
-                         SPORT_UPDATE_RCC_AHB1Periph |
-                         TOUCH_INT_RCC_AHB1Periph |
-                         TOUCH_RST_RCC_AHB1Periph,
+                         SPORT_UPDATE_RCC_AHB1Periph,
                          ENABLE);
 
   RCC_APB1PeriphClockCmd(ROTARY_ENCODER_RCC_APB1Periph |
@@ -144,19 +95,12 @@ void boardInit()
                          ADC_RCC_APB1Periph |
                          TIMER_2MHz_RCC_APB1Periph |
                          AUDIO_RCC_APB1Periph |
-#if defined(FLYSKY_HALL_STICKS)                         
-                         FLYSKY_HALL_RCC_APB1Periph |                         
+#if defined(FLYSKY_GIMBAL)
+                         FLYSKY_HALL_RCC_APB1Periph |
 #endif
-                         AUX_SERIAL_RCC_APB1Periph |
-                         AUX2_SERIAL_RCC_APB1Periph |
                          TELEMETRY_RCC_APB1Periph |
-                         TRAINER_RCC_APB1Periph |
                          AUDIO_RCC_APB1Periph |
-                         INTMODULE_RCC_APB1Periph |
-                         EXTMODULE_RCC_APB1Periph |
-                         I2C_RCC_APB1Periph |
                          MIXER_SCHEDULER_TIMER_RCC_APB1Periph |
-                         GPS_RCC_APB1Periph |
                          BACKLIGHT_RCC_APB1Periph,
                          ENABLE);
 
@@ -164,37 +108,44 @@ void boardInit()
                          LCD_RCC_APB2Periph |
                          ADC_RCC_APB2Periph |
                          HAPTIC_RCC_APB2Periph |
-                         INTMODULE_RCC_APB2Periph |
-                         EXTMODULE_RCC_APB2Periph |
                          TELEMETRY_RCC_APB2Periph |
                          BT_RCC_APB2Periph |
-                         AUX_SERIAL_RCC_APB2Periph |
-                         AUX2_SERIAL_RCC_APB2Periph |
-                         GPS_RCC_APB2Periph |
                          BACKLIGHT_RCC_APB2Periph,
                          ENABLE);
 
+#if defined(RADIO_FAMILY_T16)
+  if (FLASH_OB_GetBOR() != OB_BOR_LEVEL3)
+  {
+    FLASH_OB_Unlock();
+    FLASH_OB_BORConfig(OB_BOR_LEVEL3);
+    FLASH_OB_Launch();
+    FLASH_OB_Lock();
+  }
+#endif
+
   pwrInit();
+  boardInitModulePorts();
+
+#if defined(INTMODULE_HEARTBEAT) &&                                     \
+  (defined(INTERNAL_MODULE_PXX1) || defined(INTERNAL_MODULE_PXX2))
+  pulsesSetModuleInitCb(_intmodule_heartbeat_init);
+  pulsesSetModuleDeInitCb(_intmodule_heartbeat_deinit);
+#endif
+
+  init_trainer();
   pwrOn();
   delaysInit();
 
   __enable_irq();
 
-#if defined(DEBUG) && defined(AUX_SERIAL)
-  auxSerialInit(UART_MODE_DEBUG, 0); // default serial mode (None if DEBUG not defined)
-#endif
-#if defined(DEBUG) && defined(AUX2_SERIAL)
-  aux2SerialInit(UART_MODE_DEBUG, 0); // default serial mode (None if DEBUG not defined)
+#if defined(DEBUG)
+  serialInit(SP_AUX1, UART_MODE_DEBUG);
 #endif
 
   TRACE("\nHorus board started :)");
   TRACE("RCC->CSR = %08x", RCC->CSR);
 
   audioInit();
-
-  // we need to initialize g_FATFS_Obj here, because it is in .ram section (because of DMA access)
-  // and this section is un-initialized
-  memset(&g_FATFS_Obj, 0, sizeof(g_FATFS_Obj));
 
   keysInit();
   rotaryEncoderInit();
@@ -207,18 +158,18 @@ void boardInit()
   }
 #endif
 
-  if (!adcInit(&ADC_DRIVER))
-      TRACE("adcInit failed");
-
-  lcdInit();
-  backlightInit();
-
-#if defined(FLYSKY_HALL_STICKS)
-  flysky_hall_stick_init();
+#if defined(FLYSKY_GIMBAL)
+  globalData.flyskygimbals = flysky_gimbal_init();
+#else
+  globalData.flyskygimbals = false;
 #endif
+
+  if (!adcInit(&ADC_DRIVER))
+    TRACE("adcInit failed");
 
   init2MhzTimer();
   init1msTimer();
+
   usbInit();
   hapticInit();
 
@@ -226,16 +177,9 @@ void boardInit()
   bluetoothInit(BLUETOOTH_DEFAULT_BAUDRATE, true);
 #endif
 
-#if defined(INTERNAL_GPS)
-  gpsInit(GPS_USART_BAUDRATE);
-#endif
 
 #if defined(DEBUG)
   DBGMCU_APB1PeriphConfig(DBGMCU_IWDG_STOP|DBGMCU_TIM1_STOP|DBGMCU_TIM2_STOP|DBGMCU_TIM3_STOP|DBGMCU_TIM4_STOP|DBGMCU_TIM5_STOP|DBGMCU_TIM6_STOP|DBGMCU_TIM7_STOP|DBGMCU_TIM8_STOP|DBGMCU_TIM9_STOP|DBGMCU_TIM10_STOP|DBGMCU_TIM11_STOP|DBGMCU_TIM12_STOP|DBGMCU_TIM13_STOP|DBGMCU_TIM14_STOP, ENABLE);
-#endif
-
-#if defined(HARDWARE_TOUCH)
-  touchPanelInit();
 #endif
 
   ledInit();
@@ -244,16 +188,14 @@ void boardInit()
   usbChargerInit();
 #endif
 
-#if HAS_SPORT_UPDATE_CONNECTOR()
-  sportUpdateInit();
+#if defined(RTCLOCK) && !defined(COPROCESSOR)
+  ledRed();
+  rtcInit(); // RTC must be initialized before rambackupRestore() is called
 #endif
 
   ledBlue();
-
-#if defined(RTCLOCK) && !defined(COPROCESSOR)
-  rtcInit(); // RTC must be initialized before rambackupRestore() is called
-#endif
 }
+#endif
 
 void boardOff()
 {
@@ -288,8 +230,8 @@ void boardOff()
   RTC->BKP0R = SHUTDOWN_REQUEST;
 
   pwrOff();
-  
-  // We reach here only in forced power situations, such as hw-debugging with external power  
+
+  // We reach here only in forced power situations, such as hw-debugging with external power
   // Enter STM32 stop mode / deep-sleep
   // Code snippet from ST Nucleo PWR_EnterStopMode example
 #define PDMode             0x00000000U
@@ -303,21 +245,16 @@ void boardOff()
 
 /* Set SLEEPDEEP bit of Cortex System Control Register */
   SET_BIT(SCB->SCR, ((uint32_t)SCB_SCR_SLEEPDEEP_Msk));
-  
+
   // To avoid HardFault at return address, end in an endless loop
   while (1) {
 
   }
 }
 
-#if defined (RADIO_TX16S)
-  #define BATTERY_DIVIDER 1495
-#else
-  #define BATTERY_DIVIDER 1629
-#endif 
-
-uint16_t getBatteryVoltage()
+bool isBacklightEnabled()
 {
-  int32_t instant_vbat = anaIn(TX_VOLTAGE);  // using filtered ADC value on purpose
-  return (uint16_t)((instant_vbat * (1000 + g_eeGeneral.txVoltageCalibration)) / BATTERY_DIVIDER);
+  if (globalData.unexpectedShutdown) return true;
+  return boardBacklightOn;
 }
+

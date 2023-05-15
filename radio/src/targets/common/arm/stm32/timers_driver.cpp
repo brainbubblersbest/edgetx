@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -20,7 +21,7 @@
 
 #include "opentx.h"
 
-extern void flysky_hall_stick_loop( void );
+static volatile uint32_t msTickCount; // Used to get 1 kHz counter
 
 // Start TIMER at 2000000Hz
 void init2MhzTimer()
@@ -34,7 +35,9 @@ void init2MhzTimer()
 // Start TIMER at 1000Hz
 void init1msTimer()
 {
-  INTERRUPT_xMS_TIMER->ARR = 999; // 1mS in uS
+  msTickCount = 0;
+
+  INTERRUPT_xMS_TIMER->ARR = 999; // 5mS in uS
   INTERRUPT_xMS_TIMER->PSC = (PERI1_FREQUENCY * TIMER_MULT_APB1) / 1000000 - 1;  // 1uS
   INTERRUPT_xMS_TIMER->CCER = 0;
   INTERRUPT_xMS_TIMER->CCMR1 = 0;
@@ -42,7 +45,7 @@ void init1msTimer()
   INTERRUPT_xMS_TIMER->CR1 = TIM_CR1_CEN | TIM_CR1_URS;
   INTERRUPT_xMS_TIMER->DIER |= TIM_DIER_UIE;
   NVIC_EnableIRQ(INTERRUPT_xMS_IRQn);
-  NVIC_SetPriority(INTERRUPT_xMS_IRQn, 7);
+  NVIC_SetPriority(INTERRUPT_xMS_IRQn, 4);
 }
 
 void stop1msTimer()
@@ -51,21 +54,28 @@ void stop1msTimer()
   NVIC_DisableIRQ(INTERRUPT_xMS_IRQn);
 }
 
-// TODO use the same than board_sky9x.cpp
-void interrupt1ms()
+uint32_t timersGetMsTick()
 {
-  static uint8_t pre_scale; // Used to get 10 Hz counter
+  return msTickCount;
+}
+
+static uint32_t watchdogTimeout = 0;
+
+void watchdogSuspend(uint32_t timeout)
+{
+  watchdogTimeout = timeout;
+}
+
+static void interrupt1ms()
+{
+  static uint8_t pre_scale = 0;
 
   ++pre_scale;
+  ++msTickCount;
 
-  // 1 ms loop
-#if defined(FLYSKY_HALL_STICKS) && !defined(SIMU)
-  flysky_hall_stick_loop();  // TODO: need to put in 1ms timer loop for best performance
-#endif
 
   // 5ms loop
-  if (pre_scale == 5 || pre_scale == 10)
-  {
+  if(pre_scale == 5 || pre_scale == 10) {
 #if defined(HAPTIC)
     DEBUG_TIMER_START(debugTimerHaptic);
     HAPTIC_HEARTBEAT();
@@ -74,9 +84,13 @@ void interrupt1ms()
   }
   
   // 10ms loop
-  if (pre_scale == 10)
-	{
+  if (pre_scale == 10) {
     pre_scale = 0;
+    if (watchdogTimeout) {
+      watchdogTimeout -= 1;
+      WDG_RESET();  // Retrigger hardware watchdog
+    }
+
     DEBUG_TIMER_START(debugTimerPer10ms);
     DEBUG_TIMER_SAMPLE(debugTimerPer10msPeriod);
     per10ms();
@@ -88,5 +102,5 @@ extern "C" void INTERRUPT_xMS_IRQHandler()
 {
   INTERRUPT_xMS_TIMER->SR &= ~TIM_SR_UIF;
   interrupt1ms();
-  DEBUG_INTERRUPT(INT_1MS);
+  DEBUG_INTERRUPT(INT_5MS);
 }

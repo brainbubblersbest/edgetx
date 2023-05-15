@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -40,8 +41,8 @@
 #define MODEL_BITMAP_SIZE              BITMAP_BUFFER_SIZE(MODEL_BITMAP_WIDTH, MODEL_BITMAP_HEIGHT)
 #define LOAD_MODEL_BITMAP()            loadModelBitmap(g_model.header.bitmap, modelBitmap)
 
-#define CURVE_SIDE_WIDTH               (LCD_H/2)
-#define CURVE_CENTER_X                 (LCD_W-CURVE_SIDE_WIDTH-2)
+#define CURVE_SIDE_WIDTH               (LCD_H/2-2)
+#define CURVE_CENTER_X                 (LCD_W-CURVE_SIDE_WIDTH-3)
 #define CURVE_CENTER_Y                 (LCD_H/2)
 
 #define MIXES_2ND_COLUMN               (18*FW)
@@ -209,7 +210,7 @@ void title(const char * s);
 
 typedef int choice_t;
 
-choice_t editChoice(coord_t x, coord_t y, const char *label, const char *values, choice_t value, choice_t min, choice_t max, LcdFlags attr, event_t event, IsValueAvailable isValueAvailable = nullptr);
+choice_t editChoice(coord_t x, coord_t y, const char *label, const char* const* values, choice_t value, choice_t min, choice_t max, LcdFlags attr, event_t event, IsValueAvailable isValueAvailable = nullptr);
 uint8_t editCheckBox(uint8_t value, coord_t x, coord_t y, const char *label, LcdFlags attr, event_t event);
 swsrc_t editSwitch(coord_t x, coord_t y, swsrc_t value, LcdFlags attr, event_t event);
 

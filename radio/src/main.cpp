@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,6 +24,12 @@
 
 #if defined(LIBOPENUI)
   #include "libopenui.h"
+  #include "gui/colorlcd/LvglWrapper.h"
+  #include "gui/colorlcd/view_main.h"
+#endif
+
+#if defined(CLI)
+  #include "cli.h"
 #endif
 
 uint8_t currentSpeakerVolume = 255;
@@ -71,7 +78,7 @@ void openUsbMenu()
     TRACE("USB mass storage");
     setSelectedUsbMode(USB_MASS_STORAGE_MODE);
   });
-#if defined(DEBUG)
+#if defined(USB_SERIAL)
   _usbMenu->addLine(STR_USB_SERIAL, [] {
     TRACE("USB serial");
     setSelectedUsbMode(USB_SERIAL_MODE);
@@ -79,7 +86,7 @@ void openUsbMenu()
 #endif
 }
 
-#elif defined(STM32)
+#else
 
 void onUSBConnectMenu(const char *result)
 {
@@ -89,9 +96,11 @@ void onUSBConnectMenu(const char *result)
   else if (result == STR_USB_JOYSTICK) {
     setSelectedUsbMode(USB_JOYSTICK_MODE);
   }
+#if defined(USB_SERIAL)
   else if (result == STR_USB_SERIAL) {
     setSelectedUsbMode(USB_SERIAL_MODE);
   }
+#endif
   else if (result == STR_EXIT) {
     _usbDisabled = true;
   }
@@ -102,7 +111,7 @@ void openUsbMenu()
   if (popupMenuHandler != onUSBConnectMenu) {
     POPUP_MENU_ADD_ITEM(STR_USB_JOYSTICK);
     POPUP_MENU_ADD_ITEM(STR_USB_MASS_STORAGE);
-#if defined(DEBUG)
+#if defined(USB_SERIAL)
     POPUP_MENU_ADD_ITEM(STR_USB_SERIAL);
 #endif
     POPUP_MENU_TITLE(STR_SELECT_MODE);
@@ -150,8 +159,12 @@ void handleUsbConnection()
 
       if (getSelectedUsbMode() == USB_MASS_STORAGE_MODE) {
         opentxClose(false);
-        usbPluggedIn();
       }
+#if defined(USB_SERIAL)
+      else if (getSelectedUsbMode() == USB_SERIAL_MODE) {
+        serialInit(SP_VCP, serialGetMode(SP_VCP));
+      }
+#endif
 
       usbStart();
       TRACE("USB started");
@@ -164,6 +177,8 @@ void handleUsbConnection()
     if (getSelectedUsbMode() == USB_MASS_STORAGE_MODE) {
       opentxResume();
       pushEvent(EVT_ENTRY);
+    } else if (getSelectedUsbMode() == USB_SERIAL_MODE) {
+      serialStop(SP_VCP);
     }
     TRACE("reset selected USB mode");
     setSelectedUsbMode(USB_UNSELECTED_MODE);
@@ -285,11 +300,6 @@ void checkBatteryAlarms()
     AUDIO_TX_BATTERY_LOW();
     // TRACE("checkBatteryAlarms(): battery low");
   }
-#if defined(PCBSKY9X)
-  else if (g_eeGeneral.mAhWarn && (g_eeGeneral.mAhUsed + Current_used * (488 + g_eeGeneral.txCurrentCalibration)/8192/36) / 500 >= g_eeGeneral.mAhWarn) { // TODO move calculation into board file
-    AUDIO_TX_MAH_HIGH();
-  }
-#endif
 }
 
 void checkBattery()
@@ -355,16 +365,7 @@ void guiMain(event_t evt)
   }
 
   DEBUG_TIMER_START(debugTimerLua);
-
-  // Run Lua scripts first that don't use LCD
-  luaTask(  0, false);
-
-  // This is run from StandaloneLuaWindow::checkEvents()
-  // luaTask(evt, RUN_STNDAL_SCRIPT, true);
-
-  // TODO: Telemetry scripts are run from Window::checkEvents()
-  // luaTask(  0, RUN_TELEM_BG_SCRIPT, false/* NO LCD */);
-  // luaTask(evt, RUN_TELEM_FG_SCRIPT, true/* LCD YES */);
+  luaTask(0, false);
   DEBUG_TIMER_STOP(debugTimerLua);
 
   t0 = get_tmr10ms() - t0;
@@ -373,8 +374,21 @@ void guiMain(event_t evt)
   }
 #endif
 
+  LvglWrapper::instance()->run();
   MainWindow::instance()->run();
 
+  bool mainViewRequested = (mainRequestFlags & (1u << REQUEST_MAIN_VIEW));
+  if (mainViewRequested) {
+    auto viewMain = ViewMain::instance();
+    if (g_model.view < viewMain->getMainViewsCount()) {
+      viewMain->setCurrentMainView(g_model.view);
+      storageDirty(EE_MODEL);
+    } else {
+      g_model.view = viewMain->getCurrentMainView();
+    }
+    mainRequestFlags &= ~(1u << REQUEST_MAIN_VIEW);
+  }
+  
   bool screenshotRequested = (mainRequestFlags & (1u << REQUEST_SCREENSHOT));
   if (screenshotRequested) {
     writeScreenshot();
@@ -472,19 +486,24 @@ void guiMain(event_t evt)
 }
 #endif
 
+#if !defined(SIMU)
+  void initLoggingTimer();
+#endif
+
 void perMain()
 {
   DEBUG_TIMER_START(debugTimerPerMain1);
-
-#if defined(PCBSKY9X)
-  calcConsumption();
-#endif
 
   checkSpeakerVolume();
 
   if (!usbPlugged() || (getSelectedUsbMode() == USB_UNSELECTED_MODE)) {
     checkEeprom();
-    logsWrite();
+    
+    #if !defined(SIMU)     // use FreeRTOS software timer if radio firmware
+      initLoggingTimer();  // initialize software timer for logging
+    #else
+      logsWrite();         // call logsWrite the old way for simu
+    #endif
   }
 
   handleUsbConnection();
@@ -516,28 +535,28 @@ void perMain()
   }
 #endif
 
-#if defined(STM32)
   if ((!usbPlugged() || (getSelectedUsbMode() == USB_UNSELECTED_MODE))
       && SD_CARD_PRESENT() && !sdMounted()) {
     sdMount();
   }
-#endif
 
 #if !defined(EEPROM)
   // In case the SD card is removed during the session
   if ((!usbPlugged() || (getSelectedUsbMode() == USB_UNSELECTED_MODE))
       && !SD_CARD_PRESENT() && !globalData.unexpectedShutdown) {
 
+    // TODO: implement for b/w
+#if defined(COLORLCD)
     drawFatalErrorScreen(STR_NO_SDCARD);
     return;
+#endif
   }
 #endif
 
-#if defined(STM32)
   if (usbPlugged() && getSelectedUsbMode() == USB_MASS_STORAGE_MODE) {
 #if defined(LIBOPENUI)
     // draw some image showing USB
-    lcd->reset();
+    lcdInitDirectDrawing();
     OpenTxTheme::instance()->drawUsbPluggedScreen(lcd);
     lcdRefresh();
 #else
@@ -548,7 +567,6 @@ void perMain()
 #endif
     return;
   }
-#endif
 
 #if defined(MULTIMODULE)
   checkFailsafeMulti();
@@ -562,6 +580,8 @@ void perMain()
   DEBUG_TIMER_START(debugTimerGuiMain);
 #if defined(LIBOPENUI)
   guiMain(0);
+  // For color screens show a popup deferred from another task
+  show_ui_popup();
 #else
   guiMain(evt);
 #endif

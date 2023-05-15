@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,24 +19,54 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "opentx_types.h"
+#include "board.h"
+#include "keys.h"
+
 #include "hal/adc_driver.h"
+
+#if defined(LUA)
+#include "lua/lua_api.h"
+#endif
+
+bool trimsAsButtons = false;
+
+void setTrimsAsButtons(bool val) { trimsAsButtons = val; }
+
+bool getTrimsAsButtons()
+{
+  bool lua = false;
+#if defined(LUA)
+  lua = isLuaStandaloneRunning();
+#endif
+  return (trimsAsButtons || lua);
+}
 
 uint32_t readKeys()
 {
   uint32_t result = 0;
 
-  // Arrow keys on right trim joystick
-  // is only supported within bootloader
-#if defined(BOOT)
-  if (TRIMS_GPIO_REG_RVD & TRIMS_GPIO_PIN_RVD)
-    result |= 1 << KEY_DOWN;
-  if (TRIMS_GPIO_REG_RVU & TRIMS_GPIO_PIN_RVU)
-    result |= 1 << KEY_UP;
-  if (TRIMS_GPIO_REG_RHL & TRIMS_GPIO_PIN_RHL)
-    result |= 1 << KEY_LEFT;
-  if (TRIMS_GPIO_REG_RHR & TRIMS_GPIO_PIN_RHR)
-    result |= 1 << KEY_RIGHT;
+#ifndef BOOT
+  if (getTrimsAsButtons()) {
+#endif
+    if (TRIMS_GPIO_REG_LHL & TRIMS_GPIO_PIN_LHL)
+       result |= 1 << KEY_RADIO;
+     if (TRIMS_GPIO_REG_LHR & TRIMS_GPIO_PIN_LHR)
+       result |= 1 << KEY_MODEL;
+     if (TRIMS_GPIO_REG_LVD & TRIMS_GPIO_PIN_LVD)
+       result |= 1 << KEY_TELEM;
+     if (TRIMS_GPIO_REG_LVU & TRIMS_GPIO_PIN_LVU)
+       result |= 1 << KEY_PGUP;
+     if (TRIMS_GPIO_REG_RVD & TRIMS_GPIO_PIN_RVD)
+       result |= 1 << KEY_DOWN;
+     if (TRIMS_GPIO_REG_RVU & TRIMS_GPIO_PIN_RVU)
+       result |= 1 << KEY_UP;
+     if (TRIMS_GPIO_REG_RHL & TRIMS_GPIO_PIN_RHL)
+       result |= 1 << KEY_LEFT;
+     if (TRIMS_GPIO_REG_RHR & TRIMS_GPIO_PIN_RHR)
+       result |= 1 << KEY_RIGHT;
+#ifndef BOOT
+  }
 #endif
 
   // Enter and Exit are always supported
@@ -51,6 +82,7 @@ uint32_t readTrims()
 {
   uint32_t result = 0;
 
+  if(getTrimsAsButtons()) return result;
   if (TRIMS_GPIO_REG_LHL & TRIMS_GPIO_PIN_LHL)
     result |= 1 << (TRM_LH_DWN - TRM_BASE);
   if (TRIMS_GPIO_REG_LHR & TRIMS_GPIO_PIN_LHR)
@@ -79,24 +111,6 @@ bool trimDown(uint8_t idx)
 bool keyDown()
 {
   return readKeys() || readTrims();
-}
-
-/* TODO common to ARM */
-void readKeysAndTrims()
-{
-  int i;
-
-  uint8_t index = 0;
-  uint32_t in = readKeys();
-  uint32_t trims = readTrims();
-
-  for (i = 0; i < TRM_BASE; i++) {
-    keys[index++].input(in & (1 << i));
-  }
-
-  for (i = 1; i <= 1 << (TRM_LAST-TRM_BASE); i <<= 1) {
-    keys[index++].input(trims & i);
-  }
 }
 
 #if !defined(BOOT)
@@ -153,4 +167,5 @@ void keysInit()
 
   GPIO_InitStructure.GPIO_Pin = KEYS_GPIOJ_PINS;
   GPIO_Init(GPIOJ, &GPIO_InitStructure);
+  setTrimsAsButtons(false);
 }

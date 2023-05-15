@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,7 +22,11 @@
 #ifndef _bin_files_h_
 #define _bin_files_h_
 
-#include "opentx.h"
+#include <FatFs/ff.h>
+#include "sdcard.h"
+#if defined(COLORLCD)
+#include "bitmapbuffer.h"
+#endif
 
 enum MemoryType {
   MEM_FLASH,
@@ -34,7 +39,12 @@ enum MemoryType {
 #define getBinaryPath(mt)  (FIRMWARES_PATH)
 #endif
 
+#if LCD_H == 480
+#define MAX_NAMES_ON_SCREEN   13
+#else
 #define MAX_NAMES_ON_SCREEN   6
+#endif
+
 #define MAX_BIN_FILES         (MAX_NAMES_ON_SCREEN+1)
 
 // Size of the block read when checking / writing BIN files

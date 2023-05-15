@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -41,7 +42,7 @@ void eepromReadBlock (uint8_t * buffer, size_t address, size_t size)
     if (fread(buffer, size, 1, fp) <= 0)
       perror("error in fread");
   }
-  else {
+  else if (eeprom) {
     memcpy(buffer, &eeprom[address], size);
   }
 }
@@ -57,7 +58,7 @@ void eepromSimuWriteBlock(uint8_t * buffer, size_t address, size_t size)
     if (fwrite(buffer, size, 1, fp) <= 0)
       perror("error in fwrite");
   }
-  else {
+  else if (eeprom) {
     memcpy(&eeprom[address], buffer, size);
   }
 }
@@ -124,16 +125,15 @@ void eepromStartWrite(uint8_t * buffer, size_t address, size_t size)
   eepromTransmitData(address, buffer, size, false);
 }
 
+bool _eeprom_write_simu_delay = true;
+
 void eepromWriteBlock(uint8_t * buffer, size_t address, size_t size)
 {
   eepromStartWrite(buffer, address, size);
 
   while (!eepromIsTransferComplete()) {
-#if defined(GTESTS)
-    sleep(0/*ms*/);
-#else
-    sleep(1/*ms*/);
-#endif
+    if (_eeprom_write_simu_delay)
+      sleep(1/*ms*/);
   }
 }
 

@@ -1,8 +1,9 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   th9x - http://code.google.com/p/th9x 
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
  *
@@ -18,7 +19,7 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "board.h"
 
 void usbChargerInit()
 {
@@ -33,6 +34,8 @@ void usbChargerInit()
 
 bool usbChargerLed()
 {
-  return GPIO_ReadInputDataBit(USB_CHARGER_GPIO, USB_USBDet_GPIO_PIN) == 0 ? 0 : GPIO_ReadInputDataBit(USB_CHARGER_GPIO, USB_CHARGER_GPIO_PIN) == Bit_RESET;
-}
+  if (GPIO_ReadInputDataBit(USB_CHARGER_GPIO, USB_USBDet_GPIO_PIN) == 0)
+    return 0;
 
+  return GPIO_ReadInputDataBit(USB_CHARGER_GPIO, USB_CHARGER_GPIO_PIN) == Bit_RESET;
+}

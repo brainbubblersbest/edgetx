@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,8 +27,6 @@
 #elif defined(RTC_BACKUP_RAM)
   #define WRITE_DELAY_10MS 1500 /* 15s */
 #elif defined(PCBTARANIS)
-  #define WRITE_DELAY_10MS 500
-#elif defined(PCBSKY9X) && !defined(REV0)
   #define WRITE_DELAY_10MS 500
 #else
   #define WRITE_DELAY_10MS 200
@@ -61,6 +60,15 @@ void postRadioSettingsLoad();
 void preModelLoad();
 void postModelLoad(bool alarms);
 void checkExternalAntenna();
+
+#if !defined(STORAGE_MODELSLIST)
+extern ModelHeader modelHeaders[MAX_MODELS];
+
+void loadModelHeader(uint8_t id, ModelHeader *header);
+void loadModelHeaders();
+
+uint8_t findNextUnusedModelId(uint8_t index, uint8_t module);
+#endif
 
 #if defined(EEPROM)
 #include "eeprom_common.h"

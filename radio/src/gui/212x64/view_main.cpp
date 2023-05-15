@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,6 +20,7 @@
  */
 
 #include "opentx.h"
+#include "hal/trainer_driver.h"
 
 #define BIGSIZE       MIDSIZE
 #define LBOX_CENTERX  (BOX_WIDTH/2 + 16)
@@ -202,7 +204,7 @@ void displayTopBarGauge(coord_t x, int count, bool blinking=false)
 }
 
 #define LCD_NOTIF_ICON(x, icon) \
- lcdDrawBitmap(x, BAR_Y, icons, icon); \
+ lcdDrawRleBitmap(x, BAR_Y, icons, icon); \
  lcdDrawSolidHorizontalLine(x, BAR_Y+8, 11)
 
 void displayTopBar()
@@ -261,7 +263,7 @@ void displayTopBar()
   }
 
   if (SLAVE_MODE()) {
-    if (TRAINER_CONNECTED()) {
+    if (is_trainer_connected()) {
       LCD_NOTIF_ICON(x, ICON_TRAINEE);
       x -= 12;
     }
@@ -299,7 +301,7 @@ void displayTopBar()
 
   /* The inside of the RSSI gauge */
   if (TELEMETRY_RSSI() > 0) {
-    displayTopBarGauge(batt_icon_x+5*FW, TELEMETRY_RSSI() / 10, TELEMETRY_RSSI() < g_model.rssiAlarms.getWarningRssi());
+    displayTopBarGauge(batt_icon_x+5*FW, TELEMETRY_RSSI() / 10, TELEMETRY_RSSI() < g_model.rfAlarms.warning);
   }
 }
 
@@ -317,7 +319,11 @@ void displayTimers()
       else {
         lcdDrawTextAtIndex(TIMERS_X, y-7, STR_VTMRMODES, timerData.mode, SMLSIZE);
       }
-      drawTimer(TIMERS_X, y, timerState.val, TIMEHOUR|MIDSIZE|LEFT, TIMEHOUR|MIDSIZE|LEFT);
+      int val = timerState.val;
+      if (timerData.start && timerData.showElapsed &&
+          timerData.start != timerState.val)
+        val = (int)timerData.start - (int)timerState.val;
+      drawTimer(TIMERS_X, y, val, TIMEHOUR|MIDSIZE|LEFT, TIMEHOUR|MIDSIZE|LEFT);
       if (timerData.persistent) {
         lcdDrawChar(TIMERS_R, y+1, 'P', SMLSIZE);
       }
@@ -448,7 +454,6 @@ void menuMainView(event_t event)
       POPUP_MENU_START(onMainViewMenu);
       break;
 
-#if MENUS_LOCK != 2/*no menus*/
     case EVT_KEY_BREAK(KEY_MENU):
       pushMenu(menuModelSelect);
       break;
@@ -457,7 +462,6 @@ void menuMainView(event_t event)
       pushMenu(menuTabGeneral[0]);
       killEvents(event);
       break;
-#endif
 
     case EVT_KEY_BREAK(KEY_PAGE):
       storageDirty(EE_MODEL);

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -30,8 +31,9 @@ constexpr uint8_t SLIDER_TICKS_COUNT = 40;
 #endif
 constexpr coord_t HMARGIN = 5;
 constexpr coord_t HORIZONTAL_SLIDERS_WIDTH = SLIDER_TICKS_COUNT * 4 + TRIM_SQUARE_SIZE;
-constexpr coord_t MULTIPOS_H = 20;
-constexpr coord_t MULTIPOS_W = 50;
+constexpr coord_t MULTIPOS_H = 18;
+constexpr coord_t MULTIPOS_W_SPACING = 12;
+constexpr coord_t MULTIPOS_W = (6+1)*MULTIPOS_W_SPACING;
 constexpr coord_t VERTICAL_SLIDERS_HEIGHT = SLIDER_TICKS_COUNT * 4 + TRIM_SQUARE_SIZE;
 
 class MainViewSlider : public Window
@@ -62,19 +64,22 @@ class MainViewHorizontalSlider : public MainViewSlider
 {
   public:
     using MainViewSlider::MainViewSlider;
+    MainViewHorizontalSlider(Window* parent, uint8_t idx);
     void paint(BitmapBuffer * dc) override;
 };
 
 class MainView6POS : public MainViewSlider
 {
   public:
-    using MainViewSlider::MainViewSlider;
+    // using MainViewSlider::MainViewSlider;
+    MainView6POS(Window* parent, uint8_t idx);
     void paint(BitmapBuffer * dc) override;
+    void checkEvents() override;
 };
 
 class MainViewVerticalSlider : public MainViewSlider
 {
   public:
-    using MainViewSlider::MainViewSlider;
+    MainViewVerticalSlider(Window* parent, uint8_t idx);
     void paint(BitmapBuffer * dc) override;
 };

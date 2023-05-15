@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,6 +20,11 @@
  */
 
 #include "opentx.h"
+#include "tasks.h"
+
+#if defined(BLUETOOTH)
+  #include "bluetooth_driver.h"
+#endif
 
 #define STATS_1ST_COLUMN               1
 #define STATS_2ND_COLUMN               7*FW+FW/2
@@ -57,9 +63,7 @@ void menuStatisticsView(event_t event)
 #if !defined(PCBTARANIS)
     case EVT_KEY_LONG(KEY_MENU): // historical
 #endif
-#if !defined(PCBSKY9X)
     case EVT_KEY_LONG(KEY_ENTER):
-#endif
       g_eeGeneral.globalTimer = 0;
       storageDirty(EE_GENERAL);
       sessionTimer = 0;
@@ -121,10 +125,6 @@ void menuStatisticsDebug(event_t event)
       break;
 
     case EVT_KEY_LONG(KEY_ENTER):
-#if defined(PCBSKY9X)
-      g_eeGeneral.mAhUsed = 0;
-      Current_used = 0;
-#endif
       g_eeGeneral.globalTimer = 0;
       sessionTimer = 0;
       storageDirty(EE_GENERAL);
@@ -169,14 +169,6 @@ void menuStatisticsDebug(event_t event)
       break;
   }
 
-#if defined(PCBSKY9X)
-  if (IS_RESET_REASON_WATCHDOG()) {
-    lcdDrawText(LCD_W-8*FW, 0, "WATCHDOG");
-  }
-  else if (globalData.unexpectedShutdown) {
-    lcdDrawText(LCD_W-13*FW, 0, "UNEXP.SHTDOWN");
-  }
-#endif
 
   uint8_t y = FH + 1;
 
@@ -195,55 +187,24 @@ void menuStatisticsDebug(event_t event)
   y += FH;
 #endif
 
-#if defined(COPROCESSOR)
-  lcdDrawTextAlignedLeft(y, STR_COPROC_TEMP);
-  if (coprocData.read==0) {
-    lcdDrawText(MENU_DEBUG_COL1_OFS, y, "Co Proc NACK",INVERS);
-  }
-  else if (coprocData.read==0x81) {
-    lcdDrawText(MENU_DEBUG_COL1_OFS, y, "Inst.TinyApp",INVERS);
-  }
-  else if (coprocData.read<3) {
-    lcdDrawText(MENU_DEBUG_COL1_OFS, y, "Upgr.TinyApp",INVERS);
-  }
-  else {
-    drawValueWithUnit(MENU_DEBUG_COL1_OFS, y, coprocData.temp, UNIT_TEMPERATURE, LEFT);
-    drawValueWithUnit(MENU_DEBUG_COL2_OFS, y, coprocData.maxtemp, UNIT_TEMPERATURE, LEFT);
-  }
-  y += FH;
-#endif
 
-#if defined(STM32) && !defined(SIMU) && defined(DEBUG)
-  lcdDrawTextAlignedLeft(y, "Usb");
-  lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, charsWritten, LEFT);
-  lcdDrawText(lcdLastRightPos, y, " ");
-  lcdDrawNumber(lcdLastRightPos, y, APP_Rx_ptr_in, LEFT);
-  lcdDrawText(lcdLastRightPos, y, " ");
-  lcdDrawNumber(lcdLastRightPos, y, APP_Rx_ptr_out, LEFT);
-  lcdDrawText(lcdLastRightPos, y, " ");
-  lcdDrawNumber(lcdLastRightPos, y, usbWraps, LEFT);
-  y += FH;
-#endif
-
-#if defined(STM32)
-  lcdDrawTextAlignedLeft(y, "Free Mem");
+  lcdDrawTextAlignedLeft(y, STR_FREE_MEM_LABEL);
   lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, availableMemory(), LEFT);
-  lcdDrawText(lcdLastRightPos, y, "b");
+  lcdDrawText(lcdLastRightPos+FW, y, STR_BYTES);
   y += FH;
-#endif
 
 #if defined(LUA)
-  lcdDrawTextAlignedLeft(y, "Lua scripts");
-  lcdDrawText(MENU_DEBUG_COL1_OFS, y+1, "[D]", SMLSIZE);
+  lcdDrawTextAlignedLeft(y, TR_LUA_SCRIPTS_LABEL);
+  lcdDrawText(MENU_DEBUG_COL1_OFS, y+1, STR_DURATION_MS, SMLSIZE);
   lcdDrawNumber(lcdLastRightPos, y, 10*maxLuaDuration, LEFT);
-  lcdDrawText(lcdLastRightPos+2, y+1, "[I]", SMLSIZE);
+  lcdDrawText(lcdLastRightPos+2, y+1, STR_INTERVAL_MS, SMLSIZE);
   lcdDrawNumber(lcdLastRightPos, y, 10*maxLuaInterval, LEFT);
   y += FH;
 #endif
 
   lcdDrawTextAlignedLeft(y, STR_TMIXMAXMS);
   lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, DURATION_MS_PREC2(maxMixerDuration), PREC2|LEFT);
-  lcdDrawText(lcdLastRightPos, y, "ms");
+  lcdDrawText(lcdLastRightPos, y, STR_MS);
   y += FH;
 
   lcdDrawTextAlignedLeft(y, STR_FREE_STACK);
@@ -255,7 +216,7 @@ void menuStatisticsDebug(event_t event)
   y += FH;
 
 #if defined(DEBUG_LATENCY)
-  lcdDrawTextAlignedLeft(y, "Heartbeat");
+  lcdDrawTextAlignedLeft(y, STR_HEARTBEAT_LABEL);
   if (heartbeatCapture.valid)
     lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, heartbeatCapture.count, LEFT);
   else
@@ -267,15 +228,14 @@ void menuStatisticsDebug(event_t event)
   lcdInvertLastLine();
 }
 
-#if defined(STM32)
 void menuStatisticsDebug2(event_t event)
 {
   title(STR_MENUDEBUG);
 
   switch(event) {
-    case EVT_KEY_FIRST(KEY_ENTER):
-      telemetryErrors  = 0;
-      break;
+    // case EVT_KEY_FIRST(KEY_ENTER):
+    //   telemetryErrors  = 0;
+    //   break;
 
     case EVT_KEY_FIRST(KEY_UP):
 #if defined(KEYS_GPIO_REG_PAGEDN)
@@ -303,8 +263,8 @@ void menuStatisticsDebug2(event_t event)
 
   uint8_t y = FH + 1;
 
-  lcdDrawTextAlignedLeft(y, "Tlm RX Err");
-  lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, telemetryErrors, RIGHT);
+  // lcdDrawTextAlignedLeft(y, "Tlm RX Err");
+  // lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, telemetryErrors, RIGHT);
   y += FH;
 
 #if defined(BLUETOOTH)
@@ -316,4 +276,3 @@ void menuStatisticsDebug2(event_t event)
   lcdDrawText(LCD_W/2, 7*FH+1, STR_MENUTORESET, CENTERED);
   lcdInvertLastLine();
 }
-#endif

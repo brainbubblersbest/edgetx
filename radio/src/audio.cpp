@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -190,16 +191,13 @@ const char * const audioFilenames[] = {
   "swr_red",
   "telemko",
   "telemok",
+  "trainco",
   "trainko",
   "trainok",
   "sensorko",
   "servoko",
   "rxko",
   "modelpwr",
-#if defined(PCBSKY9X)
-  "highmah",
-  "hightemp",
-#endif
   "error",
   "warning1",
   "warning2",
@@ -217,6 +215,12 @@ const char * const audioFilenames[] = {
 #if defined(PCBX9E)
   "midpot3",
   "midpot4",
+#endif
+#if defined(PCBX10)
+  "midpot4",
+  "midpot5",
+  "midpot6",
+  "midpot7",
 #endif
   "midslid1",
   "midslid2",
@@ -299,14 +303,19 @@ void referenceSystemAudioFiles()
 
 const char * const suffixes[] = { "-off", "-on" };
 
-char * getModelAudioPath(char * path)
+char *getModelAudioPath(char *path)
 {
   strcpy(path, SOUNDS_PATH "/");
-  strncpy(path+SOUNDS_PATH_LNG_OFS, currentLanguagePack->id, 2);
-  char * result = strcat_currentmodelname(path+sizeof(SOUNDS_PATH));
-  *result++ = '/';
-  *result = '\0';
-  return result;
+  strncpy(path + SOUNDS_PATH_LNG_OFS, currentLanguagePack->id, 2);
+  char *buf = strcat_currentmodelname(path + sizeof(SOUNDS_PATH), ' ');
+
+  if (!isFileAvailable(path)) {
+    buf = strcat_currentmodelname(path + sizeof(SOUNDS_PATH), 0);
+  }
+
+  *buf++ = '/';
+  *buf = '\0';
+  return buf;
 }
 
 void getFlightmodeAudioFile(char * filename, int index, unsigned int event)
@@ -321,14 +330,14 @@ void getSwitchAudioFile(char * filename, swsrc_t index)
 {
   char * str = getModelAudioPath(filename);
 
-#if defined(PCBFRSKY)
   if (index <= SWSRC_LAST_SWITCH) {
     div_t swinfo = switchInfo(index);
     *str++ = 'S';
-    *str++ = 'A' + swinfo.quot;
+    *str++ = getRawSwitchFromIdx(swinfo.quot);
     const char * positions[] = { "-up", "-mid", "-down" };
     strcpy(str, positions[swinfo.rem]);
   }
+#if NUM_XPOTS > 0
   else {
     div_t swinfo = div(int(index - SWSRC_FIRST_MULTIPOS_SWITCH), XPOTS_MULTIPOS_COUNT);
     *str++ = 'S';
@@ -336,11 +345,6 @@ void getSwitchAudioFile(char * filename, swsrc_t index)
     *str++ = '1' + swinfo.rem;
     *str = '\0';
   }
-#else
-  int len = STR_VSWITCHES[0];
-  strncpy(str, &STR_VSWITCHES[1+(len*index)], len);
-  str += len;
-  *str = '\0';
 #endif
   strcat(str, SOUNDS_EXT);
 }
@@ -349,7 +353,6 @@ void getLogicalSwitchAudioFile(char * filename, int index, unsigned int event)
 {
   char * str = getModelAudioPath(filename);
 
-#if defined(PCBFRSKY)
   *str++ = 'L';
   if (index >= 9) {
     div_t qr = div(index+1, 10);
@@ -359,11 +362,6 @@ void getLogicalSwitchAudioFile(char * filename, int index, unsigned int event)
   else {
     *str++ = '1' + index;
   }
-#else
-  int len = STR_VSWITCHES[0];
-  strncpy(str, &STR_VSWITCHES[1+len*(index+SWSRC_FIRST_LOGICAL_SWITCH)], len);
-  str += len;
-#endif
 
   strcpy(str, suffixes[event]);
   strcat(str, SOUNDS_EXT);
@@ -486,8 +484,8 @@ void playModelEvent(uint8_t category, uint8_t index, event_t event)
 
 void playModelName()
 {
-  char filename[AUDIO_FILENAME_MAXLEN+1];
-  char * str = getModelAudioPath(filename);
+  char filename[AUDIO_FILENAME_MAXLEN + 1];
+  char *str = getModelAudioPath(filename);
   strcpy(str, "name.wav");
   audioQueue.playFile(filename);
 }
@@ -498,8 +496,6 @@ void playModelName()
 
 #endif  // defined(SDCARD)
 
-const int16_t alawTable[256] = { -5504, -5248, -6016, -5760, -4480, -4224, -4992, -4736, -7552, -7296, -8064, -7808, -6528, -6272, -7040, -6784, -2752, -2624, -3008, -2880, -2240, -2112, -2496, -2368, -3776, -3648, -4032, -3904, -3264, -3136, -3520, -3392, -22016, -20992, -24064, -23040, -17920, -16896, -19968, -18944, -30208, -29184, -32256, -31232, -26112, -25088, -28160, -27136, -11008, -10496, -12032, -11520, -8960, -8448, -9984, -9472, -15104, -14592, -16128, -15616, -13056, -12544, -14080, -13568, -344, -328, -376, -360, -280, -264, -312, -296, -472, -456, -504, -488, -408, -392, -440, -424, -88, -72, -120, -104, -24, -8, -56, -40, -216, -200, -248, -232, -152, -136, -184, -168, -1376, -1312, -1504, -1440, -1120, -1056, -1248, -1184, -1888, -1824, -2016, -1952, -1632, -1568, -1760, -1696, -688, -656, -752, -720, -560, -528, -624, -592, -944, -912, -1008, -976, -816, -784, -880, -848, 5504, 5248, 6016, 5760, 4480, 4224, 4992, 4736, 7552, 7296, 8064, 7808, 6528, 6272, 7040, 6784, 2752, 2624, 3008, 2880, 2240, 2112, 2496, 2368, 3776, 3648, 4032, 3904, 3264, 3136, 3520, 3392, 22016, 20992, 24064, 23040, 17920, 16896, 19968, 18944, 30208, 29184, 32256, 31232, 26112, 25088, 28160, 27136, 11008, 10496, 12032, 11520, 8960, 8448, 9984, 9472, 15104, 14592, 16128, 15616, 13056, 12544, 14080, 13568, 344, 328, 376, 360, 280, 264, 312, 296, 472, 456, 504, 488, 408, 392, 440, 424, 88, 72, 120, 104, 24, 8, 56, 40, 216, 200, 248, 232, 152, 136, 184, 168, 1376, 1312, 1504, 1440, 1120, 1056, 1248, 1184, 1888, 1824, 2016, 1952, 1632, 1568, 1760, 1696, 688, 656, 752, 720, 560, 528, 624, 592, 944, 912, 1008, 976, 816, 784, 880, 848 };
-const int16_t ulawTable[256] = { -32124, -31100, -30076, -29052, -28028, -27004, -25980, -24956, -23932, -22908, -21884, -20860, -19836, -18812, -17788, -16764, -15996, -15484, -14972, -14460, -13948, -13436, -12924, -12412, -11900, -11388, -10876, -10364, -9852, -9340, -8828, -8316, -7932, -7676, -7420, -7164, -6908, -6652, -6396, -6140, -5884, -5628, -5372, -5116, -4860, -4604, -4348, -4092, -3900, -3772, -3644, -3516, -3388, -3260, -3132, -3004, -2876, -2748, -2620, -2492, -2364, -2236, -2108, -1980, -1884, -1820, -1756, -1692, -1628, -1564, -1500, -1436, -1372, -1308, -1244, -1180, -1116, -1052, -988, -924, -876, -844, -812, -780, -748, -716, -684, -652, -620, -588, -556, -524, -492, -460, -428, -396, -372, -356, -340, -324, -308, -292, -276, -260, -244, -228, -212, -196, -180, -164, -148, -132, -120, -112, -104, -96, -88, -80, -72, -64, -56, -48, -40, -32, -24, -16, -8, 0, 32124, 31100, 30076, 29052, 28028, 27004, 25980, 24956, 23932, 22908, 21884, 20860, 19836, 18812, 17788, 16764, 15996, 15484, 14972, 14460, 13948, 13436, 12924, 12412, 11900, 11388, 10876, 10364, 9852, 9340, 8828, 8316, 7932, 7676, 7420, 7164, 6908, 6652, 6396, 6140, 5884, 5628, 5372, 5116, 4860, 4604, 4348, 4092, 3900, 3772, 3644, 3516, 3388, 3260, 3132, 3004, 2876, 2748, 2620, 2492, 2364, 2236, 2108, 1980, 1884, 1820, 1756, 1692, 1628, 1564, 1500, 1436, 1372, 1308, 1244, 1180, 1116, 1052, 988, 924, 876, 844, 812, 780, 748, 716, 684, 652, 620, 588, 556, 524, 492, 460, 428, 396, 372, 356, 340, 324, 308, 292, 276, 260, 244, 228, 212, 196, 180, 164, 148, 132, 120, 112, 104, 96, 88, 80, 72, 64, 56, 48, 40, 32, 24, 16, 8, 0 };
 
 AudioQueue audioQueue __DMA;      // to place it in the RAM section on Horus, to have file buffers in RAM for DMA access
 AudioBuffer audioBuffers[AUDIO_BUFFER_COUNT] __DMA;
@@ -516,8 +512,6 @@ AudioQueue::AudioQueue()
 }
 
 #define CODEC_ID_PCM_S16LE  1
-#define CODEC_ID_PCM_ALAW   6
-#define CODEC_ID_PCM_MULAW  7
 
 #if !defined(SIMU)
 void audioTask(void * pdata)
@@ -532,16 +526,8 @@ void audioTask(void * pdata)
   // The audio amp needs ~2s to start
   RTOS_WAIT_MS(1000); // 1s
 #elif defined(PCBNV14)
-  while(!isAudioReady())
-  {
-    audioChipReset();
-    RTOS_WAIT_MS(1000);
-  }
+  audioOn();
 #endif
-
-  if (!globalData.unexpectedShutdown) {
-    AUDIO_HELLO();
-  }
 
   while (true) {
     DEBUG_TIMER_SAMPLE(debugTimerAudioIterval);
@@ -629,20 +615,6 @@ int WavContext::mixBuffer(AudioBuffer *buffer, int volume, unsigned int fade)
         for (uint32_t i=0; i<read; i++) {
           for (uint8_t j=0; j<state.resampleRatio; j++) {
             mixSample(samples++, ((int16_t *)wavBuffer)[i], fade+2-volume);
-          }
-        }
-      }
-      else if (state.codec == CODEC_ID_PCM_ALAW) {
-        for (uint32_t i=0; i<read; i++) {
-          for (uint8_t j=0; j<state.resampleRatio; j++) {
-            mixSample(samples++, alawTable[wavBuffer[i]], fade+2-volume);
-          }
-        }
-      }
-      else if (state.codec == CODEC_ID_PCM_MULAW) {
-        for (uint32_t i=0; i<read; i++) {
-          for (uint8_t j=0; j<state.resampleRatio; j++) {
-            mixSample(samples++, ulawTable[wavBuffer[i]], fade+2-volume);
           }
         }
       }
@@ -1024,32 +996,36 @@ void audioTrimPress(int value)
 void audioTimerCountdown(uint8_t timer, int value)
 {
   if (g_model.timers[timer].countdownBeep == COUNTDOWN_VOICE) {
+    int announceValue = value;
+    if (g_model.timers[timer].showElapsed) {
+      announceValue = g_model.timers[timer].start - value;
+    }
     if (value >= 0 && value <= TIMER_COUNTDOWN_START(timer)) {
-      playNumber(value, 0, 0, 0);
+      if (announceValue > 60 && !(announceValue % 2) && (announceValue % 30) &&
+          (announceValue % 30))
+        playNumber(announceValue / 60, 0, 0, 0);
+      if (announceValue < 60 ||
+          (announceValue > 60 && !(announceValue % 2) && (announceValue % 60)))
+        playNumber(announceValue % 60, 0, 0, 0);
+    } else if ((!(announceValue % 30) || !(announceValue % 20)) && value < 31) {
+      playDuration(announceValue, 0, 0);
     }
-    else if (value == 30 || value == 20) {
-      playDuration(value, 0, 0);
-    }
-  }
-  else if (g_model.timers[timer].countdownBeep == COUNTDOWN_BEEPS) {
+  } else if (g_model.timers[timer].countdownBeep == COUNTDOWN_BEEPS) {
     if (value == 0) {
       audioQueue.playTone(BEEP_DEFAULT_FREQ + 150, 300, 20, PLAY_NOW);
-    }
-    else if (value > 0 && value <= TIMER_COUNTDOWN_START(timer)) {
+    } else if (value > 0 && value <= TIMER_COUNTDOWN_START(timer)) {
       audioQueue.playTone(BEEP_DEFAULT_FREQ + 150, 100, 20, PLAY_NOW);
-    }
-    else if (value == 30) {
+    } else if (value == 30) {
       audioQueue.playTone(BEEP_DEFAULT_FREQ + 150, 120, 20, PLAY_REPEAT(2));
-    }
-    else if (value == 20) {
+    } else if (value == 20) {
       audioQueue.playTone(BEEP_DEFAULT_FREQ + 150, 120, 20, PLAY_REPEAT(1));
-    }
-    else if (value == 10) {
+    } else if (value == 10) {
       audioQueue.playTone(BEEP_DEFAULT_FREQ + 150, 120, 20, PLAY_NOW);
     }
   }
 #if defined(HAPTIC)
-  else if (g_model.timers[timer].countdownBeep == COUNTDOWN_HAPTIC) {
+  if ( (g_model.timers[timer].countdownBeep == COUNTDOWN_HAPTIC) ||
+       (g_model.timers[timer].extraHaptic) ) {
     if (value == 0) {
       haptic.play(15, 3, PLAY_NOW);
     }
@@ -1098,10 +1074,6 @@ void audioEvent(unsigned int index)
         audioQueue.playTone(2250, 80, 20, PLAY_REPEAT(2));
         break;
       case AU_TX_BATTERY_LOW:
-#if defined(PCBSKY9X)
-      case AU_TX_MAH_HIGH:
-      case AU_TX_TEMP_HIGH:
-#endif
         audioQueue.playTone(1950, 160, 20, PLAY_REPEAT(2), 1);
         audioQueue.playTone(2550, 160, 20, PLAY_REPEAT(2), -1);
         break;
@@ -1138,6 +1110,12 @@ void audioEvent(unsigned int index)
 #if defined(PCBX9E)
       case AU_POT3_MIDDLE:
       case AU_POT4_MIDDLE:
+#endif
+#if defined(PCBX10)
+      case AU_POT4_MIDDLE:
+      case AU_POT5_MIDDLE:
+      case AU_POT6_MIDDLE:
+      case AU_POT7_MIDDLE:
 #endif
 #if defined(PCBFRSKY)
       case AU_SLIDER1_MIDDLE:
@@ -1270,11 +1248,6 @@ void pushPrompt(uint16_t prompt, uint8_t id)
   }
   audioQueue.playFile(filename, 0, id);
 #endif
-}
-
-void onKeyPress()
-{
-  audioKeyPress();
 }
 
 void onKeyError()

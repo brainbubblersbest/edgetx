@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -35,12 +36,9 @@ void setDefaultInputs()
     expo->chn = i;
     expo->weight = 100;
     expo->mode = 3; // TODO constant
-    for (int c = 0; c < 3; c++) {
-      g_model.inputNames[i][c] = STR_VSRCRAW[2 + 4 * stick_index + c];
-    }
-#if LEN_INPUT_NAME > 3
-    g_model.inputNames[i][3] = '\0';
-#endif
+    strncpy(g_model.inputNames[i],
+            STR_VSRCRAW[stick_index] + sizeof(STR_CHAR_STICK) - 1,
+            LEN_INPUT_NAME);
   }
   storageDirty(EE_MODEL);
 }
@@ -77,6 +75,15 @@ void setDefaultGVars()
 #endif
 }
 
+void setDefaultRSSIValues()
+{
+  // Set to legacy FrSky values until
+  // a better solution is found (module specific?)
+  //
+  g_model.rfAlarms.warning = 45;
+  g_model.rfAlarms.critical = 42;
+}
+
 void setVendorSpecificModelDefaults(uint8_t id)
 {
 #if defined(FRSKY_RELEASE)
@@ -110,11 +117,19 @@ void applyDefaultTemplate()
   setDefaultInputs();
   setDefaultMixes();
   setDefaultGVars();
+  setDefaultRSSIValues();
 
   setDefaultModelRegistrationID();
 
+#if defined(FUNCTION_SWITCHES)
+  g_model.functionSwitchConfig = DEFAULT_FS_CONFIG;
+  g_model.functionSwitchGroup = DEFAULT_FS_GROUPS;
+  g_model.functionSwitchStartConfig = DEFAULT_FS_STARTUP_CONFIG;
+  g_model.functionSwitchLogicalState = 0;
+#endif
+
 #if defined(COLORLCD)
-  //TODO: not sure yet we need it here
+
   loadDefaultLayout();
 
   // enable switch warnings
@@ -134,7 +149,11 @@ void setModelDefaults(uint8_t id)
   
   setVendorSpecificModelDefaults(id);
 
-  strAppendUnsigned(strAppend(g_model.header.name, STR_MODEL), id + 1, 2);
+#if !defined(STORAGE_MODELSLIST)
+  // EEPROM model indexes starting with 0
+  id++;
+#endif
+  strAppendUnsigned(strAppend(g_model.header.name, STR_MODEL), id, 2);
 
 #if defined(LUA) && defined(PCBTARANIS) // Horus uses menuModelWizard() for wizard
   if (isFileAvailable(WIZARD_PATH "/" WIZARD_NAME)) {

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,43 +22,13 @@
 #include "layout.h"
 #include "layout_factory_impl.h"
 
-const uint8_t LBM_LAYOUT_2x2[] = {
-#include "mask_layout2x2.lbm"
+static uint8_t zmap[] = {
+    LAYOUT_MAP_0, LAYOUT_MAP_0, LAYOUT_MAP_HALF, LAYOUT_MAP_HALF,
+    LAYOUT_MAP_0, LAYOUT_MAP_HALF, LAYOUT_MAP_HALF, LAYOUT_MAP_HALF,
+    LAYOUT_MAP_HALF, LAYOUT_MAP_0, LAYOUT_MAP_HALF, LAYOUT_MAP_HALF,
+    LAYOUT_MAP_HALF, LAYOUT_MAP_HALF, LAYOUT_MAP_HALF, LAYOUT_MAP_HALF,
 };
 
-const ZoneOption OPTIONS_LAYOUT_2x2[] = {
-  LAYOUT_COMMON_OPTIONS,
-  LAYOUT_OPTIONS_END
-};
-
-class Layout2x2: public Layout
-{
-  public:
-    Layout2x2(const LayoutFactory * factory, Layout::PersistentData * persistentData):
-      Layout(factory, persistentData)
-    {
-    }
-
-    unsigned int getZonesCount() const override
-    {
-      return 4;
-    }
-
-    rect_t getZone(unsigned int index) const override
-    {
-      rect_t zone = getMainZone();
-
-      zone.w /= 2;
-      zone.h /= 2;
-
-      if (index == 1 || index == 3)
-        zone.y += zone.h;
-
-      if ((!isMirrored() && index > 1) || (isMirrored() && index < 2))
-        zone.x += zone.w;
-
-      return zone;
-    }
-};
-
-BaseLayoutFactory<Layout2x2> layout2x2("Layout2x2", "2 x 2", LBM_LAYOUT_2x2, OPTIONS_LAYOUT_2x2);
+BaseLayoutFactory<Layout> layout2x2("Layout2x2", "2 x 2",
+                                    defaultZoneOptions,
+                                    4, zmap);

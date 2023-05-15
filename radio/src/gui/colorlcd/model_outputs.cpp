@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -19,190 +20,312 @@
  */
 
 #include "model_outputs.h"
+#include "output_edit.h"
+#include "list_line_button.h"
+#include "channel_bar.h"
+
 #include "opentx.h"
-#include "libopenui.h"
 
-#define SET_DIRTY()     storageDirty(EE_MODEL)
+#define SET_DIRTY() storageDirty(EE_MODEL)
 
-class OutputEditWindow : public Page {
-  public:
-    explicit OutputEditWindow(uint8_t channel) :
-      Page(ICON_MODEL_OUTPUTS),
-      channel(channel)
-    {
-      buildBody(&body);
-      buildHeader(&header);
-    }
+static const uint8_t _mask_textline_curve[] = {
+#include "mask_textline_curve.lbm"
+};
+STATIC_LZ4_BITMAP(mask_textline_curve);
 
-  protected:
-    uint8_t channel;
+#define CH_BAR_WIDTH  92
+#define CH_BAR_HEIGHT 14
 
-    void buildHeader(Window * window)
-    {
-      new StaticText(window,
-                     {PAGE_TITLE_LEFT, PAGE_TITLE_TOP, LCD_W - PAGE_TITLE_LEFT,
-                      PAGE_LINE_HEIGHT},
-                     STR_MENULIMITS, 0, FOCUS_COLOR);
-      new StaticText(window,
-                     {PAGE_TITLE_LEFT, PAGE_TITLE_TOP + PAGE_LINE_HEIGHT,
-                      LCD_W - PAGE_TITLE_LEFT, PAGE_LINE_HEIGHT},
-                     getSourceString(MIXSRC_CH1 + channel), 0, FOCUS_COLOR);
-    }
+#if LCD_W > LCD_H // Landscape
 
-    void buildBody(FormWindow * window)
-    {
-      FormGridLayout grid;
-      grid.spacer(8);
+#define CH_LINE_H 35
 
-      int limit = (g_model.extendedLimits ? LIMIT_EXT_MAX : 1000);
+#define CH_BAR_COL     7
+#define CH_BAR_COLSPAN 1
 
-      LimitData * output = limitAddress(channel);
-
-      // Name
-      new StaticText(window, grid.getLabelSlot(), STR_NAME);
-      new ModelTextEdit(window, grid.getFieldSlot(), output->name, sizeof(output->name));
-      grid.nextLine();
-
-      // Offset
-      new StaticText(window, grid.getLabelSlot(), TR_LIMITS_HEADERS_SUBTRIM);
-      new NumberEdit(window, grid.getFieldSlot(), -1000, +1000, GET_SET_DEFAULT(output->offset), 0, PREC1);
-      grid.nextLine();
-
-      // Min
-      new StaticText(window, grid.getLabelSlot(), TR_MIN);
-      new NumberEdit(window, grid.getFieldSlot(), -limit, 0,
-                     GET_VALUE(output->min - 1000),
-                     SET_VALUE(output->min, newValue + 1000),
-                     0, PREC1);
-      grid.nextLine();
-
-      // Max
-      new StaticText(window, grid.getLabelSlot(), TR_MAX);
-      new NumberEdit(window, grid.getFieldSlot(), 0, +limit,
-                     GET_VALUE(output->max + 1000),
-                     SET_VALUE(output->max, newValue - 1000),
-                     0, PREC1);
-      grid.nextLine();
-
-      // Direction
-      new StaticText(window, grid.getLabelSlot(), STR_INVERTED);
-      new CheckBox(window, grid.getFieldSlot(), GET_SET_DEFAULT(output->revert));
-      grid.nextLine();
-
-      // Curve
-      new StaticText(window, grid.getLabelSlot(), TR_CURVE);
-      auto edit = new NumberEdit(window, grid.getFieldSlot(), -MAX_CURVES, +MAX_CURVES, GET_SET_DEFAULT(output->curve));
-      edit->setDisplayHandler([](BitmapBuffer * dc, LcdFlags flags, int32_t value) {
-        dc->drawText(2, 2, getCurveString(value));
-      });
-      grid.nextLine();
-
-      // PPM center
-      new StaticText(window, grid.getLabelSlot(), TR_LIMITS_HEADERS_PPMCENTER);
-      new NumberEdit(window, grid.getFieldSlot(), PPM_CENTER - PPM_CENTER_MAX, PPM_CENTER + PPM_CENTER_MAX,
-                     GET_VALUE(output->ppmCenter + PPM_CENTER),
-                     SET_VALUE(output->ppmCenter, newValue - PPM_CENTER));
-      grid.nextLine();
-
-      // Subtrims mode
-      new StaticText(window, grid.getLabelSlot(), TR_LIMITS_HEADERS_SUBTRIMMODE);
-      new Choice(window, grid.getFieldSlot(), STR_SUBTRIMMODES, 0, 1, GET_SET_DEFAULT(output->symetrical));
-      grid.nextLine();
-
-      window->setInnerHeight(grid.getWindowHeight());
-    }
+static const lv_coord_t col_dsc[] = {
+  80, 50, 54, 44, 60, 18, 18, LV_GRID_FR(1),
+  LV_GRID_TEMPLATE_LAST
 };
 
-class OutputLineButton : public Button {
-  public:
-    OutputLineButton(FormGroup * parent, const rect_t &rect, LimitData * output) :
-      Button(parent, rect),
-      output(output)
-    {
-      if (output->revert || output->curve || output->name[0]) {
-        setHeight(height() + PAGE_LINE_HEIGHT + FIELD_PADDING_TOP);
-      }
-    }
+static const lv_coord_t row_dsc[] = {LV_GRID_CONTENT,
+                                     LV_GRID_TEMPLATE_LAST};
+#else // Portrait
 
-    void paint(BitmapBuffer * dc) override
-    {
-      LcdFlags textColor = DEFAULT_COLOR;
-      LcdFlags bgColor   = FIELD_BGCOLOR;
+#define CH_LINE_H 50
 
-      dc->drawSolidFilledRect(0, 0, width(), height(), bgColor);
+#define CH_BAR_COL     3
+#define CH_BAR_COLSPAN 3
 
-      // first line
-      dc->drawNumber(FIELD_PADDING_LEFT, FIELD_PADDING_TOP, output->min - 1000,
-                     PREC1 | textColor);
-      dc->drawNumber(68, FIELD_PADDING_TOP, output->max + 1000, PREC1 | textColor);
-      dc->drawNumber(132, FIELD_PADDING_TOP, output->offset, PREC1 | textColor);
-      dc->drawNumber(226, FIELD_PADDING_TOP, PPM_CENTER + output->ppmCenter,
-                     RIGHT | textColor);
-      dc->drawText(228, FIELD_PADDING_TOP, output->symetrical ? "=" : "\210",
-                   textColor);
+static const lv_coord_t col_dsc[] = {
+  80, 50, 60, 18, 18, LV_GRID_FR(1),
+  LV_GRID_TEMPLATE_LAST
+};
 
-      // second line
-      if (output->revert) {
-        dc->drawTextAtIndex(4, PAGE_LINE_HEIGHT + FIELD_PADDING_TOP, STR_MMMINV,
-                            output->revert, textColor);
-      }
-      if (output->curve) {
-        dc->drawMask(68, PAGE_LINE_HEIGHT + FIELD_PADDING_TOP,
-                     mixerSetupCurveIcon, textColor);
-        dc->drawText(88, PAGE_LINE_HEIGHT + FIELD_PADDING_TOP,
-                     getCurveString(output->curve), textColor);
-      }
-      if (output->name[0]) {
-        dc->drawMask(146, PAGE_LINE_HEIGHT + FIELD_PADDING_TOP,
-                     mixerSetupLabelIcon, textColor);
-        dc->drawSizedText(166, PAGE_LINE_HEIGHT + FIELD_PADDING_TOP,
-                          output->name, sizeof(output->name), textColor);
-      }
+static const lv_coord_t row_dsc[] = {LV_GRID_CONTENT,
+                                     LV_GRID_CONTENT,
+                                     LV_GRID_TEMPLATE_LAST};
+#endif
 
-      // bounding rect
-      if (hasFocus())
-        dc->drawSolidRect(0, 0, rect.w, rect.h, 2, FOCUS_BGCOLOR);
+class OutputLineButton : public ListLineButton
+{
+  bool init = false;
+
+  lv_obj_t* source = nullptr;
+  lv_obj_t* revert = nullptr;
+  lv_obj_t* min = nullptr;
+  lv_obj_t* max = nullptr;
+  lv_obj_t* offset = nullptr;
+  lv_obj_t* center = nullptr;
+  lv_obj_t* curve = nullptr;
+  OutputChannelBar* bar = nullptr;
+
+  static lv_img_dsc_t curveIcon;
+  static void loadCurveIcon();
+
+  static void on_draw(lv_event_t * e)
+  {
+    lv_obj_t* target = lv_event_get_target(e);
+    auto line = (OutputLineButton*)lv_obj_get_user_data(target);
+    if (line) {
+      if (!line->init)
+        line->delayed_init(e);
       else
-        dc->drawSolidRect(0, 0, rect.w, rect.h, 1, FIELD_FRAME_COLOR);
+        line->refresh();
+    }
+  }
+  
+  void delayed_init(lv_event_t* e)
+  {
+    uint8_t col = 1, row = 0;
+
+    min = lv_label_create(lvobj);
+    lv_obj_set_style_text_align(min, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_style_text_font(min, getFont(FONT(BOLD)), LV_STATE_USER_1);
+    lv_obj_set_grid_cell(min, LV_GRID_ALIGN_END, col++, 1, LV_GRID_ALIGN_START,
+                         row, 1);
+
+    max = lv_label_create(lvobj);
+    lv_obj_set_style_text_align(max, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_style_text_font(max, getFont(FONT(BOLD)), LV_STATE_USER_1);
+    lv_obj_set_grid_cell(max, LV_GRID_ALIGN_END, col++, 1, LV_GRID_ALIGN_START,
+                         row, 1);
+
+#if LCD_H > LCD_W
+    col = 1;
+    row++;
+#endif
+
+    offset = lv_label_create(lvobj);
+    lv_obj_set_grid_cell(offset, LV_GRID_ALIGN_END, col++, 1,
+                         LV_GRID_ALIGN_START, row, 1);
+
+    center = lv_label_create(lvobj);
+    lv_obj_set_style_pad_left(center, 8, 0);
+    lv_obj_set_grid_cell(center, LV_GRID_ALIGN_START, col++, 1,
+                         LV_GRID_ALIGN_START, row, 1);
+
+    revert = lv_img_create(lvobj);
+    lv_img_set_src(revert, LV_SYMBOL_SHUFFLE);
+    lv_obj_set_grid_cell(revert, LV_GRID_ALIGN_START, col++, 1,
+                         LV_GRID_ALIGN_START, row, 1);
+
+    curve = lv_img_create(lvobj);
+    loadCurveIcon();
+    lv_img_set_src(curve, &curveIcon);
+    lv_obj_set_style_img_recolor(curve, makeLvColor(COLOR_THEME_SECONDARY1), 0);
+    lv_obj_set_style_img_recolor_opa(curve, LV_OPA_COVER, 0);
+    lv_obj_set_grid_cell(curve, LV_GRID_ALIGN_START, col++, 1,
+                         LV_GRID_ALIGN_START, row, 1);
+
+    bar = new OutputChannelBar(this, rect_t{}, index);
+    bar->setWidth(CH_BAR_WIDTH);
+    bar->setHeight(CH_BAR_HEIGHT);
+    bar->setDrawLimits(false);
+
+    lv_obj_set_grid_cell(bar->getLvObj(), LV_GRID_ALIGN_END, CH_BAR_COL,
+                         CH_BAR_COLSPAN, LV_GRID_ALIGN_CENTER, 0, 1);
+
+    init = true;
+    refresh();
+    lv_obj_update_layout(lvobj);
+
+    if(e) {
+      auto param = lv_event_get_param(e);
+      lv_event_send(lvobj, LV_EVENT_DRAW_MAIN, param);
+    }
+  }
+  
+ public:
+  OutputLineButton(Window* parent, uint8_t channel) :
+      ListLineButton(parent, channel)
+  {
+    setHeight(CH_LINE_H);
+    lv_obj_set_layout(lvobj, LV_LAYOUT_GRID);
+    lv_obj_set_grid_dsc_array(lvobj, col_dsc, row_dsc);
+
+    source = lv_label_create(lvobj);
+
+#if LCD_H > LCD_W
+    lv_obj_set_grid_cell(source, LV_GRID_ALIGN_START, 0, 1,
+                         LV_GRID_ALIGN_CENTER, 0, 2);
+
+#else
+    lv_obj_set_style_text_font(source, getFont(FONT(XS)), 0);
+    lv_obj_set_grid_cell(source, LV_GRID_ALIGN_START, 0, 1,
+                         LV_GRID_ALIGN_CENTER, 0, 1);
+#endif
+
+    lv_obj_add_event_cb(lvobj, OutputLineButton::on_draw, LV_EVENT_DRAW_MAIN_BEGIN, nullptr);
+  }
+
+  void refresh() override
+  {
+    if (!init) return;
+    
+    const LimitData* output = limitAddress(index);
+    if(g_model.limitData[index].name[0] != '\0')
+    {
+#if LCD_W > LCD_H
+      lv_obj_set_style_text_line_space(source, -3, LV_PART_MAIN);
+      lv_obj_set_style_pad_top(source, -7, 0);
+      lv_obj_set_style_pad_bottom(source, -7, 0);
+#endif
+      lv_label_set_text_fmt(source, "%s\n" TR_CH "%u", getSourceString(MIXSRC_CH1 + index), index + 1);
+    } else {
+      lv_obj_set_style_text_font(source, getFont(FONT(STD)), 0);
+      lv_label_set_text(source, getSourceString(MIXSRC_CH1 + index));
+    }
+    if (output->revert) {
+      lv_obj_clear_flag(revert, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(revert, LV_OBJ_FLAG_HIDDEN);
     }
 
-  protected:
-    LimitData * output;
+    char s[32];
+    getValueOrGVarString(s, sizeof(s), output->min, -GV_RANGELARGE, 0, PREC1,
+                         nullptr, -LIMITS_MIN_MAX_OFFSET);
+    lv_label_set_text(min, s);
+
+    getValueOrGVarString(s, sizeof(s), output->max, 0, GV_RANGELARGE, PREC1,
+                         nullptr, +LIMITS_MIN_MAX_OFFSET);
+    lv_label_set_text(max, s);
+
+    getValueOrGVarString(s, sizeof(s), output->offset, -LIMIT_STD_MAX,
+                         +LIMIT_STD_MAX, PREC1);
+    lv_label_set_text(offset, s);
+
+    lv_label_set_text_fmt(center, "%d%s", PPM_CENTER + output->ppmCenter,
+                          output->symetrical ? " =" : STR_CHAR_DELTA);
+
+    if (output->curve) {
+      lv_obj_clear_flag(curve, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(curve, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+
+ protected:
+  int value = 0;
+
+  bool isActive() const override { return false; }
+
+  void checkEvents() override
+  {
+    Window::checkEvents();
+    if (!init) return;
+
+    int newValue = channelOutputs[index];
+    if (value != newValue) {
+      value = newValue;
+
+      const LimitData* output = limitAddress(index);
+      int chanZero = output->ppmCenter;
+
+      if (value < chanZero - 5) {
+        lv_obj_add_state(min, LV_STATE_USER_1);
+      } else {
+        lv_obj_clear_state(min, LV_STATE_USER_1);
+      }
+
+      if (value > chanZero + 5) {
+        lv_obj_add_state(max, LV_STATE_USER_1);
+      } else {
+        lv_obj_clear_state(max, LV_STATE_USER_1);
+      }
+    }
+  }
 };
+
+lv_img_dsc_t OutputLineButton::curveIcon = {
+    .header =
+        {
+            .cf = LV_IMG_CF_ALPHA_8BIT,
+            .always_zero = 0,
+            .reserved = 0,
+            .w = 0,
+            .h = 0,
+        },
+    .data_size = 0,
+    .data = nullptr,
+};
+
+void OutputLineButton::loadCurveIcon()
+{
+  if (curveIcon.data) return;
+  
+  auto mask = (const uint8_t*)mask_textline_curve;
+  auto mask_hdr = (const uint16_t*)mask;
+  mask += 4;
+
+  auto w = mask_hdr[0];
+  auto h = mask_hdr[1];
+  curveIcon.header.w = w;
+  curveIcon.header.h = h;
+  curveIcon.data_size = w * h;
+  curveIcon.data = mask;
+}
 
 ModelOutputsPage::ModelOutputsPage() :
   PageTab(STR_MENULIMITS, ICON_MODEL_OUTPUTS)
 {
 }
 
-void ModelOutputsPage::rebuild(FormWindow * window, int8_t focusChannel)
+void ModelOutputsPage::build(FormWindow *window)
 {
-  coord_t scrollPosition = window->getScrollPositionY();
-  window->clear();
-  build(window, focusChannel);
-  window->setScrollPositionY(scrollPosition);
-}
+  window->setFlexLayout(LV_FLEX_FLOW_COLUMN, 3);
 
-void ModelOutputsPage::build(FormWindow * window, int8_t focusChannel)
-{
-  FormGridLayout grid;
-  grid.spacer(PAGE_PADDING);
-  grid.setLabelWidth(66);
+  lv_obj_set_style_flex_cross_place(window->getLvObj(), LV_FLEX_ALIGN_START, 0);
+
+  auto box = new FormWindow(window, rect_t{});
+  box->setFlexLayout(LV_FLEX_FLOW_ROW_WRAP, lv_dpx(8));
+  box->padRow(4);
+  lv_obj_set_style_flex_cross_place(box->getLvObj(), LV_FLEX_ALIGN_CENTER, 0);
+
+  new TextButton(box, rect_t{}, STR_ADD_ALL_TRIMS_TO_SUBTRIMS, [=]() {
+    moveTrimsToOffsets();
+    window->invalidate();
+    return 0;
+  });
+
+  auto box2 = new FormWindow(box, rect_t{});
+  box2->setFlexLayout(LV_FLEX_FLOW_ROW, lv_dpx(8));
+  box2->setWidth(LV_SIZE_CONTENT);
+  lv_obj_set_style_flex_cross_place(box2->getLvObj(), LV_FLEX_ALIGN_CENTER, 0);
+
+  new StaticText(box2, rect_t{}, STR_ELIMITS, 0, COLOR_THEME_PRIMARY1);
+  auto cb = new CheckBox(box2, rect_t{}, GET_SET_DEFAULT(g_model.extendedLimits));
 
   for (uint8_t ch = 0; ch < MAX_OUTPUT_CHANNELS; ch++) {
-    LimitData * output = limitAddress(ch);
-
-    // Channel label
-    auto txt = new StaticText(window, grid.getLabelSlot(),
-                              getSourceString(MIXSRC_CH1 + ch),
-                              BUTTON_BACKGROUND, CENTERED);
 
     // Channel settings
-    Button * button = new OutputLineButton(window, grid.getFieldSlot(), output);
-    button->setPressHandler([=]() -> uint8_t {
-      Menu * menu = new Menu(window);
+    auto btn = new OutputLineButton(window, ch);
+
+    LimitData* output = limitAddress(ch);
+    btn->setPressHandler([=]() -> uint8_t {
+      Menu *menu = new Menu(window);
       menu->addLine(STR_EDIT, [=]() {
-        editOutput(window, ch);
+          editOutput(ch, btn);
       });
       menu->addLine(STR_RESET, [=]() {
         output->min = 0;
@@ -213,52 +336,27 @@ void ModelOutputsPage::build(FormWindow * window, int8_t focusChannel)
         output->curve = 0;
         output->symetrical = 0;
         storageDirty(EE_MODEL);
-        rebuild(window, ch);
+        btn->refresh();
       });
       menu->addLine(STR_COPY_STICKS_TO_OFS, [=]() {
         copySticksToOffset(ch);
         storageDirty(EE_MODEL);
-        button->invalidate();
+        btn->refresh();
       });
       menu->addLine(STR_COPY_TRIMS_TO_OFS, [=]() {
         copyTrimsToOffset(ch);
         storageDirty(EE_MODEL);
-        button->invalidate();
+        btn->refresh();
       });
       return 0;
     });
-    button->setFocusHandler([=](bool focus) {
-      if (focus) {
-        txt->setBackgroundColor(FOCUS_BGCOLOR);
-        txt->setTextFlags(FOCUS_COLOR | CENTERED);
-      } else {
-        txt->setBackgroundColor(FIELD_FRAME_COLOR);
-        txt->setTextFlags(CENTERED);
-      }
-      txt->invalidate();
-    });
-
-    if (focusChannel == ch) {
-      button->setFocus(SET_FOCUS_DEFAULT);
-      txt->setBackgroundColor(FOCUS_BGCOLOR);
-      txt->setTextFlags(FOCUS_COLOR | CENTERED);
-      txt->invalidate();
-    }
-
-    txt->setHeight(button->height());
-    grid.spacer(button->height() + 5);
   }
-
-  grid.nextLine();
-
-  window->setInnerHeight(grid.getWindowHeight());
 }
 
-void ModelOutputsPage::editOutput(FormWindow * window, uint8_t channel)
+void ModelOutputsPage::editOutput(uint8_t channel, OutputLineButton* btn)
 {
-  Window::clearFocus();
-  Window * editWindow = new OutputEditWindow(channel);
-  editWindow->setCloseHandler([=]() {
-    rebuild(window, channel);
-  });
+  auto btn_obj = btn->getLvObj();
+  auto edit = new OutputEditWindow(channel);
+  edit->setCloseHandler(
+      [=]() { lv_event_send(btn_obj, LV_EVENT_VALUE_CHANGED, nullptr); });
 }

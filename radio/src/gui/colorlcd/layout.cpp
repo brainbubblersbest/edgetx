@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -50,11 +51,11 @@ const LayoutFactory * getLayoutFactory(const char * name)
 // Loads a layout, but does not attach it to any window
 //
 WidgetsContainer *
-loadLayout(const char * name, LayoutPersistentData * persistentData)
+loadLayout(Window* parent, const char * name, LayoutPersistentData * persistentData)
 {
   const LayoutFactory * factory = getLayoutFactory(name);
   if (factory) {
-    return factory->load(persistentData);
+    return factory->load(parent, persistentData);
   }
   return nullptr;
 }
@@ -82,7 +83,9 @@ void loadDefaultLayout()
   if (screen == nullptr && defaultLayout != nullptr) {
 
     strcpy(screenData.LayoutId, defaultLayout->getId());
-    screen = defaultLayout->create(&screenData.layoutData);
+
+    auto viewMain = ViewMain::instance();
+    screen = defaultLayout->create(viewMain, &screenData.layoutData);
     //
     // TODO:
     // -> attach a few default widgets
@@ -90,9 +93,8 @@ void loadDefaultLayout()
     //    - Timer
     //    - ???
     //
-    if (screen) {
-      screen->attach(ViewMain::instance());
-    }
+    if (!screen) return;
+    viewMain->addMainView(screen, 0);
   }
 }
 
@@ -107,7 +109,7 @@ void loadCustomScreens()
   while (i < MAX_CUSTOM_SCREENS) {
 
     auto& screen = customScreens[i];
-    screen = loadLayout(g_model.screenData[i].LayoutId,
+    screen = loadLayout(viewMain, g_model.screenData[i].LayoutId,
                         &g_model.screenData[i].layoutData);
 
     if (!screen) {
@@ -116,18 +118,25 @@ void loadCustomScreens()
     }
 
     // layout is ok, let's add it
-    screen->attach(viewMain);
-    viewMain->setMainViewsCount(i + 1);
-    screen->setLeft(viewMain->getMainViewLeftPos(i));
+    viewMain->addMainView(screen, i);
     i++;
   }
 
   auto topbar = viewMain->getTopbar();
   topbar->load();
+
+  if (g_model.view < viewMain->getMainViewsCount()) {
+    viewMain->setCurrentMainView(g_model.view);
+  } else if (viewMain->getMainViewsCount() > 0) {
+    g_model.view = viewMain->getMainViewsCount() - 1;
+    storageDirty(EE_MODEL);
+    viewMain->setCurrentMainView(g_model.view);
+  }
+  // else {
+  //   TODO: load some default view?
+  // }
   
-  viewMain->setCurrentMainView(0);
   viewMain->updateTopbarVisibility();
-  viewMain->setFocus();
 }
 
 //
@@ -142,23 +151,25 @@ createCustomScreen(const LayoutFactory* factory, unsigned customScreenIndex)
   if (!factory || (customScreenIndex >= MAX_CUSTOM_SCREENS))
     return nullptr;
 
-  if (customScreens[customScreenIndex]) {
-    customScreens[customScreenIndex]->deleteLater(true, false);
-    delete customScreens[customScreenIndex];
+  auto& screen = customScreens[customScreenIndex];
+  auto& screenData = g_model.screenData[customScreenIndex];
+
+  if (screen != nullptr) {
+    screen->deleteLater(true, false);
+    delete screen;
   }
 
-  auto screen = factory->create(&g_model.screenData[customScreenIndex].layoutData);
-  customScreens[customScreenIndex] = screen;
+  auto viewMain = ViewMain::instance();
+  screen = factory->create(viewMain, &screenData.layoutData);
 
-  if (screen) {
-    auto dst = g_model.screenData[customScreenIndex].LayoutId;
-    auto src = factory->getId();
-    strncpy(dst, src, sizeof(CustomScreenData::LayoutId));
-
-    return screen;
-  }
-
-  return nullptr;
+  if (!screen) return nullptr;
+  viewMain->addMainView(screen, customScreenIndex);
+  
+  auto dst = g_model.screenData[customScreenIndex].LayoutId;
+  auto src = factory->getId();
+  strncpy(dst, src, sizeof(CustomScreenData::LayoutId));
+  
+  return screen;
 }
 
 void disposeCustomScreen(unsigned idx)

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -62,9 +63,11 @@ const char * writeScreenshot()
     return error;
   }
 
+#if defined(RTCLOCK)
   char * tmp = strAppend(&filename[sizeof(SCREENSHOTS_PATH)-1], "/screen");
   tmp = strAppendDate(tmp, true);
   strcpy(tmp, BMP_EXT);
+#endif
 
   FRESULT result = f_open(&bmpFile, filename, FA_CREATE_ALWAYS | FA_WRITE);
   if (result != FR_OK) {
@@ -78,18 +81,34 @@ const char * writeScreenshot()
   }
 
 #if defined(COLORLCD)
-  for (int y = LCD_H - 1; y >= 0; y--) {
-    for (int x = 0; x < LCD_W; x++) {
-      lcdFront->reset();
-      auto pixel = *(lcdFront->getPixelPtr(x, y));
-      uint32_t dst = (0xFF << 24) + (GET_RED(pixel) << 16) + (GET_GREEN(pixel) << 8) + (GET_BLUE(pixel) << 0);
+  lv_img_dsc_t* snapshot = lv_snapshot_take(lv_scr_act(), LV_IMG_CF_TRUE_COLOR);
+  if (!snapshot) { f_close(&bmpFile); return nullptr; }
+
+  auto w = snapshot->header.w;
+  auto h = snapshot->header.h;
+
+  for (int y = h - 1; y >= 0; y--) {
+    for (uint32_t x = 0; x < w; x++) {
+
+      lv_color_t pixel = lv_img_buf_get_px_color(snapshot, x, y, {});
+
+      uint32_t dst = (0xFF << 24)
+          | (pixel.ch.red << 19)
+          | (pixel.ch.green << 10)
+          | (pixel.ch.blue << 3);
+
       if (f_write(&bmpFile, &dst, sizeof(dst), &written) != FR_OK || written != sizeof(dst)) {
+        lv_snapshot_free(snapshot);
         f_close(&bmpFile);
         return SDCARD_ERROR(result);
       }
     }
   }
-#else
+
+  lv_snapshot_free(snapshot);
+
+#else // stdlcd
+
   for (int y=LCD_H-1; y>=0; y-=1) {
     for (int x=0; x<8*((LCD_W+7)/8); x+=2) {
       pixel_t byte = getPixel(x+1, y) + (getPixel(x, y) << 4);

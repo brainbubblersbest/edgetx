@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,10 +19,17 @@
  * GNU General Public License for more details.
  */
 #include "opentx.h"
-#include "telemetry.h"
-#include "multi.h"
 
-constexpr int32_t MULTI_DESIRED_VERSION = (1 << 24) | (3 << 16) | (1 << 8)  | 69;
+#include "telemetry.h"
+#include "io/multi_protolist.h"
+#include "multi.h"
+#include "spektrum.h"
+#include "flysky_ibus.h"
+#include "hitec.h"
+#include "hott.h"
+#include "mlink.h"
+
+constexpr int32_t MULTI_DESIRED_VERSION = (1 << 24) | (3 << 16) | (3 << 8)  | 0;
 #define MULTI_CHAN_BITS 11
 
 extern uint8_t g_moduleIdx;
@@ -43,7 +51,8 @@ enum MultiPacketTypes : uint8_t
   MultiRxChannels,
   HottTelemetry,
   MLinkTelemetry,
-  ConfigTelemetry
+  ConfigTelemetry,
+  MultiProtoDef
 };
 
 enum MultiBufferState : uint8_t
@@ -100,10 +109,6 @@ static uint16_t& getMultiTelemetryLastRxTS(uint8_t module)
   return multiTelemetryLastRxTS[module];
 }
 
-// Use additional telemetry buffer
-uint8_t intTelemetryRxBuffer[TELEMETRY_RX_PACKET_SIZE];
-uint8_t intTelemetryRxBufferCount;
-
 #else // !INTERNAL_MODULE_MULTI
 
 static MultiModuleStatus multiModuleStatus;
@@ -144,19 +149,16 @@ uint16_t& getMultiTelemetryLastRxTS(uint8_t module)
 
 #endif // INTERNAL_MODULE_MULTI
 
+bool isMultiModeScanning(uint8_t module)
+{
+  return getModuleMode(module) == MODULE_MODE_GET_HARDWARE_INFO;
+}
 
 static MultiBufferState guessProtocol(uint8_t module)
 {
-  uint32_t moduleIdx = EXTERNAL_MODULE;
-#if defined(INTERNAL_MODULE_MULTI)
-  if (isModuleMultimodule(INTERNAL_MODULE)) {
-    moduleIdx = INTERNAL_MODULE;
-  }
-#endif
-
-  if (g_model.moduleData[moduleIdx].getMultiProtocol() == MODULE_SUBTYPE_MULTI_DSM2)
+  if (g_model.moduleData[module].multi.rfProtocol == MODULE_SUBTYPE_MULTI_DSM2)
     return SpektrumTelemetryFallback;
-  else if (g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_FS_AFHDS2A)
+  else if (g_model.moduleData[module].multi.rfProtocol == MODULE_SUBTYPE_MULTI_FS_AFHDS2A)
     return FlyskyTelemetryFallback;
   else
     return FrskyTelemetryFallback;
@@ -207,7 +209,6 @@ static void processMultiStatusPacket(const uint8_t * data, uint8_t module, uint8
   // At least two status packets without bind flag
   bool wasBinding = status.isBinding();
 
-  status.lastUpdate = get_tmr10ms();
   status.flags = data[0];
   status.major = data[1];
   status.minor = data[2];
@@ -219,8 +220,8 @@ static void processMultiStatusPacket(const uint8_t * data, uint8_t module, uint8
   else {
     status.ch_order = data[5];
     if (len >= 24) {
-      status.protocolNext = data[6];
-      status.protocolPrev = data[7];
+      status.protocolNext = data[6] - 1;
+      status.protocolPrev = data[7] - 1;
       memcpy(status.protocolName, &data[8], 7);
       status.protocolName[7] = 0;
       status.protocolSubNbr = data[15] & 0x0F;
@@ -240,6 +241,19 @@ static void processMultiStatusPacket(const uint8_t * data, uint8_t module, uint8
   
   if (wasBinding && !status.isBinding() && getMultiBindStatus(module) == MULTI_BIND_INITIATED)
     setMultiBindStatus(module, MULTI_BIND_FINISHED);
+
+  // Dirty RX protocol detection
+  size_t proto_len = strnlen(status.protocolName, 8);
+  if (proto_len >= 2 &&
+      status.protocolName[proto_len - 2] == 'R' &&
+      status.protocolName[proto_len - 1] == 'X') {
+    status.isRXProto = true;
+  } else {
+    status.isRXProto = false;
+  }
+
+  // update timestamp last to avoid race conditions
+  status.lastUpdate = get_tmr10ms();
 }
 
 static void processMultiSyncPacket(const uint8_t * data, uint8_t module)
@@ -251,7 +265,7 @@ static void processMultiSyncPacket(const uint8_t * data, uint8_t module)
 
   status.update(refreshRate, inputLag);
 #if defined(DEBUG)
-  serialPrint("MP ADJ: R %d, L %04d", refreshRate, inputLag);
+  dbgSerialPrint("MP ADJ: R %d, L %04d", refreshRate, inputLag);
 #endif
 }
 
@@ -317,24 +331,33 @@ static void processConfigPacket(const uint8_t * packet, uint8_t len)
 }
 #endif
 
+#if defined(MULTI_PROTOLIST)
+static void processMultiProtoDef(uint8_t module, const uint8_t * packet, uint8_t len)
+{
+  /*
+    data[0]     = protocol number, 0xFF is an invalid list entry
+                  (Option value too large) and nothing sent after
+    data[1..n]  = protocol name null terminated
+    data[n+1]   = flags
+                   flags>>4 Option text number to be displayed
+                            (check multi status for description)
+                   flags&0x01 failsafe supported
+                   flags&0x02 Channel Map Disabled supported
+    data[n+2]   = number of sub protocols
+    data[n+3]   = sub protocols text length, only sent if nbr_sub != 0
+    data[n+4..] = sub protocol names, only sent if nbr_sub != 0
+   */
+
+  MultiRfProtocols::instance(module)->scanReply(packet, len);
+}
+#endif
+
+ 
 static void processMultiTelemetryPaket(const uint8_t * packet, uint8_t module)
 {
   uint8_t type = packet[0];
   uint8_t len = packet[1];
   const uint8_t * data = packet + 2;
-
-#if defined(AUX_SERIAL)
-  if (g_eeGeneral.auxSerialMode == UART_MODE_TELEMETRY_MIRROR) {
-    for (uint8_t c = 0; c < len + 2; c++)
-      auxSerialPutc(packet[c]);
-  }
-#endif
-#if defined(AUX2_SERIAL)
-  if (g_eeGeneral.aux2SerialMode == UART_MODE_TELEMETRY_MIRROR) {
-    for (uint8_t c = 0; c < len + 2; c++)
-      aux2SerialPutc(packet[c]);
-  }
-#endif
 
   // Switch type
   switch (type) {
@@ -403,14 +426,25 @@ static void processMultiTelemetryPaket(const uint8_t * packet, uint8_t module)
 
     case FrSkyHubTelemetry:
       if (len >= 4)
-        frskyDProcessPacket(data);
+        frskyDProcessPacket(module, data, len);
       else
         TRACE("[MP] Received Frsky HUB telemetry len %d < 4", len);
       break;
 
     case FrSkySportTelemetry:
-      if (len >= 4)
-        sportProcessTelemetryPacket(data);
+      if (len >= 4) {
+        if (sportProcessTelemetryPacket(module, data, len) && len >= 8) {
+          uint8_t primId = data[1];
+          uint16_t dataId = *((uint16_t *)(data+2));
+          if (primId == DATA_FRAME && dataId == RSSI_ID) {
+            // fetch MPM special TX_RSSI & TX_LQI sensors
+            uint8_t physicalId = data[0] & 0x1F;
+            uint8_t instance = physicalId + (TELEMETRY_ENDPOINT_SPORT << 5);
+            sportProcessTelemetryPacket(TX_RSSI_ID, 0, instance, data[5] >> 1u, UNIT_DB);
+            sportProcessTelemetryPacket(TX_LQI_ID, 0, instance, data[7], UNIT_RAW);
+          }
+        }
+      }
       else
         TRACE("[MP] Received sport telemetry len %d < 4", len);
       break;
@@ -428,10 +462,13 @@ static void processMultiTelemetryPaket(const uint8_t * packet, uint8_t module)
 
 #if defined(LUA)
     case FrskySportPolling:
-      if (len >= 1 && outputTelemetryBuffer.destination == TELEMETRY_ENDPOINT_SPORT && data[0] == outputTelemetryBuffer.sport.physicalId) {
-        TRACE("MP Sending sport data out.");
-        sportSendBuffer(outputTelemetryBuffer.data, outputTelemetryBuffer.size);
-      }
+      // TODO
+      // if (len >= 1 &&
+      //     outputTelemetryBuffer.destination == TELEMETRY_ENDPOINT_SPORT &&
+      //     data[0] == outputTelemetryBuffer.sport.physicalId) {
+      //   TRACE("MP Sending sport data out.");
+      //   sportSendBuffer(outputTelemetryBuffer.data, outputTelemetryBuffer.size);
+      // }
       break;
 #endif
     case SpectrumScannerPacket:
@@ -447,6 +484,13 @@ static void processMultiTelemetryPaket(const uint8_t * packet, uint8_t module)
         processMultiRxChannels(data, len);
       else
         TRACE("[MP] Received RX channels len %d < 4", len);
+      break;
+#endif
+
+#if defined(MULTI_PROTOLIST)
+    case MultiProtoDef:
+      if (len >= 1)
+        processMultiProtoDef(module, data, len);
       break;
 #endif
 
@@ -518,28 +562,10 @@ void MultiModuleStatus::getStatusString(char * statusText) const
   }
 }
 
-static uint8_t * getRxBuffer(uint8_t moduleIdx)
-{
-#if defined(INTERNAL_MODULE_MULTI)
-  if (moduleIdx == INTERNAL_MODULE)
-    return intTelemetryRxBuffer;
-#endif
-  return telemetryRxBuffer;
-}
-
-static uint8_t &getRxBufferCount(uint8_t moduleIdx)
-{
-#if defined(INTERNAL_MODULE_MULTI)
-  if (moduleIdx == INTERNAL_MODULE)
-    return intTelemetryRxBufferCount;
-#endif
-  return telemetryRxBufferCount;
-}
-
 static void processMultiTelemetryByte(const uint8_t data, uint8_t module)
 {
-  uint8_t * rxBuffer = getRxBuffer(module);
-  uint8_t &rxBufferCount = getRxBufferCount(module);
+  uint8_t * rxBuffer = getTelemetryRxBuffer(module);
+  uint8_t &rxBufferCount = getTelemetryRxBufferCount(module);
 
   if (rxBufferCount < TELEMETRY_RX_PACKET_SIZE) {
     rxBuffer[rxBufferCount++] = data;
@@ -569,16 +595,13 @@ static void processMultiTelemetryByte(const uint8_t data, uint8_t module)
 
 void processMultiTelemetryData(uint8_t data, uint8_t module)
 {
-  uint8_t * rxBuffer = getRxBuffer(module);
-  uint8_t &rxBufferCount = getRxBufferCount(module);
+  uint8_t * rxBuffer = getTelemetryRxBuffer(module);
+  uint8_t &rxBufferCount = getTelemetryRxBufferCount(module);
 
   uint16_t &lastRxTS = getMultiTelemetryLastRxTS(module);
-  uint16_t nowMs = (uint16_t)RTOS_GET_MS();
-  if (nowMs - lastRxTS > 15)
-    setMultiTelemetryBufferState(module, NoProtocolDetected);
-  lastRxTS = nowMs;
   
-  // debugPrintf("State: %d, byte received %02X, buflen: %d\r\n", getMultiTelemetryBufferState(module), data, rxBufferCount);
+  // debugPrintf("State: %d, byte received %02X, buflen: %d\r\n",
+  //             getMultiTelemetryBufferState(module), data, rxBufferCount);
   
   switch (getMultiTelemetryBufferState(module)) {
     case NoProtocolDetected:
@@ -598,7 +621,7 @@ void processMultiTelemetryData(uint8_t data, uint8_t module)
 
     case FrskyTelemetryFallback:
       setMultiTelemetryBufferState(module, FrskyTelemetryFallbackFirstByte);
-      processFrskyTelemetryData(data);
+      processFrskySportTelemetryData(module, data, rxBuffer, rxBufferCount);
       break;
 
     case FrskyTelemetryFallbackFirstByte:
@@ -606,7 +629,7 @@ void processMultiTelemetryData(uint8_t data, uint8_t module)
         setMultiTelemetryBufferState(module, MultiStatusOrFrskyData);
       }
       else {
-        processFrskyTelemetryData(data);
+        processFrskySportTelemetryData(module, data, rxBuffer, rxBufferCount);
         if (data != 0x7e)
           setMultiTelemetryBufferState(module, FrskyTelemetryFallbackNextBytes);
       }
@@ -614,7 +637,7 @@ void processMultiTelemetryData(uint8_t data, uint8_t module)
       break;
 
     case FrskyTelemetryFallbackNextBytes:
-      processFrskyTelemetryData(data);
+      processFrskySportTelemetryData(module, data, rxBuffer, rxBufferCount);
       if (data == 0x7e) {
         // end of packet or start of new packet
         setMultiTelemetryBufferState(module, FrskyTelemetryFallbackFirstByte);
@@ -689,7 +712,15 @@ void processMultiTelemetryData(uint8_t data, uint8_t module)
         setMultiTelemetryBufferState(module, NoProtocolDetected);
       }
       break;
+      
+    default:
+      break;
   }
+}
+
+bool isMultiTelemReceiving(uint8_t module)
+{
+  return getMultiTelemetryBufferState(module) != NoProtocolDetected;
 }
 
 void checkFailsafeMulti()

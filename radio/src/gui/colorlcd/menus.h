@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -35,11 +36,11 @@ enum MenuIcons {
   ICON_RADIO_SETUP,
   ICON_RADIO_SD_MANAGER,
   ICON_RADIO_TOOLS,
-  ICON_RADIO_SPECTRUM_ANALYSER,
   ICON_RADIO_GLOBAL_FUNCTIONS,
   ICON_RADIO_TRAINER,
   ICON_RADIO_HARDWARE,
   ICON_RADIO_CALIBRATION,
+  ICON_RADIO_EDIT_THEME,
   ICON_RADIO_VERSION,
   ICON_MODEL,
   ICON_MODEL_SETUP,
@@ -55,6 +56,7 @@ enum MenuIcons {
   ICON_MODEL_SPECIAL_FUNCTIONS,
   ICON_MODEL_LUA_SCRIPTS,
   ICON_MODEL_TELEMETRY,
+  ICON_MODEL_USB,
   ICON_MODEL_SELECT,
   ICON_MODEL_SELECT_CATEGORY,
   ICON_THEME,
@@ -64,6 +66,11 @@ enum MenuIcons {
   ICON_THEME_VIEW3,
   ICON_THEME_VIEW4,
   ICON_THEME_VIEW5,
+  ICON_THEME_VIEW6,
+  ICON_THEME_VIEW7,
+  ICON_THEME_VIEW8,
+  ICON_THEME_VIEW9,
+  ICON_THEME_VIEW10,
   ICON_THEME_ADD_VIEW,
   ICON_STATS,
   ICON_STATS_THROTTLE_GRAPH,

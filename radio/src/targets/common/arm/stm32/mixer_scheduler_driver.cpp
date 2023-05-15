@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -29,13 +30,11 @@
 void mixerSchedulerStart()
 {
   MIXER_SCHEDULER_TIMER->CR1 &= ~TIM_CR1_CEN;
-
-  MIXER_SCHEDULER_TIMER->CR1   = TIM_CR1_URS; // do not generate interrupt on soft update
-  MIXER_SCHEDULER_TIMER->PSC   = MIXER_SCHEDULER_TIMER_FREQ / 2000000 - 1; // 0.5uS (2Mhz)
+  MIXER_SCHEDULER_TIMER->PSC   = MIXER_SCHEDULER_TIMER_FREQ / 1000000 - 1; // 1uS (1Mhz)
   MIXER_SCHEDULER_TIMER->CCER  = 0;
   MIXER_SCHEDULER_TIMER->CCMR1 = 0;
-  MIXER_SCHEDULER_TIMER->ARR   = 2 * getMixerSchedulerPeriod() - 1;
-  MIXER_SCHEDULER_TIMER->EGR   = TIM_EGR_UG;   // reset timer
+  MIXER_SCHEDULER_TIMER->ARR   = getMixerSchedulerPeriod() - 1;
+  MIXER_SCHEDULER_TIMER->CNT   = 0;   // reset counter
 
   NVIC_EnableIRQ(MIXER_SCHEDULER_TIMER_IRQn);
   NVIC_SetPriority(MIXER_SCHEDULER_TIMER_IRQn,
@@ -52,13 +51,6 @@ void mixerSchedulerStop()
   NVIC_DisableIRQ(MIXER_SCHEDULER_TIMER_IRQn);
 }
 
-void mixerSchedulerResetTimer()
-{
-  mixerSchedulerDisableTrigger();
-  MIXER_SCHEDULER_TIMER->CNT = 0;
-  mixerSchedulerEnableTrigger();
-}
-
 void mixerSchedulerEnableTrigger()
 {
   MIXER_SCHEDULER_TIMER->DIER |= TIM_DIER_UIE; // enable interrupt
@@ -69,13 +61,22 @@ void mixerSchedulerDisableTrigger()
   MIXER_SCHEDULER_TIMER->DIER &= ~TIM_DIER_UIE; // disable interrupt
 }
 
+void mixerSchedulerSoftTrigger() {
+  // Generate a timer update event (TIM_EGR_UG) to reload the Prescaler and the repetition 
+  // counter value immediately to avoid making FreeRTOS calls within this ISR:
+  // - fires MIXER_SCHEDULER_TIMER interrupt after returning from this ISR
+  // - MIXER_SCHEDULER_TIMER_IRQHandler(void) takes care of making FreeRTOS calls
+  //   to ensure switching to highest priority task.
+  MIXER_SCHEDULER_TIMER->EGR = TIM_EGR_UG; 
+}
+
 extern "C" void MIXER_SCHEDULER_TIMER_IRQHandler(void)
 {
   MIXER_SCHEDULER_TIMER->SR &= ~TIM_SR_UIF; // clear flag
   mixerSchedulerDisableTrigger();
 
   // set next period
-  MIXER_SCHEDULER_TIMER->ARR = 2 * getMixerSchedulerPeriod() - 1;
+  MIXER_SCHEDULER_TIMER->ARR = getMixerSchedulerPeriod() - 1;
 
   // trigger mixer start
   mixerSchedulerISRTrigger();

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -29,21 +30,13 @@ const BitmapBuffer * OpenTxTheme::error = nullptr;
 const BitmapBuffer * OpenTxTheme::busy = nullptr;
 const BitmapBuffer * OpenTxTheme::shutdown = nullptr;
 
-const uint8_t LBM_FOLDER[] = {
-#include "mask_folder.lbm"
-};
-
-const uint8_t LBM_DROPDOWN[] = {
-#include "mask_dropdown.lbm"
-};
-
 constexpr coord_t LBM_USB_PLUGGED_W = 211;
 constexpr coord_t LBM_USB_PLUGGED_H = 110;
 
-const uint8_t LBM_USB_PLUGGED[] = {
+const uint8_t _LBM_USB_PLUGGED[] = {
 #include "mask_usb_symbol.lbm"
 };
-
+STATIC_LZ4_BITMAP(LBM_USB_PLUGGED);
 
 const uint8_t error_bitmap[] = {
 #include "mask_error.lbm"
@@ -85,11 +78,11 @@ void OpenTxTheme::init() const
 void OpenTxTheme::load() const
 {
   if (!error)
-    error = BitmapBuffer::load8bitMask(error_bitmap);
+    error = BitmapBuffer::load8bitMaskLZ4(error_bitmap);
   if (!busy)
-    busy = BitmapBuffer::load8bitMask(busy_bitmap);
+    busy = BitmapBuffer::load8bitMaskLZ4(busy_bitmap);
   if (!shutdown)
-    shutdown = BitmapBuffer::load8bitMask(shutdown_bitmap);
+    shutdown = BitmapBuffer::load8bitMaskLZ4(shutdown_bitmap);
 }
 
 ZoneOptionValue * OpenTxTheme::getOptionValue(unsigned int index) const
@@ -115,14 +108,14 @@ void OpenTxTheme::drawThumb(BitmapBuffer * dc, coord_t x, coord_t y, uint32_t fl
     thumb = BitmapBuffer::loadBitmap(getFilePath("thumb.bmp"));
   }
   lcd->drawBitmap(x, y, thumb);
-  if (flags == LINE_COLOR) {
-    dc->drawFilledRect(x, y, THUMB_WIDTH, THUMB_HEIGHT, SOLID, OVERLAY_COLOR);
+  if (flags == COLOR_THEME_PRIMARY3) {
+    dc->drawFilledRect(x, y, THUMB_WIDTH, THUMB_HEIGHT, SOLID, COLOR_THEME_PRIMARY1);
   }
 }
 
 void OpenTxTheme::drawBackground(BitmapBuffer * dc) const
 {
-  dc->drawSolidFilledRect(0, 0, LCD_W, LCD_H, DEFAULT_BGCOLOR);
+  dc->drawSolidFilledRect(0, 0, LCD_W, LCD_H, COLOR_THEME_SECONDARY3);
 }
 
 //void OpenTxTheme::drawMessageBox(const char *title, const char *text,
@@ -130,7 +123,7 @@ void OpenTxTheme::drawBackground(BitmapBuffer * dc) const
 //{
 //  //if (flags & MESSAGEBOX_TYPE_ALERT) {
 //    drawBackground();
-//    lcdDrawFilledRect(0, POPUP_Y, LCD_W, POPUP_H, SOLID, FOCUS_COLOR |
+//    lcdDrawFilledRect(0, POPUP_Y, LCD_W, POPUP_H, SOLID, COLOR_THEME_PRIMARY2 |
 //    OPACITY(8));
 //  //}
 //
@@ -145,16 +138,16 @@ void OpenTxTheme::drawBackground(BitmapBuffer * dc) const
 //#if defined(TRANSLATIONS_FR) || defined(TRANSLATIONS_IT) ||
 //defined(TRANSLATIONS_CZ)
 //    lcdDrawText(WARNING_LINE_X, WARNING_LINE_Y, STR_WARNING,
-//    ALARM_COLOR|FONT(XL)); lcdDrawText(WARNING_LINE_X, WARNING_LINE_Y+28,
-//    title, ALARM_COLOR|FONT(XL));
+//    COLOR_THEME_WARNING|FONT(XL)); lcdDrawText(WARNING_LINE_X, WARNING_LINE_Y+28,
+//    title, COLOR_THEME_WARNING|FONT(XL));
 //#else
-//    lcdDrawText(WARNING_LINE_X, WARNING_LINE_Y, title, ALARM_COLOR|FONT(XL));
+//    lcdDrawText(WARNING_LINE_X, WARNING_LINE_Y, title, COLOR_THEME_WARNING|FONT(XL));
 //    lcdDrawText(WARNING_LINE_X, WARNING_LINE_Y+28, STR_WARNING,
-//    ALARM_COLOR|FONT(XL));
+//    COLOR_THEME_WARNING|FONT(XL));
 //#endif
 //  }
 //  else if (title) {
-//    lcdDrawText(WARNING_LINE_X, WARNING_LINE_Y, title, ALARM_COLOR|FONT(XL));
+//    lcdDrawText(WARNING_LINE_X, WARNING_LINE_Y, title, COLOR_THEME_WARNING|FONT(XL));
 //  }
 //
 //  if (text) {
@@ -169,71 +162,25 @@ void OpenTxTheme::drawBackground(BitmapBuffer * dc) const
 void OpenTxTheme::drawCheckBox(BitmapBuffer *dc, bool checked, coord_t x,
                                coord_t y, bool focus) const
 {
-  dc->drawSolidFilledRect(x, y, 16, 16, FIELD_BGCOLOR);
+  dc->drawSolidFilledRect(x, y, 16, 16, COLOR_THEME_PRIMARY2);
   if (focus) {
-    dc->drawSolidRect(x, y, 16, 16, 2, FOCUS_BGCOLOR);
+    dc->drawSolidRect(x, y, 16, 16, 2, COLOR_THEME_FOCUS);
   }
   else {
-    dc->drawSolidRect(x, y, 16, 16, 1, FIELD_FRAME_COLOR);
+    dc->drawSolidRect(x, y, 16, 16, 1, COLOR_THEME_SECONDARY2);
   }
   if (checked) {
-    dc->drawSolidFilledRect(x + 3, y + 3, 10, 10, CHECKBOX_COLOR);
-  }
-}
-
-void OpenTxTheme::drawChoice(BitmapBuffer * dc, ChoiceBase * choice, const char * str) const
-{
-  LcdFlags textColor;
-  if (choice->isEditMode())
-    textColor = FOCUS_COLOR;
-  else if (choice->hasFocus())
-    textColor = FOCUS_COLOR;
-  // else if (!str || str[0] == '\0')
-  //   textColor = FOCUS_COLOR;
-  else
-    textColor = DEFAULT_COLOR;
-
-  dc->drawText(FIELD_PADDING_LEFT, FIELD_PADDING_TOP,
-               str[0] == '\0' ? "---" : str, textColor);
-
-  dc->drawBitmapPattern(
-      choice->getRect().w - 20, (choice->getRect().h - 11) / 2,
-      choice->getType() == CHOICE_TYPE_FOLDER ? LBM_FOLDER : LBM_DROPDOWN,
-      textColor);
-}
-
-void OpenTxTheme::drawSlider(BitmapBuffer *dc, int vmin, int vmax, int value,
-                             const rect_t &rect, bool edit, bool focus) const
-{
-  int val = limit(vmin, value, vmax);
-  int w = divRoundClosest((rect.w - 16) * (val - vmin), vmax - vmin);
-
-  LcdFlags color = DEFAULT_COLOR;
-  if (focus) {
-    color = FOCUS_BGCOLOR;
-  }
-
-  dc->drawBitmapPattern(0, 11, LBM_SLIDER_BAR_LEFT, color);
-  dc->drawSolidFilledRect(4, 11, rect.w - 8, 4, color);
-  dc->drawBitmapPattern(rect.w - 4, 11, LBM_SLIDER_BAR_RIGHT, color);
-
-  dc->drawBitmapPattern(w, 5, LBM_SLIDER_POINT_OUT, color);
-  dc->drawBitmapPattern(w, 5, LBM_SLIDER_POINT_MID, FIELD_BGCOLOR);
-
-  if (edit) {
-    dc->drawBitmapPattern(w, 5, LBM_SLIDER_POINT_IN, EDIT_MARKER_COLOR);
-  } else {
-    dc->drawBitmapPattern(w, 5, LBM_SLIDER_POINT_IN, FIELD_BGCOLOR);
+    dc->drawSolidFilledRect(x + 3, y + 3, 10, 10, COLOR_THEME_FOCUS);
   }
 }
 
 void OpenTxTheme::drawUsbPluggedScreen(BitmapBuffer * dc) const
 {
   // draw USB icon
-  dc->clear(DEFAULT_BGCOLOR);
+  dc->clear(COLOR_THEME_SECONDARY3);
   dc->drawBitmapPattern((LCD_W - LBM_USB_PLUGGED_W) / 2,
                         (LCD_H - LBM_USB_PLUGGED_H) / 2,
-                        LBM_USB_PLUGGED, DEFAULT_COLOR);
+                        LBM_USB_PLUGGED, COLOR_THEME_SECONDARY1);
 }
 
 
@@ -265,9 +212,6 @@ void loadTheme()
     loadTheme(newTheme);
   else
     loadTheme(defaultTheme);
-//  else {
-//    loadTheme(theme);
-//  }
 }
 
 MenuWindowContent * createMenuWindow(Menu * menu)

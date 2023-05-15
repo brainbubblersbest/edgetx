@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,8 +19,21 @@
  * GNU General Public License for more details.
  */
 
+#include "hal/module_port.h"
+#include "heartbeat_driver.h"
+#include "mixer_scheduler.h"
+
+#include "pxx1_transport.h"
+#include "pxx1.h"
+
 #include "opentx.h"
-#include "pulses/pxx1.h"
+
+static uint32_t _pxx1_internal_baudrate = PXX1_DEFAULT_SERIAL_BAUDRATE;
+
+void pxx1SetInternalBaudrate(uint32_t baudrate)
+{
+  _pxx1_internal_baudrate = baudrate;
+}
 
 template <class PxxTransport>
 void Pxx1Pulses<PxxTransport>::addFlag1(uint8_t module, uint8_t sendFailsafe)
@@ -60,10 +74,12 @@ void Pxx1Pulses<PxxTransport>::addExtraFlags(uint8_t module)
       extraFlags |= (1 << 6);
   }
 
+#if defined(HARDWARE_EXTERNAL_MODULE) && defined(HARDWARE_INTERNAL_MODULE)
   // Disable S.PORT if internal module is active
   if (module == EXTERNAL_MODULE && isSportLineUsedByInternalModule()) {
     extraFlags |= (1 << 5);
   }
+#endif
 
   PxxTransport::addByte(extraFlags);
 }
@@ -172,17 +188,25 @@ void Pxx1Pulses<PxxTransport>::add8ChannelsFrame(uint8_t module, uint8_t sendUpp
 }
 
 template <class PxxTransport>
-void Pxx1Pulses<PxxTransport>::setupFrame(uint8_t module)
+Pxx1Pulses<PxxTransport>::Pxx1Pulses(uint8_t* buffer)
+  : PxxTransport(buffer)
+{
+}
+
+template <class PxxTransport>
+void Pxx1Pulses<PxxTransport>::setupFrame(uint8_t module, Pxx1Type type)
 {
   uint8_t sendUpperChannels = 0;
   uint8_t sendFailsafe = 0;
 
-  PxxTransport::initFrame(PXX_PULSES_PERIOD);
 
-#if defined(PXX_FREQUENCY_HIGH)
-  if (moduleState[module].protocol == PROTOCOL_CHANNELS_PXX1_SERIAL) {
+  // Fast serial PXX1 (either X-lite internal or R9M-lite):
+  // - up to 16 channels sent in the same frame
+  //
+  if (type == Pxx1Type::FAST_SERIAL) {
     if (moduleState[module].counter-- == 0) {
-      sendFailsafe = (g_model.moduleData[module].failsafeMode != FAILSAFE_NOT_SET && g_model.moduleData[module].failsafeMode != FAILSAFE_RECEIVER);
+      sendFailsafe = (g_model.moduleData[module].failsafeMode != FAILSAFE_NOT_SET &&
+                      g_model.moduleData[module].failsafeMode != FAILSAFE_RECEIVER);
       moduleState[module].counter = 1000;
     }
     add8ChannelsFrame(module, 0, sendFailsafe);
@@ -191,17 +215,24 @@ void Pxx1Pulses<PxxTransport>::setupFrame(uint8_t module)
     }
     return;
   }
-#endif
 
+  // Slow PXX1:
+  // - if more than 8 channels shall be sent, it happens
+  //   in alternating frames
+  //
   if (moduleState[module].counter & 0x01) {
+    // channelsCount is shifted by 8
     sendUpperChannels = g_model.moduleData[module].channelsCount;
+    // if real channels count > 8
     if (sendUpperChannels && moduleState[module].counter == 1) {
-      sendFailsafe = (g_model.moduleData[module].failsafeMode != FAILSAFE_NOT_SET && g_model.moduleData[module].failsafeMode != FAILSAFE_RECEIVER);
+      sendFailsafe =
+          (g_model.moduleData[module].failsafeMode != FAILSAFE_NOT_SET &&
+           g_model.moduleData[module].failsafeMode != FAILSAFE_RECEIVER);
     }
-  }
-  else {
+  } else {
     if (moduleState[module].counter == 0) {
-      sendFailsafe = (g_model.moduleData[module].failsafeMode != FAILSAFE_NOT_SET && g_model.moduleData[module].failsafeMode != FAILSAFE_RECEIVER);
+      sendFailsafe = (g_model.moduleData[module].failsafeMode != FAILSAFE_NOT_SET &&
+                      g_model.moduleData[module].failsafeMode != FAILSAFE_RECEIVER);
     }
   }
 
@@ -212,6 +243,167 @@ void Pxx1Pulses<PxxTransport>::setupFrame(uint8_t module)
   }
 }
 
-template class Pxx1Pulses<StandardPxx1Transport<PwmPxxBitTransport> >;
-template class Pxx1Pulses<StandardPxx1Transport<SerialPxxBitTransport> >;
+template class Pxx1Pulses<StandardPxx1Transport>;
 template class Pxx1Pulses<UartPxx1Transport>;
+
+static const etx_serial_init pxx1SerialCfg = {
+  .baudrate = 0,
+  .encoding = ETX_Encoding_8N1,
+  .direction = ETX_Dir_TX,
+  .polarity = ETX_Pol_Normal,
+};
+
+static const etx_serial_driver_t* _sport_drv;
+static void* _sport_ctx;
+
+static void pxx1SportSensorPolling()
+{
+  if (outputTelemetryBuffer.destination != TELEMETRY_ENDPOINT_SPORT)
+    return;
+
+  // Match sensor polling from the module
+  // -> detect <0x7E [Physical ID]> as the last sequence
+  uint8_t b;
+  if (_sport_drv->getLastByte(_sport_ctx, 2, &b) <= 0 || b != START_STOP)
+    return;
+  if (_sport_drv->getLastByte(_sport_ctx, 1, &b) <= 0 ||
+      b != outputTelemetryBuffer.sport.physicalId)
+    return;
+
+  _sport_drv->sendBuffer(_sport_ctx,
+                         outputTelemetryBuffer.data + 1,
+                         outputTelemetryBuffer.size - 1);
+
+  outputTelemetryBuffer.reset();
+}
+
+static void* pxx1Init(uint8_t module)
+{
+  etx_module_state_t* mod_st = nullptr;
+  etx_serial_init txCfg(pxx1SerialCfg);
+
+  if (module == INTERNAL_MODULE) {
+
+    txCfg.baudrate = _pxx1_internal_baudrate;
+    mod_st = modulePortInitSerial(module, ETX_MOD_PORT_UART, &txCfg);
+
+    if (!mod_st) {
+      // assume that radios that don't have an internal UART
+      // will have a module that uses legacy PXX1 (PWM)
+      txCfg.encoding = ETX_Encoding_PXX1_PWM;
+      mod_st = modulePortInitSerial(module, ETX_MOD_PORT_SOFT_INV, &txCfg);
+    }
+
+    if (!mod_st) return nullptr;
+  }
+
+  if (module == EXTERNAL_MODULE) {
+
+    // Init driver (timer / serial) based on module type
+    uint8_t type = g_model.moduleData[module].type;
+    switch(type) {
+
+    case MODULE_TYPE_R9M_LITE_PXX1: {
+      txCfg.baudrate = EXTMODULE_PXX1_SERIAL_BAUDRATE;
+      mod_st = modulePortInitSerial(module, ETX_MOD_PORT_UART, &txCfg);
+      if (!mod_st) return nullptr;
+    } break;
+
+    case MODULE_TYPE_XJT_PXX1:
+    case MODULE_TYPE_R9M_PXX1: {
+      txCfg.encoding = ETX_Encoding_PXX1_PWM;
+      mod_st = modulePortInitSerial(module, ETX_MOD_PORT_SOFT_INV, &txCfg);
+      if (!mod_st) return nullptr;
+    } break;
+
+    default:
+      // unknown module: bail out!
+      return nullptr;
+    }
+  }
+
+  // Init telemetry RX
+  etx_serial_init rxCfg(pxx1SerialCfg);
+  rxCfg.baudrate = FRSKY_SPORT_BAUDRATE;
+  rxCfg.direction = ETX_Dir_TX_RX;
+
+  // TODO: handle init errors properly
+  if (modulePortInitSerial(module, ETX_MOD_PORT_SPORT, &rxCfg) != nullptr) {
+    auto drv = modulePortGetSerialDrv(mod_st->rx);
+    auto ctx = modulePortGetCtx(mod_st->rx);
+    if (drv && ctx && drv->setIdleCb) {
+      _sport_drv = drv;
+      _sport_ctx = ctx;
+      drv->setIdleCb(ctx, pxx1SportSensorPolling);
+    }
+  }
+
+  // Store PXX1 type in 'user_data'
+  if (txCfg.encoding == ETX_Encoding_PXX1_PWM ||
+      txCfg.baudrate == PXX1_DEFAULT_SERIAL_BAUDRATE) {
+
+    // Legacy / slow PXX1
+    mixerSchedulerSetPeriod(module, PXX1_DEFAULT_PERIOD);
+    if (txCfg.encoding == ETX_Encoding_PXX1_PWM) {
+      mod_st->user_data = (void*)Pxx1Type::PWM;
+    } else {
+      mod_st->user_data = (void*)Pxx1Type::SLOW_SERIAL;
+    }
+  } else {
+    // Fast PXX1
+    mixerSchedulerSetPeriod(module, PXX1_FAST_PERIOD);
+    mod_st->user_data = (void*)Pxx1Type::FAST_SERIAL;
+  }
+
+  return mod_st;
+}
+
+static void pxx1DeInit(void* ctx)
+{
+  auto mod_st = (etx_module_state_t*)ctx;
+  modulePortDeInit(mod_st);
+}
+
+static void pxx1SendPulses(void* ctx, uint8_t* buffer, int16_t* channels, uint8_t nChannels)
+{
+  // TODO:
+  (void)channels;
+  (void)nChannels;
+
+  auto mod_st = (etx_module_state_t*)ctx;
+  auto module = modulePortGetModule(mod_st);
+  auto pxx1_type = (Pxx1Type)(uintptr_t)mod_st->user_data;
+
+  uint32_t frame_len = 0;
+  if (pxx1_type == Pxx1Type::PWM) {
+    PwmPxx1Pulses frame(buffer);
+    frame.setupFrame(module, pxx1_type);
+    frame_len = frame.getSize();
+  } else {
+    UartPxx1Pulses frame(buffer);
+    frame.setupFrame(module, pxx1_type);
+    frame_len = frame.getSize();
+  }
+
+  if (frame_len == 0) return;
+
+  auto drv = modulePortGetSerialDrv(mod_st->tx);
+  auto drv_ctx = modulePortGetCtx(mod_st->tx);
+  drv->sendBuffer(drv_ctx, buffer, frame_len);
+}
+
+static void pxx1ProcessData(void* ctx, uint8_t data, uint8_t* buffer, uint8_t* len)
+{
+  auto mod_st = (etx_module_state_t*)ctx;
+  auto module = modulePortGetModule(mod_st);
+
+  processFrskySportTelemetryData(module, data, buffer, *len);
+}
+
+const etx_proto_driver_t Pxx1Driver = {
+  .protocol = PROTOCOL_CHANNELS_PXX1,
+  .init = pxx1Init,
+  .deinit = pxx1DeInit,
+  .sendPulses = pxx1SendPulses,
+  .processData = pxx1ProcessData,
+};

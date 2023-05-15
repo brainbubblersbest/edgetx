@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -73,12 +74,16 @@ class MultiFirmwareInformation
 
     bool isMultiInternalFirmware() const
     {
-      return (boardType == FIRMWARE_MULTI_STM && optibootSupport && bootloaderCheck && telemetryType == FIRMWARE_MULTI_TELEM_MULTI_TELEMETRY);
+      return (boardType == FIRMWARE_MULTI_STM && optibootSupport &&
+              bootloaderCheck &&
+              telemetryType == FIRMWARE_MULTI_TELEM_MULTI_TELEMETRY);
     }
 
     bool isMultiExternalFirmware() const
     {
-      return ((telemetryInversion || boardType == FIRMWARE_MULTI_STM ) && optibootSupport && bootloaderCheck && telemetryType == FIRMWARE_MULTI_TELEM_MULTI_TELEMETRY);
+      return ((telemetryInversion || boardType == FIRMWARE_MULTI_STM) &&
+              optibootSupport && bootloaderCheck &&
+              telemetryType == FIRMWARE_MULTI_TELEM_MULTI_TELEMETRY);
     }
 
     const char * readMultiFirmwareInformation(const char * filename);
@@ -103,7 +108,7 @@ class MultiFirmwareInformation
     const char * readV2Signature(const char * buffer);
 };
 
-enum MultiModuleType
+enum MultiModuleType : short
 {
   MULTI_TYPE_MULTIMODULE = 0,
   MULTI_TYPE_ELRS,

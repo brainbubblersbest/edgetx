@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,6 +22,7 @@
 #include <stdio.h>
 #include "opentx.h"
 #include "bootloader_flash.h"
+#include "timers_driver.h"
 
 #if defined(LIBOPENUI)
   #include "libopenui.h"
@@ -48,7 +50,7 @@ void BootloaderFirmwareUpdate::flashFirmware(const char * filename, ProgressHand
   uint8_t buffer[1024];
   UINT count;
 
-  pausePulses();
+  pulsesStop();
 
   f_open(&file, filename, FA_READ);
 
@@ -108,5 +110,5 @@ void BootloaderFirmwareUpdate::flashFirmware(const char * filename, ProgressHand
 
   f_close(&file);
 
-  resumePulses();
+  pulsesStart();
 }

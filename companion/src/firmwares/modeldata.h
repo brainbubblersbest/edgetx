@@ -34,11 +34,19 @@
 #include "sensordata.h"
 #include "telem_data.h"
 #include "timerdata.h"
+#include "customisation_data.h"
+#include "generalsettings.h"
 
 #include <QtCore>
 
 class GeneralSettings;
 class RadioDataConversionState;
+class AbstractStaticItemModel;
+
+constexpr char AIM_MODELDATA_TRAINERMODE[]  {"modeldata.trainermode"};
+constexpr char AIM_MODELDATA_FUNCSWITCHCONFIG[]  {"modeldata.funcswitchconfig"};
+constexpr char AIM_MODELDATA_FUNCSWITCHSTART[]  {"modeldata.funcswitchstart"};
+constexpr int LABEL_LENGTH=16;
 
 #define CHAR_FOR_NAMES " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-."
 #define CHAR_FOR_NAMES_REGEX "[ A-Za-z0-9_.-,]*"
@@ -56,8 +64,6 @@ class RSSIAlarmData {
     }
 };
 
-#define CPN_MAX_SCRIPTS       9
-#define CPN_MAX_SCRIPT_INPUTS 10
 class ScriptData {
   public:
     ScriptData() { clear(); }
@@ -67,46 +73,35 @@ class ScriptData {
     void clear() { memset(reinterpret_cast<void *>(this), 0, sizeof(ScriptData)); }
 };
 
-/*
- * TODO ...
- */
-#if 0
-class CustomScreenOptionData {
-  public:
-
-};
-
-class CustomScreenZoneData {
-  public:
-    char widgetName[10+1];
-    WidgetOptionData widgetOptions[5];
-};
-
-class CustomScreenData {
-  public:
-    CustomScreenData();
-
-    char layoutName[10+1];
-    CustomScreenZoneData zones[];
-    CustomScreenOptionData options[];
-};
-#else
-typedef char CustomScreenData[610+1];
-typedef char TopbarData[216+1];
-#endif
-
 enum TrainerMode {
-  TRAINER_MODE_MASTER_TRAINER_JACK,
-  TRAINER_MODE_SLAVE,
+  TRAINER_MODE_OFF,
+  TRAINER_MODE_FIRST = TRAINER_MODE_OFF,
+  TRAINER_MODE_MASTER_JACK,
+  TRAINER_MODE_SLAVE_JACK,
   TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE,
   TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE,
   TRAINER_MODE_MASTER_BATTERY_COMPARTMENT,
   TRAINER_MODE_MASTER_BLUETOOTH,
   TRAINER_MODE_SLAVE_BLUETOOTH,
-  TRAINER_MODE_MULTI
+  TRAINER_MODE_MULTI,
+  TRAINER_MODE_LAST = TRAINER_MODE_MULTI
 };
 
 #define INPUT_NAME_LEN 4
+#define CPN_MAX_BITMAP_LEN 14
+
+#define CPN_USBJ_MAX_JOYSTICK_CHANNELS 26
+
+class USBJoystickChData {
+  public:
+    USBJoystickChData() { clear(); }
+    unsigned int mode;
+    unsigned int inversion;
+    unsigned int param;
+    unsigned int btn_num;
+    unsigned int switch_npos;
+    void clear() { memset(reinterpret_cast<void *>(this), 0, sizeof(USBJoystickChData)); }
+};
 
 class ModelData {
   Q_DECLARE_TR_FUNCTIONS(ModelData)
@@ -128,10 +123,11 @@ class ModelData {
     QVector<const ExpoData *> expos(int input) const;
     QVector<const MixData *> mixes(int channel) const;
 
+    char      semver[8 + 1];
     bool      used;
-    int       category;
     char      name[15+1];
     char      filename[16+1];
+    char      labels[100];
     int       modelIndex;      // Companion only, temporary index position managed by data model.
 
     TimerData timers[CPN_MAX_TIMERS];
@@ -140,6 +136,9 @@ class ModelData {
     int       trimInc;            // Trim Increments
     unsigned int trimsDisplay;
     bool      disableThrottleWarning;
+    bool      enableCustomThrottleWarning;
+    int       customThrottleWarningPosition;
+    unsigned int jitterFilter;       // Added in EdgeTx 2.7 (#870)
 
     unsigned int beepANACenter;      // 1<<0->A1.. 1<<6->A7
 
@@ -162,21 +161,23 @@ class ModelData {
     unsigned int switchWarningEnable;
     unsigned int thrTrimSwitch;
     unsigned int potsWarningMode;
-    bool potsWarnEnabled[CPN_MAX_POTS];
-    int potsWarnPosition[CPN_MAX_POTS];
+    bool potsWarnEnabled[CPN_MAX_POTS + CPN_MAX_SLIDERS];
+    int potsWarnPosition[CPN_MAX_POTS + CPN_MAX_SLIDERS];
     bool displayChecklist;
+
     GVarData gvarData[CPN_MAX_GVARS];
     MavlinkData mavlink;
     unsigned int telemetryProtocol;
     FrSkyData frsky;
     unsigned int  rssiSource;
     RSSIAlarmData rssiAlarms;
+    bool showInstanceIds;
 
-    char bitmap[10+1];
+    char bitmap[CPN_MAX_BITMAP_LEN + 1];
 
     unsigned int trainerMode;  // TrainerMode
 
-    ModuleData moduleData[CPN_MAX_MODULES+1/*trainer*/];
+    ModuleData moduleData[CPN_MAX_MODULES + 1/*trainer*/];
 
     ScriptData scriptData[CPN_MAX_SCRIPTS];
 
@@ -184,16 +185,47 @@ class ModelData {
 
     unsigned int toplcdTimer;
 
-    CustomScreenData customScreenData[5];
-
-    TopbarData topbarData;
+    RadioLayout::CustomScreens customScreens;
+    TopBarPersistentData topBarData;
+    unsigned int view;
 
     char registrationId[8+1];
+
+    enum FunctionSwitchConfig {
+      FUNC_SWITCH_CONFIG_NONE,
+      FUNC_SWITCH_CONFIG_FIRST = FUNC_SWITCH_CONFIG_NONE,
+      FUNC_SWITCH_CONFIG_TOGGLE,
+      FUNC_SWITCH_CONFIG_2POS,
+      FUNC_SWITCH_CONFIG_LAST = FUNC_SWITCH_CONFIG_2POS
+    };
+
+    enum FunctionSwitchStart {
+      FUNC_SWITCH_START_ACTIVE,
+      FUNC_SWITCH_START_FIRST = FUNC_SWITCH_START_ACTIVE,
+      FUNC_SWITCH_START_INACTIVE,
+      //FUNC_SWITCH_START_FIRST = FUNC_SWITCH_START_INACTIVE,
+      FUNC_SWITCH_START_PREVIOUS,
+      FUNC_SWITCH_START_LAST = FUNC_SWITCH_START_PREVIOUS
+    };
+
+    // Function switches
+    unsigned int functionSwitchConfig;
+    unsigned int functionSwitchGroup;
+    unsigned int functionSwitchStartConfig;
+    unsigned int functionSwitchLogicalState;
+    char functionSwitchNames[CPN_MAX_FUNCTION_SWITCHES][HARDWARE_NAME_LEN + 1];
+
+    // Custom USB joytsick mapping
+    unsigned int usbJoystickExtMode;
+    unsigned int usbJoystickIfMode;
+    unsigned int usbJoystickCircularCut;
+    USBJoystickChData usbJoystickCh[CPN_USBJ_MAX_JOYSTICK_CHANNELS];
 
     void clear();
     bool isEmpty() const;
     void setDefaultInputs(const GeneralSettings & settings);
     void setDefaultMixes(const GeneralSettings & settings);
+    void setDefaultFunctionSwitches(int functionSwitchCount);
     void setDefaultValues(unsigned int id, const GeneralSettings & settings);
 
     int getTrimValue(int phaseIdx, int trimIdx);
@@ -218,11 +250,14 @@ class ModelData {
     int linkedFlightModeValueToIndex(const int phaseIdx, const int val, const int maxOwnValue);
 
     void clearMixes();
+    void sortMixes();
     void clearInputs();
 
     int getChannelsMax(bool forceExtendedLimits=false) const;
 
     bool isAvailable(const RawSwitch & swtch) const;
+    bool isFunctionSwitchPositionAvailable(int index) const;
+    bool isFunctionSwitchSourceAllowed(int index) const;
 
     enum ReferenceUpdateAction {
       REF_UPD_ACT_CLEAR,
@@ -273,6 +308,28 @@ class ModelData {
     void limitsInsert(const int index);
     void limitsMove(const int index, const int offset);
     void limitsSet(const int index, const QByteArray & data);
+
+    QString trainerModeToString() const;
+    static QString trainerModeToString(const int value);
+    static bool isTrainerModeAvailable(const GeneralSettings & generalSettings, const Firmware * firmware, const int value);
+    static AbstractStaticItemModel * trainerModeItemModel(const GeneralSettings & generalSettings, const Firmware * firmware);
+    unsigned int getFuncSwitchConfig(unsigned int index) const;
+    void setFuncSwitchConfig(unsigned int index, unsigned int value);
+    static QString funcSwitchConfigToString(unsigned int value);
+    static AbstractStaticItemModel * funcSwitchConfigItemModel();
+
+    unsigned int getFuncSwitchGroup(unsigned int index) const;
+    void setFuncSwitchGroup(unsigned int index, unsigned int value);
+
+    unsigned int getFuncSwitchAlwaysOnGroup(unsigned int index) const;
+    void setFuncSwitchAlwaysOnGroup(unsigned int index, unsigned int value);
+
+    unsigned int getFuncSwitchStart(unsigned int index) const;
+    void setFuncSwitchStart(unsigned int index, unsigned int value);
+    static QString funcSwitchStartToString(unsigned int value);
+    static AbstractStaticItemModel * funcSwitchStartItemModel();
+
+    int getCustomScreensCount() const;
 
   protected:
     void removeGlobalVar(int & var);
@@ -327,6 +384,5 @@ class ModelData {
       if (value != swtch.toValue())
         value = swtch.toValue();
     }
-    void sortMixes();
     void updateResetParam(CustomFunctionData * cfd);
 };

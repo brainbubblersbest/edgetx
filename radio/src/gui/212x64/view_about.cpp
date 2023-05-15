@@ -1,8 +1,9 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   th9x - http://code.google.com/p/th9x 
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
  *
@@ -19,12 +20,17 @@
  */
 
 #include "opentx.h"
+#include "stamp.h"
 
 #define ABOUT_INDENT 6
 
-const char ABOUT_VERSION_1[] = "EdgeTX Endeavour (2.4.0)";
-const char ABOUT_VERSION_2[] = "Copyright (C) 2021 EdgeTX";
-const char ABOUT_VERSION_3[] = "https://edge-tx.org";
+#if defined(VERSION_TAG)
+const char ABOUT_VERSION_1[] = "EdgeTX " "\"" CODENAME "\"" " (" VERSION_TAG ")";
+#else
+const char ABOUT_VERSION_1[] = "EdgeTX " "(" VERSION "-" VERSION_SUFFIX ")";
+#endif
+const char ABOUT_VERSION_2[] = "Copyright (C) 2023 EdgeTX";
+const char ABOUT_VERSION_3[] = "https://edgetx.org";
 
 void menuAboutView(event_t event)
 {

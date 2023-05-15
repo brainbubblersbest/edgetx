@@ -25,8 +25,7 @@
   @{
 */
 
-#ifndef _APPDATA_H_
-#define _APPDATA_H_
+#pragma once
 
 #include "constants.h"
 #include "macros.h"
@@ -38,34 +37,33 @@
 #include <QSettings>
 #include <QStandardPaths>
 
-//! CPN_SETTINGS_REVISION is used to track settings changes independently of OpenTX version. It should be reset to zero whenever settings are migrated to new COMPANY or PRODUCT.
+//! CPN_SETTINGS_REVISION is used to track settings changes independently of EdgeTX version. It should be reset to zero whenever settings are migrated to new COMPANY or PRODUCT.
 //! \note !! Increment this value if properties are removed or refactored. It will trigger a conversion/cleanup of any stored settings. \sa AppData::convertSettings()
-#define CPN_SETTINGS_REVISION       0
+#define CPN_SETTINGS_REVISION       2 // Note: bumped for fix during 2.8 RCs
 
 //! CPN_SETTINGS_VERSION is used for settings data version tracking.
 #define CPN_SETTINGS_VERSION        ((VERSION_NUMBER << 8) | CPN_SETTINGS_REVISION)
 
-#define COMPANY                     QStringLiteral("OpenTX")
-#define COMPANY_DOMAIN              QStringLiteral("open-tx.org")
+#define COMPANY                     QStringLiteral("EdgeTX")
+#define COMPANY_DOMAIN              QStringLiteral("edgetx.org")
+#define PRODUCT_NO_VERS             QStringLiteral("Companion")
 #define PRODUCT                     QStringLiteral("Companion " QT_STRINGIFY(VERSION_MAJOR) "." QT_STRINGIFY(VERSION_MINOR))
-#define APP_COMPANION               QStringLiteral("OpenTX Companion")
-#define APP_SIMULATOR               QStringLiteral("OpenTX Simulator")
+#define APP_COMPANION               QStringLiteral("EdgeTX Companion")
+#define APP_SIMULATOR               QStringLiteral("EdgeTX Simulator")
 
-//! Default location for OpenTX-related user documents (settigns, logs, etc)
+//! Default location for EdgeTX-related user documents (settigns, logs, etc)
 #define CPN_DOCUMENTS_LOCATION      QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) % "/" % COMPANY
 //! Location for settings backup files. TODO: make option or remember last location.
 #define CPN_SETTINGS_BACKUP_DIR     CPN_DOCUMENTS_LOCATION % "/backup"
 #define CPN_SETTINGS_INI_FILE       QString(PRODUCT % " " % QCoreApplication::translate("Companion", "settings") % " %1.ini")
 #define CPN_SETTINGS_INI_PATH       QString(CPN_SETTINGS_BACKUP_DIR % "/" % CPN_SETTINGS_INI_FILE)
 
-#define CPN_URL_DOWNLOAD           "https://downloads.open-tx.org/"
-#define CPN_URL_DOWNLOAD_CUR_VERS  CPN_URL_DOWNLOAD QT_STRINGIFY(VERSION_MAJOR) "." QT_STRINGIFY(VERSION_MINOR) "/"
-#define CPN_URL_DOWNLOAD_CUR_REL   CPN_URL_DOWNLOAD_CUR_VERS "release/"
-#define CPN_URL_DOWNLOAD_CUR_RC    CPN_URL_DOWNLOAD_CUR_VERS "rc/"
-#define CPN_URL_DOWNLOAD_CUR_UNST  CPN_URL_DOWNLOAD_CUR_VERS "nightlies/"
-
-#define MAX_PROFILES 15
-#define MAX_JOYSTICKS 8
+#define MAX_PROFILES 20
+#define MAX_JS_AXES 10
+#define MAX_JS_BUTTONS 32
+#define MAX_COMPONENTS 10
+#define MAX_COMPONENT_ASSETS 5
+#define MAX_NAMED_JOYSTICKS 10
 
 // It important that these function names are consistent everywhere.
 #define PROP_FSIG_INIT_IMPL         _init()
@@ -334,12 +332,22 @@ class JStickData: public CompStoreObj
   public slots:
     bool existsOnDisk();
 
+  public:
+    void clear() {
+      stick_axe(-1);
+      stick_med(-32768);
+      stick_max(32767);
+      stick_med(0);
+      stick_inv(0);
+    }
+
   protected:
     explicit JStickData();
     void setIndex(int idx) { index = idx; }
     inline QString propertyGroup() const override { return QStringLiteral("JsCalibration"); }
     inline QString settingsPath()  const override { return QString("%1/%2/").arg(propertyGroup()).arg(index); }
     friend class AppData;
+    friend class NamedJSData;
 
   private:
     PROPERTY(int, stick_axe, -1)
@@ -347,6 +355,104 @@ class JStickData: public CompStoreObj
     PROPERTY(int, stick_med, 0)
     PROPERTY(int, stick_max, 32767)
     PROPERTY(int, stick_inv, 0)
+
+    int index;
+};
+
+//! \brief JButtonData class stores properties related to each joystick button (button number).
+class JButtonData: public CompStoreObj
+{
+  Q_OBJECT
+  public slots:
+    bool existsOnDisk();
+
+  public:
+    void clear() {
+      button_idx(-1);
+    }
+
+  protected:
+    explicit JButtonData();
+    void setIndex(int idx) { index = idx; }
+    inline QString propertyGroup() const override { return QStringLiteral("JsButton"); }
+    inline QString settingsPath()  const override { return QString("%1/%2/").arg(propertyGroup()).arg(index); }
+    friend class AppData;
+    friend class NamedJSData;
+
+  private:
+    PROPERTY(int, button_idx, -1)
+
+    int index;
+};
+
+//! \brief NamedJStickData class stores properties related to each joystick axis (calibration/assignment/direction).
+class NamedJStickData: public CompStoreObj
+{
+  Q_OBJECT
+  public slots:
+    bool existsOnDisk();
+
+  protected:
+    explicit NamedJStickData();
+    void setIndex(int idx, int nmIdx) { index = idx; namedIdx = nmIdx; }
+    inline QString propertyGroup() const override { return QStringLiteral("NamedJSData/%1").arg(namedIdx); }
+    inline QString settingsPath()  const override { return QString("%1/JsCalibration/%2/").arg(propertyGroup()).arg(index); }
+    friend class AppData;
+    friend class NamedJSData;
+
+  private:
+    PROPERTY(int, stick_axe, -1)
+    PROPERTY(int, stick_min, -32768)
+    PROPERTY(int, stick_med, 0)
+    PROPERTY(int, stick_max, 32767)
+    PROPERTY(int, stick_inv, 0)
+
+    int namedIdx;
+    int index;
+};
+
+//! \brief NamedJButtonData class stores properties related to each joystick button (button number).
+class NamedJButtonData: public CompStoreObj
+{
+  Q_OBJECT
+  public slots:
+    bool existsOnDisk();
+
+  protected:
+    explicit NamedJButtonData();
+    void setIndex(int idx, int nmIdx) { index = idx; namedIdx = nmIdx; }
+    inline QString propertyGroup() const override { return QStringLiteral("NamedJSData/%1").arg(namedIdx); }
+    inline QString settingsPath()  const override { return QString("%1/JsButton/%2/").arg(propertyGroup()).arg(index); }
+    friend class AppData;
+    friend class NamedJSData;
+
+  private:
+    PROPERTY(int, button_idx, -1)
+
+    int namedIdx;
+    int index;
+};
+
+class NamedJSData: public CompStoreObj
+{
+  Q_OBJECT
+  public slots:
+    bool existsOnDisk();
+
+  protected:
+    explicit NamedJSData();
+    void setIndex(int idx) { index = idx; }
+    inline QString propertyGroup() const override { return QStringLiteral("NamedJSData"); }
+    inline QString settingsPath()  const override { return QString("%1/%2/").arg(propertyGroup()).arg(index); }
+    friend class AppData;
+
+  public:
+    NamedJStickData joystick[MAX_JS_AXES];
+    NamedJButtonData jsButton[MAX_JS_BUTTONS];
+
+  private:
+    PROPERTYSTRD(jsName, "")
+    PROPERTY(unsigned int, jsLastUsed, 0)
 
     int index;
 };
@@ -379,6 +485,7 @@ class Profile: public CompStoreObj
     PROPERTYSTR(sdPath)
     PROPERTYSTR(pBackupDir)
 
+    PROPERTY (int, defaultInternalModule, 0)
     PROPERTY4(int, channelOrder, "default_channel_order",  0)
     PROPERTY4(int, defaultMode,  "default_mode",           1)
     PROPERTY (int, volumeGain,   10)
@@ -386,6 +493,7 @@ class Profile: public CompStoreObj
     PROPERTY4(bool, renameFwFiles, "rename_firmware_files", false)
     PROPERTY (bool, burnFirmware,  false)
     PROPERTY (bool, penableBackup, false)
+    PROPERTY (bool, runSDSync,  false)
 
     // Simulator variables
     PROPERTY(SimulatorOptions, simulatorOptions,  SimulatorOptions())
@@ -413,6 +521,8 @@ class Profile: public CompStoreObj
     PROPERTY4(int, txCurrentCalibration, "currentCalib",  0)
     PROPERTY4(int, txVoltageCalibration, "VbatCalib",     0)
 
+    PROPERTYSTRD(jsName, "")
+
     int index;
 
     static const QStringList fwVarsList()  //! for resetFwVariables()... TODO: make this go away
@@ -425,6 +535,90 @@ class Profile: public CompStoreObj
     }
 };
 
+//! \brief ComponentAssetData class stores properties related to each updateable component.
+class ComponentAssetData: public CompStoreObj
+{
+  Q_OBJECT
+  public:
+    ComponentAssetData & operator=(const ComponentAssetData & rhs);
+
+  public slots:
+    bool existsOnDisk();
+
+  protected:
+    explicit ComponentAssetData();
+    void setCompIndex(int idx) { compIndex = idx; }
+    void setIndex(int idx) { index = idx; }
+    void setIndexes(int compIdx, int idx) { compIndex = compIdx; index = idx; }
+    inline QString propertyGroup() const override { return QString("Components/component%1").arg(compIndex); }
+    inline QString settingsPath()  const override { return QString("%1/asset%2/").arg(propertyGroup()).arg(index); }
+    friend class ComponentData;
+    friend class AppData;
+
+  private:
+    PROPERTYSTR (      desc)
+    PROPERTY    (int,  processes,           0)
+    PROPERTY    (int,  flags,           0)
+    PROPERTY    (int,  filterType,      0)
+    PROPERTYSTR (      filter)
+    PROPERTY    (int,  maxExpected,     0)
+    PROPERTYSTR (      destSubDir)
+    PROPERTY    (int,  copyFilterType,  0)
+    PROPERTYSTR (      copyFilter)
+
+    int compIndex;
+    int index;
+};
+
+//! \brief ComponentData class stores properties related to each updateable component.
+class ComponentData: public CompStoreObj
+{
+  Q_OBJECT
+  public:
+    ComponentData & operator=(const ComponentData & rhs);
+
+    enum ReleaseChannel {
+      RELEASE_CHANNEL_STABLE,
+      RELEASE_CHANNEL_PRERELEASE,
+      RELEASE_CHANNEL_NIGHTLY
+    };
+    Q_ENUM(ReleaseChannel)
+
+    void releaseClear();
+    static QStringList releaseChannelsList() { return { tr("Releases"), tr("Pre-release"), tr("Nightly") } ; }
+
+    inline ReleaseChannel boundedReleaseChannel() const {
+      return qBound(RELEASE_CHANNEL_STABLE, releaseChannel(), RELEASE_CHANNEL_NIGHTLY); }
+
+    ComponentAssetData asset[MAX_COMPONENT_ASSETS];
+
+    ComponentAssetData & getAsset(int index);
+    const ComponentAssetData & getAsset(int index) const;
+    void initAllAssets();
+
+  public slots:
+    bool existsOnDisk();
+
+  protected:
+    explicit ComponentData();
+    void setIndex(int idx) { index = idx; }
+    inline QString propertyGroup() const override { return QStringLiteral("Components"); }
+    inline QString settingsPath()  const override { return QString("%1/component%2/").arg(propertyGroup()).arg(index); }
+    friend class AppData;
+
+  private:
+    PROPERTY    (bool,           checkForUpdate,  false)
+    PROPERTY    (ReleaseChannel, releaseChannel,  RELEASE_CHANNEL_STABLE)
+    PROPERTYSTRD(                release,         "unknown")
+    PROPERTY    (int,            releaseId,       0)
+    PROPERTY    (bool,           prerelease,      false)
+    PROPERTYSTRD(                version,         "0")
+    PROPERTYSTRD(                date,            "")
+
+    int index;
+
+    CREATE_ENUM_FRIEND_STREAM_OPS(ComponentData::ReleaseChannel)
+};
 
 /*!
   \brief The AppData class acts as the main interface for all application settings.
@@ -439,25 +633,35 @@ class AppData: public CompStoreObj
 {
   Q_OBJECT
   public:
-    enum DownloadBranchType {
-      BRANCH_RELEASE_STABLE,
-      BRANCH_RC_TESTING,
-      BRANCH_NIGHTLY_UNSTABLE
-    };
-    Q_ENUM(DownloadBranchType)
-
     enum NewModelAction {
       MODEL_ACT_NONE,
       MODEL_ACT_WIZARD,
-      MODEL_ACT_EDITOR
+      MODEL_ACT_EDITOR,
+      MODEL_ACT_TEMPLATE,
+      MODEL_ACT_PROMPT
     };
     Q_ENUM(NewModelAction)
+
+    enum UpdateCheckFreq {
+      UPDATE_CHECK_MANUAL,
+      UPDATE_CHECK_STARTUP,
+      UPDATE_CHECK_DAILY,
+      UPDATE_CHECK_WEEKLY,
+      UPDATE_CHECK_MONTHLY
+    };
+    Q_ENUM(UpdateCheckFreq)
+
+    static QStringList newModelActionsList() { return { tr("None"), tr("Wizard"), tr("Editor"), tr("Template"), tr("Prompt") } ; }
+    static QStringList updateCheckFreqsList() { return { tr("Manual"), tr("Startup"), tr("Daily"), tr("Weekly"), tr("Monthly") } ; }
+    // refer enum QtMsgType
+    static QStringList updateLogLevelsList() { return { tr("Debug"), tr("Warning"), tr("Critical"), tr("Fatal"), tr("Information") } ; }
 
     explicit AppData();
     void init() override;
     void initAll();
     void resetAllSettings();
     void storeAllSettings();
+    void resetUpdatesSettings();
 
     inline bool isFirstUse()         const { return firstUse; }
     inline QString previousVersion() const { return upgradeFromVersion; }
@@ -481,6 +685,11 @@ class AppData: public CompStoreObj
     //! List of all active profiles mapped by index.
     QMap<int, QString> getActiveProfiles() const;
 
+    //! Get a modifiable (non-const) reference to the ComponentData at \a index. Returns component[0] if \a index is invalid.
+    ComponentData & getComponent(int index);
+    //! Get a non-modifiable (const) reference to the ComponentData at \a index. Returns component[0] if \a index is invalid.
+    const ComponentData & getComponent(int index) const;
+
     //! Find the set of settings from the last previous version installed, if any. Used at virgin startup to offer import option.
     bool findPreviousVersionSettings(QString * version) const;
     //! Converts any old/refactored settings to new ones and removes anything stale if \a removeUnused is true. This is only important when
@@ -494,25 +703,21 @@ class AppData: public CompStoreObj
     bool exportSettings(QSettings * toSettings, bool clearDestination = true);
     bool exportSettingsToFile(const QString & expFile, QString & resultMsg);
 
-    inline DownloadBranchType boundedOpenTxBranch() const {
-#if defined(ALLOW_NIGHTLY_BUILDS)
-      return qBound(BRANCH_RELEASE_STABLE, OpenTxBranch(), BRANCH_NIGHTLY_UNSTABLE);
-#else
-      return qBound(BRANCH_RELEASE_STABLE, OpenTxBranch(), BRANCH_RC_TESTING);
-#endif
-    }
-
-    inline QString openTxCurrentDownloadBranchUrl() const { return openTxDownloadBranchUrl(boundedOpenTxBranch()); }
-
-    static const QString openTxDownloadBranchUrl(DownloadBranchType type)
-    {
-      static const QStringList urlList({ CPN_URL_DOWNLOAD_CUR_REL, CPN_URL_DOWNLOAD_CUR_RC, CPN_URL_DOWNLOAD_CUR_UNST });
-      return urlList.value(type, CPN_URL_DOWNLOAD_CUR_VERS);
-    }
-
     Profile    profile[MAX_PROFILES];
-    JStickData joystick[MAX_JOYSTICKS];
+    JStickData joystick[MAX_JS_AXES];
+    JButtonData jsButton[MAX_JS_BUTTONS];
+    NamedJSData namedJS[MAX_NAMED_JOYSTICKS];
     FwRevision fwRev;
+    ComponentData component[MAX_COMPONENTS];
+
+    void clearJSData() {
+      for (int i = 0; i < MAX_JS_AXES; i += 1)
+        joystick[i].clear();
+      for (int i = 0; i < MAX_JS_BUTTONS; i += 1)
+        jsButton[i].clear();
+    }
+    void saveNamedJS();
+    void loadNamedJS();
 
   signals:
     void currentProfileChanged();
@@ -520,6 +725,9 @@ class AppData: public CompStoreObj
   protected:
     inline QString propertyGroup() const override { return QStringLiteral("General"); }
     inline QString settingsPath()  const override { return QString(); }
+
+    void saveNamedJS(int i);
+    void loadNamedJS(int i);
 
   private:
 
@@ -535,47 +743,59 @@ class AppData: public CompStoreObj
     PROPERTYQBA (mdiWinState)
     PROPERTYQBA (compareWinGeo)
 
-    PROPERTYSTR3(armMcu,          "arm_mcu",         QStringLiteral("at91sam3s4-9x"))
+    PROPERTYSTR3(armMcu,          "arm_mcu",            QStringLiteral("at91sam3s4-9x"))
     PROPERTYSTR2(avrArguments,    "avr_arguments")
     PROPERTYSTR2(avrPort,         "avr_port")
     PROPERTYSTR2(avrdudeLocation, "avrdudeLocation")
-    PROPERTYSTR3(dfuArguments,    "dfu_arguments",   QStringLiteral("-a 0"))
+    PROPERTYSTR3(dfuArguments,    "dfu_arguments",      QStringLiteral("-a 0"))
     PROPERTYSTR2(dfuLocation,     "dfu_location")
     PROPERTYSTR2(sambaLocation,   "samba_location")
-    PROPERTYSTR3(sambaPort,       "samba_port",      QStringLiteral("\\USBserial\\COM23"))
-    PROPERTYSTR2(backupDir,       "backupPath")
-    PROPERTYSTR2(eepromDir,       "lastDir")
-    PROPERTYSTR2(flashDir,        "lastFlashDir")
-    PROPERTYSTR2(imagesDir,       "lastImagesDir")
-    PROPERTYSTR2(logDir,          "lastLogDir")
+    PROPERTYSTR3(sambaPort,       "samba_port",         QStringLiteral("\\USBserial\\COM23"))
+
     PROPERTYSTR2(libDir,          "libraryPath")
-    PROPERTYSTR2(snapshotDir,     "snapshotpath")
-    PROPERTYSTR2(updatesDir,      "lastUpdatesDir")
+
+    PROPERTYSTR3(backupDir,       "backupPath",         CPN_DOCUMENTS_LOCATION % "/backups")
+    PROPERTYSTR3(eepromDir,       "lastDir",            CPN_DOCUMENTS_LOCATION % "/eeproms")
+    PROPERTYSTR3(flashDir,        "lastFlashDir",       CPN_DOCUMENTS_LOCATION % "/flash")
+    PROPERTYSTR3(imagesDir,       "lastImagesDir",      CPN_DOCUMENTS_LOCATION % "/images")
+    PROPERTYSTR3(logDir,          "lastLogDir",         CPN_DOCUMENTS_LOCATION % "/debuglogs")
+    PROPERTYSTRD(appLogsDir,                            CPN_DOCUMENTS_LOCATION % "/debuglogs")
+    PROPERTYSTR3(snapshotDir,     "snapshotpath",       CPN_DOCUMENTS_LOCATION % "/snapshots")
+    PROPERTYSTRD(templatesDir,                          CPN_DOCUMENTS_LOCATION % "/templates")
+    PROPERTYSTRD(downloadDir,                           CPN_DOCUMENTS_LOCATION % "/downloads")
+    PROPERTYSTRD(decompressDir,                         CPN_DOCUMENTS_LOCATION % "/decompress")
+    PROPERTYSTRD(updateDir,                             CPN_DOCUMENTS_LOCATION % "/updates")
+    PROPERTY    (bool, decompressDirUseDwnld,           true)
+    PROPERTY    (bool, updateDirUseSD,                  true)
+    PROPERTY    (bool, runAppInstaller,                 false)
+    PROPERTY    (int,  updLogLevel,                     4)
+    PROPERTY    (bool, updDelDownloads,                 false)
+    PROPERTY    (bool, updDelDecompress,                false)
+    PROPERTYSTR (lastUpdateDir)
 
     PROPERTYSTR (locale)
     PROPERTYSTR (gePath)
     PROPERTYSTRD(mcu,        QStringLiteral("m64"))
     PROPERTYSTRD(programmer, QStringLiteral("usbasp"))
-    PROPERTYSTRD(appLogsDir, CPN_DOCUMENTS_LOCATION % "/DebugLogs")
 
-    PROPERTY(DownloadBranchType, OpenTxBranch,   BRANCH_RELEASE_STABLE)
-    PROPERTY(NewModelAction,     newModelAction, MODEL_ACT_WIZARD)
+    PROPERTY(NewModelAction, newModelAction, MODEL_ACT_WIZARD)
 
-    PROPERTY4(int, embedSplashes,   "embedded_splashes",  0)
-    PROPERTY4(int, fwServerFails,   "fwserver",           0)
-    PROPERTY4(int, iconSize,        "icon_size",          2)
-    PROPERTY4(int, jsCtrl,          "js_ctrl",            0)
-    PROPERTY4(int, historySize,     "history_size",      10)
-    PROPERTY (int, generalEditTab,  0)
-    PROPERTY (int, theme,           1)
-    PROPERTY (int, warningId,       0)
+    PROPERTY4(int, embedSplashes,         "embedded_splashes",        0)
+    PROPERTY4(int, fwServerFails,         "fwserver",                 0)
+    PROPERTY4(int, iconSize,              "icon_size",                2)
+    PROPERTY4(int, historySize,           "history_size",             10)
+    PROPERTY (int, generalEditTab,                                    0)
+    PROPERTY (int, theme,                                             1)
+    PROPERTY (int, warningId,                                         0)
 
-    PROPERTY4(bool, jsSupport,       "js_support",              false)
-    PROPERTY4(bool, showSplash,      "show_splash",             true)
-    PROPERTY4(bool, snapToClpbrd,    "snapshot_to_clipboard",   false)
-    PROPERTY4(bool, autoCheckApp,    "startup_check_companion", true)
-    PROPERTY4(bool, autoCheckFw,     "startup_check_fw",        true)
-    PROPERTY4(bool, promptProfile,   "startup_prompt_profile",  false)
+    PROPERTY4(bool, jsSupport,            "js_support",               false)
+    PROPERTY4(bool, showSplash,           "show_splash",              true)
+    PROPERTY4(bool, snapToClpbrd,         "snapshot_to_clipboard",    false)
+
+    PROPERTY(UpdateCheckFreq, updateCheckFreq, UPDATE_CHECK_MANUAL)
+    PROPERTYSTR(lastUpdateCheck)
+
+    PROPERTY4(bool, promptProfile,        "startup_prompt_profile",   false)
 
     PROPERTY(bool, enableBackup,               false)
     PROPERTY(bool, backupOnFlash,              true)
@@ -592,15 +812,16 @@ class AppData: public CompStoreObj
     PROPERTY(int, backLight,       0)
     PROPERTY(int, simuLastProfId, -1)
     PROPERTY(bool, simuSW,      true)
+    PROPERTY(bool, disableJoystickWarning, false)
+
+    // Message box confirmations
+    PROPERTY(bool, confirmWriteModelsAndSettings, true)
 
     bool firstUse;
     QString upgradeFromVersion;
 
-    CREATE_ENUM_FRIEND_STREAM_OPS(AppData::DownloadBranchType)
     CREATE_ENUM_FRIEND_STREAM_OPS(AppData::NewModelAction)
+    CREATE_ENUM_FRIEND_STREAM_OPS(AppData::UpdateCheckFreq)
 };
 
 extern AppData g;
-
-//! @}
-#endif // _APPDATA_H_

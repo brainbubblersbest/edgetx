@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -20,7 +21,10 @@
 
 #pragma once
 
+#if defined(LUA)
 #include "libopenui.h"
+#include "lua/lua_api.h"
+#include "lua/lua_widget.h"
 
 struct LuaPopup
 {
@@ -29,7 +33,7 @@ struct LuaPopup
   void paint(BitmapBuffer* dc, uint8_t type, const char* text, const char* info);
 };
 
-class StandaloneLuaWindow : public Window
+class StandaloneLuaWindow : public Window, public LuaEventHandler
 {
   static StandaloneLuaWindow* _instance;
 
@@ -38,30 +42,32 @@ class StandaloneLuaWindow : public Window
 public:
   static StandaloneLuaWindow* instance();
 
-  void attach(Window* newParent);
+  void attach();
   void deleteLater(bool detach = true, bool trash = true) override;
-  void paint(BitmapBuffer* dc) override;
-  void checkEvents() override;
 
 #if defined(DEBUG_WINDOWS)
   std::string getName() const override { return "StandaloneLuaWindow"; }
-#endif
-
-#if defined(HARDWARE_KEYS)
-  void onEvent(event_t evt) override;
 #endif
 
   bool displayPopup(event_t event, uint8_t type, const char* text,
                     const char* info, bool& result);
 
 protected:
+  lv_obj_t* prevScreen = nullptr;
+
   // GFX
   BitmapBuffer lcdBuffer;
-  uint32_t lastRefresh = 0;
 
   // pop-ups
   LuaPopup popup;
 
   // run LUA code
   void runLua(event_t evt);
+
+  void paint(BitmapBuffer* dc) override;
+  void onEvent(event_t evt) override;
+  void checkEvents() override;
+  void onClicked() override;
+  void onCancel() override;
 };
+#endif

@@ -1,20 +1,22 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
- * Source:
- *  https://github.com/opentx/libopenui
+ * Based on code named
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
+ *   er9x - http://code.google.com/p/er9x
+ *   gruvin9x - http://code.google.com/p/gruvin9x
  *
- * This file is a part of libopenui library.
+ * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #ifndef _PAGE_H_
@@ -22,78 +24,46 @@
 
 #include "window.h"
 #include "button.h"
+#include "static.h"
 
 class Page;
 
-class PageHeader: public FormGroup
+class PageHeader : public FormGroup
 {
-  public:
-    PageHeader(Page * parent, uint8_t icon);
+ public:
+  PageHeader(Page* parent, uint8_t icon);
 
-#if defined(HARDWARE_TOUCH)
-    void deleteLater(bool detach = true, bool trash = true) override
-    {
-      if (_deleted)
-        return;
+  uint8_t getIcon() const { return icon; }
+  void setTitle(std::string txt) { title->setText(std::move(txt)); }
+  StaticText* setTitle2(std::string txt);
 
-      back.deleteLater(true, false);
-      FormGroup::deleteLater(detach, trash);
-    }
-#endif
+  void paint(BitmapBuffer* dc) override;
 
-    void paint(BitmapBuffer * dc) override;
-
-    uint8_t getIcon() const
-    {
-      return icon;
-    }
-
-  protected:
-    uint8_t icon;
-#if defined(HARDWARE_TOUCH)
-    Button back;
-#endif
+ protected:
+  uint8_t icon;
+  StaticText* title;
+  StaticText* title2 = nullptr;
 };
 
-class Page: public Window
+class Page : public Window
 {
-  public:
-    explicit Page(unsigned icon);
-
-    void deleteLater(bool detach = true, bool trash = true) override;
+ public:
+  explicit Page(unsigned icon);
 
 #if defined(DEBUG_WINDOWS)
-    std::string getName() const override
-    {
-      return "Page";
-    }
+  std::string getName() const override { return "Page"; }
 #endif
 
-#if defined(HARDWARE_KEYS)
-    void onEvent(event_t event) override;
-#endif
+  void onCancel() override;
+  void onClicked() override;
 
-#if defined(HARDWARE_TOUCH)
-    bool onTouchStart(coord_t x, coord_t y) override
-    {
-      Window::onTouchStart(x, y);
-      return true;
-    }
+  void deleteLater(bool detach = true, bool trash = true) override;
 
-    bool onTouchEnd(coord_t x, coord_t y) override;
+ protected:
+  PageHeader header;
+  FormWindow body;
 
-    bool onTouchSlide(coord_t x, coord_t y, coord_t startX, coord_t startY, coord_t slideX, coord_t slideY) override
-    {
-      Window::onTouchSlide(x, y, startX, startY, 0/*slideX*/, slideY);
-      return true;
-    }
-#endif
-
-    void paint(BitmapBuffer * dc) override;
-
-  protected:
-    PageHeader header;
-    FormWindow body;
+  void onEvent(event_t event) override;
 };
 
 #endif // _PAGE_H_

@@ -26,6 +26,7 @@
 #include "radiodataconversionstate.h"
 #include "helpers.h"
 #include "adjustmentreference.h"
+#include "compounditemmodels.h"
 
 ModelData::ModelData()
 {
@@ -176,8 +177,10 @@ void ModelData::clear()
   for (unsigned i = 0; i < CPN_MAX_SENSORS; i++)
     sensorData[i].clear();
 
-  static const uint8_t blob[] = { 0x4c, 0x61, 0x79, 0x6f, 0x75, 0x74, 0x32, 0x50, 0x31, 0x00, 0x4d, 0x6f, 0x64, 0x65, 0x6c, 0x42, 0x6d, 0x70, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-  memcpy(customScreenData[0], blob, sizeof(blob));
+  trainerMode = TRAINER_MODE_OFF;
+
+  const char * layoutId = "Layout2P1";  // currently all using same default though might change for NV14
+  RadioLayout::init(layoutId, customScreens);
 }
 
 bool ModelData::isEmpty() const
@@ -209,6 +212,17 @@ void ModelData::setDefaultMixes(const GeneralSettings & settings)
   }
 }
 
+void ModelData::setDefaultFunctionSwitches(int functionSwitchCount)
+{
+  if (functionSwitchCount == 0)
+    return;
+
+  for (int i = 0; i < functionSwitchCount; i++) {
+    setFuncSwitchConfig(i, Board::SWITCH_2POS);
+    setFuncSwitchGroup(i, 1);
+  }
+}
+
 void ModelData::setDefaultValues(unsigned int id, const GeneralSettings & settings)
 {
   clear();
@@ -218,6 +232,7 @@ void ModelData::setDefaultValues(unsigned int id, const GeneralSettings & settin
     moduleData[i].modelId = id + 1;
   }
   setDefaultMixes(settings);
+  setDefaultFunctionSwitches(Boards::getCapability(getCurrentFirmware()->getBoard(), Board::FunctionSwitches));
 }
 
 int ModelData::getTrimValue(int phaseIdx, int trimIdx)
@@ -369,6 +384,28 @@ int ModelData::getChannelsMax(bool forceExtendedLimits) const
     return 100;
 }
 
+bool ModelData::isFunctionSwitchPositionAvailable(int index) const
+ {
+   if (index == 0)
+     return true;
+
+   div_t qr = div(abs(index) - 1, 3);
+   int fs = getFuncSwitchConfig(qr.quot);
+
+   if (qr.rem == 1) {
+     return false;
+   }
+   else {
+     return fs != Board::SWITCH_NOT_AVAILABLE;
+   }
+ }
+
+ bool ModelData::isFunctionSwitchSourceAllowed(int index) const
+ {
+   return (int)getFuncSwitchConfig(index) != Board::SWITCH_NOT_AVAILABLE;
+ }
+
+
 bool ModelData::isAvailable(const RawSwitch & swtch) const
 {
   unsigned index = abs(swtch.index) - 1;
@@ -381,6 +418,9 @@ bool ModelData::isAvailable(const RawSwitch & swtch) const
   }
   else if (swtch.type == SWITCH_TYPE_SENSOR) {
     return strlen(sensorData[index].label) > 0;
+  }
+  else if (swtch.type == SWITCH_TYPE_FUNCTIONSWITCH) {
+     return isFunctionSwitchPositionAvailable(index + 1);
   }
   else {
     return true;
@@ -401,10 +441,29 @@ void ModelData::convert(RadioDataConversionState & cstate)
     origin = QString::number(cstate.modelIdx+1);
   cstate.setOrigin(tr("Model: ") % origin);
 
-  cstate.setComponent("SET", 0);
+  cstate.setComponent("Settings", 0);
   if (thrTraceSrc && (int)thrTraceSrc < cstate.fromBoard.getCapability(Board::Pots) + cstate.fromBoard.getCapability(Board::Sliders)) {
     cstate.setSubComp(tr("Throttle Source"));
     thrTraceSrc = RawSource(SOURCE_TYPE_STICK, (int)thrTraceSrc + 3).convert(cstate).index - 3;
+  }
+
+  Firmware *fw = getCurrentFirmware();
+
+  if (fw->getCapability(HasModelImage) && bitmap[0] != '\0') {
+    QString filename = bitmap;
+    QFileInfo file(filename);
+    if (fw->getCapability(ModelImageKeepExtn) && file.suffix() == "")
+      filename.append(".bmp");  // bmp is assumed default for radios that do not store file extension
+    else if (!fw->getCapability(ModelImageKeepExtn) && file.suffix() != "") {
+      int posn = filename.indexOf("." % file.suffix(), + 1);
+      filename.remove(posn, filename.size() - posn + 1);
+    }
+    memset(bitmap, 0, CPN_MAX_BITMAP_LEN);
+    strncpy(bitmap, filename.toLatin1().data(), fw->getCapability(ModelImageNameLen));
+  }
+
+  for (int i = 0; i < CPN_MAX_MODULES; i++) {
+    moduleData[i].convert(cstate.withComponentIndex(i));
   }
 
   for (int i = 0; i < CPN_MAX_TIMERS; i++) {
@@ -429,10 +488,6 @@ void ModelData::convert(RadioDataConversionState & cstate)
 
   for (int i = 0; i < CPN_MAX_FLIGHT_MODES; i++) {
     flightModeData[i].convert(cstate.withComponentIndex(i));
-  }
-
-  for (int i = 0; i < CPN_MAX_MODULES; i++) {
-    moduleData[i].convert(cstate.withComponentIndex(i));
   }
 }
 
@@ -575,7 +630,7 @@ int ModelData::updateReference()
   for (int i = 0; i < CPN_MAX_TIMERS; i++) {
     TimerData *td = &timers[i];
     if (!td->isModeOff()) {
-      updateTimerMode(td->mode);
+      updateTimerMode(td->swtch);
       if (td->isModeOff())
         appendUpdateReferenceParams(REF_UPD_TYPE_TIMER, REF_UPD_ACT_CLEAR, i);
     }
@@ -1549,4 +1604,211 @@ void ModelData::limitsSet(const int index, const QByteArray & data)
     return;
 
   memcpy(&limitData[index], data.constData(), sizeof(LimitData));
+}
+
+QString ModelData::trainerModeToString() const
+{
+  return trainerModeToString(trainerMode);
+}
+
+//  static
+QString ModelData::trainerModeToString(int value)
+{
+  switch (value) {
+    case TRAINER_MODE_OFF:
+      return tr("OFF");
+    case TRAINER_MODE_MASTER_JACK:
+      return tr("Master/Jack");
+    case TRAINER_MODE_SLAVE_JACK:
+      return tr("Slave/Jack");
+    case TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE:
+      return tr("Master/SBUS Module");
+    case TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE:
+      return tr("Master/CPPM Module");
+    case TRAINER_MODE_MASTER_BATTERY_COMPARTMENT:
+      return tr("Master/Battery");
+    case TRAINER_MODE_MASTER_BLUETOOTH:
+      return tr("Master/Bluetooth");
+    case TRAINER_MODE_SLAVE_BLUETOOTH:
+      return tr("Slave/Bluetooth");
+    case TRAINER_MODE_MULTI:
+      return tr("Master/Multi");
+    default:
+      return CPN_STR_UNKNOWN_ITEM;
+  }
+}
+
+//  static
+bool ModelData::isTrainerModeAvailable(const GeneralSettings & generalSettings, const Firmware * firmware, const int value)
+{
+  if (value < TRAINER_MODE_FIRST || value > TRAINER_MODE_LAST)
+    return false;
+
+  bool ret = true;
+  const Board::Type board = firmware->getBoard();
+
+  if (!IS_TARANIS(board) ||
+           IS_ACCESS_RADIO(board, Firmware::getCurrentVariant()->getId())) {
+    if (value >= TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE &&
+        value <= TRAINER_MODE_MASTER_BATTERY_COMPARTMENT)
+      ret = false;
+  } else if (generalSettings.serialPort[GeneralSettings::SP_AUX1] !=
+                 UART_MODE_SBUS_TRAINER &&
+             value == TRAINER_MODE_MASTER_BATTERY_COMPARTMENT)
+    ret = false;
+
+  if (generalSettings.bluetoothMode !=
+          GeneralSettings::BLUETOOTH_MODE_TRAINER &&
+      value >= TRAINER_MODE_MASTER_BLUETOOTH &&
+      value <= TRAINER_MODE_SLAVE_BLUETOOTH)
+    ret = false;
+
+  return ret;
+}
+
+//  static
+AbstractStaticItemModel * ModelData::trainerModeItemModel(const GeneralSettings & generalSettings, const Firmware * firmware)
+{
+  AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
+  mdl->setName(AIM_MODELDATA_TRAINERMODE);
+
+  for (int i = TRAINER_MODE_FIRST; i <= TRAINER_MODE_LAST; i++) {
+    mdl->appendToItemList(trainerModeToString(i), i, isTrainerModeAvailable(generalSettings, firmware, i));
+  }
+
+  mdl->loadItemList();
+  return mdl;
+}
+
+
+ unsigned int ModelData::getFuncSwitchConfig(unsigned int index) const
+ {
+   if (index < CPN_MAX_FUNCTION_SWITCHES)
+     return Helpers::getBitmappedValue(functionSwitchConfig, index, 2);
+   else
+     return FUNC_SWITCH_CONFIG_NONE;
+ }
+
+ void ModelData::setFuncSwitchConfig(unsigned int index, unsigned int value)
+ {
+   if (index < CPN_MAX_FUNCTION_SWITCHES)
+     Helpers::setBitmappedValue(functionSwitchConfig, value, index, 2);
+ }
+
+ //  static
+ QString ModelData::funcSwitchConfigToString(unsigned int value)
+ {
+   switch (value) {
+     case FUNC_SWITCH_CONFIG_NONE:
+       return tr("NONE");
+     case FUNC_SWITCH_CONFIG_TOGGLE:
+       return tr("TOGGLE");
+     case FUNC_SWITCH_CONFIG_2POS:
+       return tr("2POS");
+     default:
+       return CPN_STR_UNKNOWN_ITEM;
+   }
+ }
+
+ //  static
+ AbstractStaticItemModel * ModelData::funcSwitchConfigItemModel()
+ {
+   AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
+   mdl->setName(AIM_MODELDATA_FUNCSWITCHCONFIG);
+
+   for (unsigned int i = FUNC_SWITCH_CONFIG_FIRST; i <= FUNC_SWITCH_CONFIG_LAST; i++) {
+     mdl->appendToItemList(funcSwitchConfigToString(i), i);
+   }
+
+   mdl->loadItemList();
+   return mdl;
+ }
+
+ unsigned int ModelData::getFuncSwitchGroup(unsigned int index) const
+ {
+   if (index < CPN_MAX_FUNCTION_SWITCHES)
+     return Helpers::getBitmappedValue(functionSwitchGroup, index, 2);
+   else
+     return 0;
+ }
+
+ void ModelData::setFuncSwitchGroup(unsigned int index, unsigned int value)
+ {
+   if (index < CPN_MAX_FUNCTION_SWITCHES)
+     Helpers::setBitmappedValue(functionSwitchGroup, value, index, 2);
+ }
+
+ unsigned int ModelData::getFuncSwitchAlwaysOnGroup(unsigned int index) const
+ {
+   if (index < CPN_MAX_FUNCTION_SWITCHES) {
+     unsigned int grp = getFuncSwitchGroup(index);
+     unsigned int switchcnt = Boards::getCapability(getCurrentFirmware()->getBoard(), Board::FunctionSwitches);
+     return Helpers::getBitmappedValue(functionSwitchGroup, grp, 1, 2 * switchcnt);
+   }
+   else
+     return 0;
+ }
+
+ void ModelData::setFuncSwitchAlwaysOnGroup(unsigned int index, unsigned int value)
+ {
+   if (index < CPN_MAX_FUNCTION_SWITCHES) {
+     unsigned int grp = getFuncSwitchGroup(index);
+     unsigned int switchcnt = Boards::getCapability(getCurrentFirmware()->getBoard(), Board::FunctionSwitches);
+     Helpers::setBitmappedValue(functionSwitchGroup, value, grp, 1, 2 * switchcnt);
+   }
+ }
+
+ unsigned int ModelData::getFuncSwitchStart(unsigned int index) const
+ {
+   if (index < CPN_MAX_FUNCTION_SWITCHES)
+     return Helpers::getBitmappedValue(functionSwitchStartConfig, index, 2);
+   else
+     return FUNC_SWITCH_START_INACTIVE;
+ }
+
+ void ModelData::setFuncSwitchStart(unsigned int index, unsigned int value)
+ {
+   if (index < CPN_MAX_FUNCTION_SWITCHES)
+     Helpers::setBitmappedValue(functionSwitchStartConfig, value, index, 2);
+ }
+
+ //  static
+ QString ModelData::funcSwitchStartToString(unsigned int value)
+ {
+   switch (value) {
+     case FUNC_SWITCH_START_INACTIVE:
+       return tr("Inactive");
+     case FUNC_SWITCH_START_ACTIVE:
+       return tr("Active");
+     case FUNC_SWITCH_START_PREVIOUS:
+       return tr("Restore");
+     default:
+       return CPN_STR_UNKNOWN_ITEM;
+   }
+ }
+
+ //  static
+ AbstractStaticItemModel * ModelData::funcSwitchStartItemModel()
+ {
+   AbstractStaticItemModel * mdl = new AbstractStaticItemModel();
+   mdl->setName(AIM_MODELDATA_FUNCSWITCHSTART);
+
+   for (unsigned int i = FUNC_SWITCH_START_FIRST; i <= FUNC_SWITCH_START_LAST; i++) {
+     mdl->appendToItemList(funcSwitchStartToString(i), i);
+   }
+
+   mdl->loadItemList();
+   return mdl;
+ }
+
+int ModelData::getCustomScreensCount() const
+{
+  int cnt = 0;
+
+  for (int i = 0; i < MAX_CUSTOM_SCREENS; i++) {
+    if (customScreens.customScreenData[i].layoutId[0] != '\0')
+      cnt++;
+  }
+
+  return cnt;
 }

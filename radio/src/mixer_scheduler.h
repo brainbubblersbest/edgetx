@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,12 +19,14 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _MIXER_SCHEDULER_H_
-#define _MIXER_SCHEDULER_H_
+#pragma once
 
-#define MIXER_SCHEDULER_DEFAULT_PERIOD_US 4000u // 4ms
+#include <stdint.h>
 
-#define MIN_REFRESH_RATE      1750 /* us */
+#define MIXER_SCHEDULER_DEFAULT_PERIOD_US  4000u // 4ms
+#define MIXER_SCHEDULER_JOYSTICK_PERIOD_US 2000u // 2ms
+
+#define MIN_REFRESH_RATE       850 /* us */
 #define MAX_REFRESH_RATE     50000 /* us */
 
 #if !defined(SIMU)
@@ -37,23 +40,20 @@ void mixerSchedulerStart();
 // Stop the scheduler timer
 void mixerSchedulerStop();
 
-// Set the timer counter to 0
-void mixerSchedulerResetTimer();
-
 // Set the scheduling period for a given module
 void mixerSchedulerSetPeriod(uint8_t moduleIdx, uint16_t periodUs);
 
-// Clear the flag before waiting
-
-// Wait for the scheduler timer to trigger
-// returns true if timeout, false otherwise
-bool mixerSchedulerWaitForTrigger(uint8_t timeoutMs);
+// Get the scheduling period for a given module
+uint16_t mixerSchedulerGetPeriod(uint8_t moduleIdx);
 
 // Enable the timer trigger
 void mixerSchedulerEnableTrigger();
 
 // Disable the timer trigger
 void mixerSchedulerDisableTrigger();
+
+// Trigger mixer from heartbeat interrupt 
+void mixerSchedulerSoftTrigger();
 
 // Fetch the current scheduling period
 uint16_t getMixerSchedulerPeriod();
@@ -66,22 +66,19 @@ void mixerSchedulerISRTrigger();
 #define mixerSchedulerInit()
 #define mixerSchedulerStart()
 #define mixerSchedulerStop()
-#define mixerSchedulerResetTimer()
-#define mixerSchedulerSetPeriod(m,p)
-#define mixerSchedulerClearTrigger()
-
-static inline bool mixerSchedulerWaitForTrigger(uint8_t timeout)
-{
-  simuSleep(timeout);
-  return false;
-}
+#define mixerSchedulerSetPeriod(m,p) ((void)(p))
+#define mixerSchedulerGetPeriod(m) ((uint16_t)MIXER_SCHEDULER_DEFAULT_PERIOD_US)
 
 #define mixerSchedulerEnableTrigger()
 #define mixerSchedulerDisableTrigger()
+
+#define mixerSchedulerSoftTrigger()
 
 #define getMixerSchedulerPeriod() (MIXER_SCHEDULER_DEFAULT_PERIOD_US)
 #define mixerSchedulerISRTrigger()
 
 #endif
 
-#endif
+// Wait for the scheduler timer to trigger
+// returns true if timeout, false otherwise
+bool mixerSchedulerWaitForTrigger(uint8_t timeoutMs);

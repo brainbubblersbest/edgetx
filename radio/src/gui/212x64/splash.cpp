@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,26 +22,21 @@
 #include "opentx.h"
 
 #if defined(SPLASH)
-const unsigned char splashdata[]  = {
-  'S','P','S',0,
-  #include "bitmaps/212x64/splash.lbm"
-  'S','P','E',0 };
-const unsigned char * const splash_lbm = splashdata+4;
+#define MAXIMUM_SPLASH_IMAGE_SIZE 3072
+const struct {
+  const uint8_t __magic_prefix[4] = { 'S','P','S',0 };
+  const uint8_t splashdata[MAXIMUM_SPLASH_IMAGE_SIZE] = {
+    #include "bitmaps/212x64/splash.lbm"
+  };
+  const uint8_t __magic_suffix[4] = { 'S','P','E',0 };
+} splash_struct;
+static_assert(sizeof(splash_struct.splashdata) <= MAXIMUM_SPLASH_IMAGE_SIZE, "");
+const unsigned char * const splash_lbm = splash_struct.splashdata;
 
 void drawSplash()
 {
   lcdClear();
-  lcdDrawBitmap(0, 0, splash_lbm);
-
-#if MENUS_LOCK == 1
-  if (readonly == false) {
-    lcdDrawFilledRect((LCD_W - (sizeof(TR_UNLOCKED) - 1) * FW) / 2 - 9, 50,
-                      (sizeof(TR_UNLOCKED) - 1) * FW + 16, 11, SOLID,
-                      ERASE | ROUND);
-    lcdDrawText((LCD_W - (sizeof(TR_UNLOCKED) - 1) * FW) / 2, 53, STR_UNLOCKED);
-  }
-#endif
-
+  lcdDrawRleBitmap(0, 0, splash_lbm);
   lcdRefresh();
 }
 #endif

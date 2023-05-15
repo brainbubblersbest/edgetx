@@ -1,8 +1,9 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   th9x - http://code.google.com/p/th9x 
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
  *
@@ -154,11 +155,14 @@ const char * nchar2string(const char * string, int size)
   return _stringResult;
 }
 
+extern bool _eeprom_write_simu_delay;
 
 int main(int argc, char **argv)
 {
   QCoreApplication app(argc, argv);
   simuInit();
+
+  _eeprom_write_simu_delay = false;
   startEepromThread(nullptr);
 #if defined(EEPROM_SIZE)
   eeprom = (uint8_t *)malloc(EEPROM_SIZE);
@@ -179,5 +183,9 @@ int main(int argc, char **argv)
     listeners.Append(new TersePrinter(defaultPrinter));
   }
 
+#if defined(LIBOPENUI)
+  lcdInitDisplayDriver();
+#endif
+  
   return RUN_ALL_TESTS();
 }

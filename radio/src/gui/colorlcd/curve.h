@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,7 +19,6 @@
  * GNU General Public License for more details.
  */
 
-
 #pragma once
 
 #include "window.h"
@@ -28,17 +28,27 @@ struct CurvePoint {
   LcdFlags flags;
 };
 
+class CurveRenderer
+{
+  public:
+    CurveRenderer(const rect_t & rect, std::function<int(int)> function);
+
+    void paint(BitmapBuffer * dc, uint8_t ofst = 0);
+
+  protected:
+    // Drawing rectangle position & size
+    uint8_t dx, dy, dw, dh;
+    rect_t rect;
+    std::function<int(int)> function;
+    void drawBackground(BitmapBuffer * dc);
+    void drawCurve(BitmapBuffer * dc);
+    coord_t getPointY(int y) const;
+};
+
 class Curve: public Window
 {
-  friend class CurveEdit;
-
   public:
-    Curve(Window * parent, const rect_t & rect, std::function<int(int)> function, std::function<int()> position=nullptr):
-      Window(parent, rect, OPAQUE),
-      function(std::move(function)),
-      position(std::move(position))
-    {
-    }
+    Curve(Window * parent, const rect_t & rect, std::function<int(int)> function, std::function<int()> position=nullptr);
 
 #if defined(DEBUG_WINDOWS)
     std::string getName() const override
@@ -47,15 +57,7 @@ class Curve: public Window
     }
 #endif
 
-    void checkEvents() override
-    {
-      // will always force a full window refresh
-      if (position) {
-        invalidate();
-      }
-
-      Window::checkEvents();
-    }
+    void checkEvents() override;
 
     void addPoint(const point_t & point, LcdFlags flags);
 
@@ -64,6 +66,10 @@ class Curve: public Window
     void paint(BitmapBuffer * dc) override;
 
   protected:
+    CurveRenderer base;
+    // Drawing rectangle position & size
+    uint8_t dx, dy, dw, dh;
+    int lastPos = 0;
     std::function<int(int)> function;
     std::function<int()> position;
     std::list<CurvePoint> points;
@@ -75,3 +81,8 @@ class Curve: public Window
     coord_t getPointY(int y) const;
 };
 
+#include "lz4_bitmaps.h"
+
+DEFINE_LZ4_BITMAP(LBM_CURVE_POINT);
+DEFINE_LZ4_BITMAP(LBM_CURVE_POINT_CENTER);
+DEFINE_LZ4_BITMAP(LBM_CURVE_COORD_SHADOW);

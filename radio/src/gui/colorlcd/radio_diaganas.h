@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,14 +19,13 @@
  * GNU General Public License for more details.
  */
 
-#include "page.h"
+#pragma once
 
-class RadioAnalogsDiagsPage: public Page {
-  public:
-    explicit RadioAnalogsDiagsPage();
+#include "tabsgroup.h"
+#include "window.h"
 
-  protected:
-    void buildHeader(Window * window);
-    void buildBody(Window * window);
+class RadioAnalogsDiagsViewPageGroup : public TabsGroup
+{
+ public:
+  RadioAnalogsDiagsViewPageGroup();
 };
-

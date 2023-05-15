@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -76,6 +77,7 @@ void evalTimers(int16_t throttle, uint8_t tick10ms)
     tmrstart_t timerStart = g_model.timers[i].start;
     int16_t     timerSwtch = g_model.timers[i].swtch;
     TimerState * timerState = &timersStates[i];
+    uint32_t showElapsed = g_model.timers[i].showElapsed;
 
     if (timerMode) {
       if ((timerState->state == TMR_OFF)
@@ -164,8 +166,10 @@ void evalTimers(int16_t throttle, uint8_t tick10ms)
             if (g_model.timers[i].countdownBeep && g_model.timers[i].start) {
               AUDIO_TIMER_COUNTDOWN(i, newTimerVal);
             }
-            if (g_model.timers[i].minuteBeep && (newTimerVal % 60) == 0) {
-              AUDIO_TIMER_MINUTE(newTimerVal);
+            tmrval_t announceVal = newTimerVal;
+            if (showElapsed) announceVal = timerStart - newTimerVal;
+            if (g_model.timers[i].minuteBeep && (announceVal % 60) == 0) {
+              AUDIO_TIMER_MINUTE(announceVal);
               // TRACE("Timer[%d] %d minute announcement", i, newTimerVal/60);
             }
           }

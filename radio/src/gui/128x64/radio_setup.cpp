@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,6 +22,7 @@
 #define LANGUAGE_PACKS_DEFINITION
 
 #include "opentx.h"
+#include "tasks/mixer_task.h"
 
 const unsigned char sticks[]  = {
 #include "sticks.lbm"
@@ -68,9 +70,9 @@ enum {
   CASE_HAPTIC(ITEM_RADIO_SETUP_HAPTIC_MODE)
   CASE_HAPTIC(ITEM_RADIO_SETUP_HAPTIC_LENGTH)
   CASE_HAPTIC(ITEM_RADIO_SETUP_HAPTIC_STRENGTH)
-  CASE_GYRO(ITEM_RADIO_SETUP_GYRO_LABEL)
-  CASE_GYRO(ITEM_RADIO_SETUP_GYRO_MAX)
-  CASE_GYRO(ITEM_RADIO_SETUP_GYRO_OFFSET)
+  CASE_IMU(ITEM_RADIO_SETUP_IMU_LABEL)
+  CASE_IMU(ITEM_RADIO_SETUP_IMU_MAX)
+  CASE_IMU(ITEM_RADIO_SETUP_IMU_OFFSET)
   ITEM_RADIO_SETUP_CONTRAST,
   ITEM_RADIO_SETUP_ALARMS_LABEL,
   ITEM_RADIO_SETUP_BATTERY_WARNING,
@@ -98,9 +100,10 @@ enum {
   ITEM_RADIO_SETUP_IMPERIAL,
   IF_FAI_CHOICE(ITEM_RADIO_SETUP_FAI)
   ITEM_RADIO_SETUP_SWITCHES_DELAY,
-  CASE_STM32(ITEM_RADIO_SETUP_USB_MODE)
+  ITEM_RADIO_SETUP_USB_MODE,
   CASE_JACK_DETECT(ITEM_RADIO_SETUP_JACK_MODE)
   ITEM_RADIO_SETUP_RX_CHANNEL_ORD,
+  CASE_ROTARY_ENCODER(ITEM_RADIO_SETUP_ROTARY_ENC_MODE)
   ITEM_RADIO_SETUP_STICK_MODE_LABELS,
   ITEM_RADIO_SETUP_STICK_MODE,
   ITEM_RADIO_SETUP_MAX
@@ -134,8 +137,10 @@ void menuRadioSetup(event_t event)
   }
 #endif
 
+#if defined(PXX2)
   uint8_t old_editMode = s_editMode;
-  
+#endif
+
   MENU(STR_RADIO_SETUP, menuTabGeneral, MENU_RADIO_SETUP, HEADER_LINE+ITEM_RADIO_SETUP_MAX, {
     HEADER_LINE_COLUMNS CASE_RTCLOCK(2) CASE_RTCLOCK(2) CASE_BATTGRAPH(1)
     LABEL(SOUND), CASE_AUDIO(0)
@@ -150,9 +155,9 @@ void menuRadioSetup(event_t event)
     CASE_HAPTIC(0)
     CASE_HAPTIC(0)
     CASE_HAPTIC(0)
-    CASE_GYRO(LABEL(GYRO))
-    CASE_GYRO(0)
-    CASE_GYRO(0)
+    CASE_IMU(LABEL(IMU))
+    CASE_IMU(0)
+    CASE_IMU(0)
     0, LABEL(ALARMS), 0, CASE_CAPACITY(0)
     0, 0, 0, 0, /* ITEM_RADIO_SETUP_INACTIVITY_ALARM ITEM_RADIO_SETUP_MEMORY_WARNING ITEM_RADIO_SETUP_ALARM_WARNING ITEM_RADIO_SETUP_RSSI_POWEROFF_ALARM */
     CASE_BACKLIGHT(LABEL(BACKLIGHT))
@@ -172,12 +177,16 @@ void menuRadioSetup(event_t event)
     CASE_PXX1(0)
     0, 0, IF_FAI_CHOICE(0)
     0,
-    CASE_STM32(0) // USB mode
+    0, // USB mode
     CASE_JACK_DETECT(0) // Jack mode
+    CASE_ROTARY_ENCODER(0)
     0, COL_TX_MODE, 0, 1/*to force edit mode*/});
 
   if (event == EVT_ENTRY) {
     reusableBuffer.generalSettings.stickMode = g_eeGeneral.stickMode;
+#if defined(ROTARY_ENCODER_NAVIGATION)
+    reusableBuffer.generalSettings.rotaryEncoderMode = g_eeGeneral.rotEncMode;
+#endif
   }
 
   uint8_t sub = menuVerticalPosition - HEADER_LINE;
@@ -384,29 +393,29 @@ void menuRadioSetup(event_t event)
         break;
 #endif
 
-#if defined(GYRO)
-      case ITEM_RADIO_SETUP_GYRO_LABEL:
-        lcdDrawTextAlignedLeft(y, STR_GYRO_LABEL);
+#if defined(IMU)
+      case ITEM_RADIO_SETUP_IMU_LABEL:
+        lcdDrawTextAlignedLeft(y, STR_IMU_LABEL);
         break;
 
-      case ITEM_RADIO_SETUP_GYRO_MAX:
-        lcdDrawText(INDENT_WIDTH, y, STR_GYRO_MAX);
-        lcdDrawNumber(RADIO_SETUP_2ND_COLUMN, y, GYRO_MAX_DEFAULT + g_eeGeneral.gyroMax, attr|LEFT);
-        lcdDrawChar(lcdLastRightPos, y, '@', attr);
+      case ITEM_RADIO_SETUP_IMU_MAX:
+        lcdDrawText(INDENT_WIDTH, y, STR_IMU_MAX);
+        lcdDrawNumber(RADIO_SETUP_2ND_COLUMN, y, IMU_MAX_DEFAULT + g_eeGeneral.imuMax, attr|LEFT);
+        lcdDrawChar(lcdLastRightPos, y, STR_CHAR_BW_DEGREE, attr);
         if (attr) {
-          CHECK_INCDEC_GENVAR(event, g_eeGeneral.gyroMax, GYRO_MAX_DEFAULT - GYRO_MAX_RANGE, GYRO_MAX_DEFAULT + GYRO_MAX_RANGE);
+          CHECK_INCDEC_GENVAR(event, g_eeGeneral.imuMax, IMU_MAX_DEFAULT - IMU_MAX_RANGE, IMU_MAX_DEFAULT + IMU_MAX_RANGE);
           lcdDrawText(LCD_W-4*FW, y, "(");
           lcdDrawNumber(lcdLastRightPos, y, max(abs(gyro.outputs[0]), abs(gyro.outputs[1])) * 180 / 1024);
           lcdDrawText(lcdLastRightPos, y, ")");
         }
         break;
 
-      case ITEM_RADIO_SETUP_GYRO_OFFSET:
-        lcdDrawText(INDENT_WIDTH, y, STR_GYRO_OFFSET);
-        lcdDrawNumber(RADIO_SETUP_2ND_COLUMN, y, g_eeGeneral.gyroOffset, attr|LEFT);
-        lcdDrawChar(lcdLastRightPos, y, '@', attr);
+      case ITEM_RADIO_SETUP_IMU_OFFSET:
+        lcdDrawText(INDENT_WIDTH, y, STR_IMU_OFFSET);
+        lcdDrawNumber(RADIO_SETUP_2ND_COLUMN, y, g_eeGeneral.imuOffset, attr|LEFT);
+        lcdDrawChar(lcdLastRightPos, y, STR_CHAR_BW_DEGREE, attr);
         if (attr) {
-          CHECK_INCDEC_GENVAR(event, g_eeGeneral.gyroOffset, GYRO_OFFSET_MIN, GYRO_OFFSET_MAX);
+          CHECK_INCDEC_GENVAR(event, g_eeGeneral.imuOffset, IMU_OFFSET_MIN, IMU_OFFSET_MAX);
           lcdDrawText(LCD_W-4*FW, y, "(");
           lcdDrawNumber(lcdLastRightPos, y, gyro.outputs[0] * 180 / 1024);
           lcdDrawText(lcdLastRightPos, y, ")");
@@ -620,11 +629,9 @@ void menuRadioSetup(event_t event)
         if (attr) CHECK_INCDEC_GENVAR(event, g_eeGeneral.switchesDelay, -15, 100-15);
         break;
 
-#if defined(STM32)
       case ITEM_RADIO_SETUP_USB_MODE:
         g_eeGeneral.USBMode = editChoice(RADIO_SETUP_2ND_COLUMN, y, STR_USBMODE, STR_USBMODES, g_eeGeneral.USBMode, USB_UNSELECTED_MODE, USB_MAX_MODE, attr, event);
         break;
-#endif
 
 #if defined(JACK_DETECT_GPIO)
       case ITEM_RADIO_SETUP_JACK_MODE:
@@ -633,7 +640,7 @@ void menuRadioSetup(event_t event)
 #endif
 
       case ITEM_RADIO_SETUP_RX_CHANNEL_ORD:
-        lcdDrawTextAlignedLeft(y, STR_RXCHANNELORD); // RAET->AETR
+        lcdDrawTextAlignedLeft(y, STR_DEF_CHAN_ORD); // RAET->AETR
         for (uint8_t i=1; i<=4; i++) {
           putsChnLetter(RADIO_SETUP_2ND_COLUMN - FW + i*FW, y, channelOrder(i), attr);
         }
@@ -659,6 +666,25 @@ void menuRadioSetup(event_t event)
 #endif
         break;
 
+#if defined(ROTARY_ENCODER_NAVIGATION)
+      case ITEM_RADIO_SETUP_ROTARY_ENC_MODE:
+        lcdDrawTextAlignedLeft(y, STR_ROTARY_ENC_MODE);
+        lcdDrawTextAtIndex(RADIO_SETUP_2ND_COLUMN, y, STR_ROTARY_ENC_OPT,
+                           reusableBuffer.generalSettings.rotaryEncoderMode,
+                           attr);
+        if (attr && s_editMode > 0) {
+          CHECK_INCDEC_GENVAR(event,
+                              reusableBuffer.generalSettings.rotaryEncoderMode,
+                              ROTARY_ENCODER_MODE_NORMAL,
+                              ROTARY_ENCODER_MODE_INVERT_VERT_HORZ_ALT);
+        } else if (reusableBuffer.generalSettings.rotaryEncoderMode !=
+                   g_eeGeneral.rotEncMode) {
+          g_eeGeneral.rotEncMode =
+              reusableBuffer.generalSettings.rotaryEncoderMode;
+        }
+        break;
+#endif
+
       case ITEM_RADIO_SETUP_STICK_MODE:
         lcdDrawChar(2*FW, y, '1'+reusableBuffer.generalSettings.stickMode, attr);
         for (uint8_t i=0; i<NUM_STICKS; i++) {
@@ -668,10 +694,10 @@ void menuRadioSetup(event_t event)
           CHECK_INCDEC_GENVAR(event, reusableBuffer.generalSettings.stickMode, 0, 3);
         }
         else if (reusableBuffer.generalSettings.stickMode != g_eeGeneral.stickMode) {
-          pausePulses();
+          mixerTaskStop();
           g_eeGeneral.stickMode = reusableBuffer.generalSettings.stickMode;
           checkThrottleStick();
-          resumePulses();
+          mixerTaskStart();
           waitKeysReleased();
         }
         break;

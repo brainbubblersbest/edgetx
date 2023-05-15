@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -17,6 +18,10 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+
+#pragma once
+
+#include "popups.h"
 
 enum BluetoothStates {
 #if defined(PCBX9E)
@@ -48,14 +53,26 @@ enum BluetoothStates {
 #define MAX_BLUETOOTH_DISTANT_ADDR      6
 #define BLUETOOTH_PACKET_SIZE           14
 #define BLUETOOTH_LINE_LENGTH           32
+#define BLUETOOTH_TRAINER_CHANNELS      8
 
 #if defined(LOG_BLUETOOTH)
   #define BLUETOOTH_TRACE(...)  \
     f_printf(&g_bluetoothFile, __VA_ARGS__); \
     TRACE_NOCRLF(__VA_ARGS__);
 #else
-  #define BLUETOOTH_TRACE(...)  \
-    TRACE_NOCRLF(__VA_ARGS__);
+#if defined(DEBUG_BLUETOOTH)
+  #define BLUETOOTH_TRACE(...)  TRACE_NOCRLF(__VA_ARGS__);
+  #define BLUETOOTH_TRACE_TIMESTAMP(f_, ...)  debugPrintf((TRACE_TIME_FORMAT f_), TRACE_TIME_VALUE, ##__VA_ARGS__)
+#if defined(DEBUG_BLUETOOTH_VERBOSE)
+  #define BLUETOOTH_TRACE_VERBOSE(...) TRACE_NOCRLF(__VA_ARGS__);
+#else
+  #define BLUETOOTH_TRACE_VERBOSE(...)
+#endif
+#else
+  #define BLUETOOTH_TRACE(...)
+  #define BLUETOOTH_TIMESTAMP(f_, ...)
+  #define BLUETOOTH_TRACE_VERBOSE(...)
+#endif
 #endif
 
 class Bluetooth

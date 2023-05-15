@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -23,13 +24,18 @@
 
 #if defined(LUA)
 
+// prevent C++ code to be included from lua.h
+#include "rtos.h"
+
 extern "C" {
   #include <lua.h>
   #include <lauxlib.h>
   #include <lualib.h>
-  #include <lrotable.h>
   #include <lgc.h>
 }
+
+#include "dataconstants.h"
+#include "opentx_types.h"
 
 #ifndef LUA_SCRIPT_LOAD_MODE
   // Can force loading of binary (.luac) or plain-text (.lua) versions of scripts specifically, and control
@@ -41,17 +47,45 @@ extern "C" {
   #endif
 #endif
 
-#if !defined(CLI) || defined(AUX2_SERIAL)
+// LUA serial connection
 #define LUA_FIFO_SIZE 256
-extern Fifo<uint8_t, LUA_FIFO_SIZE> * luaRxFifo;
-#endif
+void luaAllocRxFifo();
+void luaFreeRxFifo();
+void luaReceiveData(uint8_t* buf, uint32_t len);
+
+void luaSetSendCb(void* ctx, void (*cb)(void*, uint8_t));
+void luaSetGetSerialByte(void* ctx, int (*fct)(void*, uint8_t*));
 
 extern lua_State * lsScripts;
 
 extern bool luaLcdAllowed;
 
 #if defined(COLORLCD)
-extern lua_State * lsWidgets;
+//
+// Obsoleted definitions:
+//  -> please check against libopenui_defines.h for conflicts
+//  -> here we use the 4 most significant bits for our flags (32 bit unsigned)
+//
+// INVERS & BLINK are used in most scripts, let's offer a compatibility mode.
+//
+#undef INVERS
+#undef BLINK
+
+#define INVERS     0x01u
+#define BLINK    0x1000u
+#define RGB_FLAG 0x8000u
+
+extern bool luaLcdAllowed;
+
+class BitmapBuffer;
+extern BitmapBuffer* luaLcdBuffer;
+
+class Widget;
+extern Widget* runningFS;
+
+LcdFlags flagsRGB(LcdFlags flags);
+
+extern lua_State* lsWidgets;
 extern uint32_t luaExtraMemoryUsage;
 void luaInitThemesAndWidgets();
 #endif
@@ -62,7 +96,6 @@ void luaEmptyEventBuffer();
 #define LUA_INIT_THEMES_AND_WIDGETS()  luaInitThemesAndWidgets()
 #define lua_registernumber(L, n, i)    (lua_pushnumber(L, (i)), lua_setglobal(L, (n)))
 #define lua_registerint(L, n, i)       (lua_pushinteger(L, (i)), lua_setglobal(L, (n)))
-#define lua_pushtablenil(L, k)         (lua_pushstring(L, (k)), lua_pushnil(L), lua_settable(L, -3))
 #define lua_pushtableboolean(L, k, v)  (lua_pushstring(L, (k)), lua_pushboolean(L, (v)), lua_settable(L, -3))
 #define lua_pushtableinteger(L, k, v)  (lua_pushstring(L, (k)), lua_pushinteger(L, (v)), lua_settable(L, -3))
 #define lua_pushtablenumber(L, k, v)   (lua_pushstring(L, (k)), lua_pushnumber(L, (v)), lua_settable(L, -3))
@@ -106,8 +139,7 @@ enum ScriptState {
   SCRIPT_OK,
   SCRIPT_NOFILE,
   SCRIPT_SYNTAX_ERROR,
-  SCRIPT_PANIC,
-  SCRIPT_FINISHED
+  SCRIPT_PANIC
 };
 
 enum ScriptReference {
@@ -162,10 +194,9 @@ bool luaTask(event_t evt, bool allowLcdUsage);
 void checkLuaMemoryUsage();
 void luaExec(const char * filename);
 void luaDoGc(lua_State * L, bool full);
-void luaError(lua_State * L, uint8_t error, bool acknowledge=true);
 uint32_t luaGetMemUsed(lua_State * L);
 void luaGetValueAndPush(lua_State * L, int src);
-uint8_t isTelemetryScriptAvailable(uint8_t index);
+bool isTelemetryScriptAvailable();
 
 #define luaGetCpuUsed(idx) scriptInternalData[idx].instructions
 #define LUA_LOAD_MODEL_SCRIPTS()   luaState = INTERPRETER_RELOAD_PERMANENT_SCRIPTS
@@ -200,15 +231,19 @@ extern uint8_t instructionsPercent;
 
 struct LuaField {
   uint16_t id;
+  char name[20];
   char desc[50];
 };
 
 bool luaFindFieldByName(const char * name, LuaField & field, unsigned int flags=0);
+bool luaFindFieldById(int id, LuaField & field, unsigned int flags=0);
 void luaLoadThemes();
 void luaRegisterLibraries(lua_State * L);
 void registerBitmapClass(lua_State * L);
 void luaSetInstructionsLimit(lua_State* L, int count);
 int luaLoadScriptFileToState(lua_State * L, const char * filename, const char * mode);
+void luaPushDateTime(lua_State * L, uint32_t year, uint32_t mon, uint32_t day,
+                            uint32_t hour, uint32_t min, uint32_t sec);
 
 // Unregister LUA widget factories
 void luaUnregisterWidgets();
@@ -230,6 +265,24 @@ struct LuaMemTracer {
 };
 
 void * tracer_alloc(void * ud, void * ptr, size_t osize, size_t nsize);
+
+inline bool isLuaStandaloneRunning() {
+  return scriptInternalData[0].reference == SCRIPT_STANDALONE;
+}
+
+// #if defined(HARDWARE_TOUCH)
+// struct LuaTouchData {
+//   coord_t touchX;
+//   coord_t touchY;
+//   coord_t startX;
+//   coord_t startY;
+//   coord_t slideX;
+//   coord_t slideY;
+//   short tapCount;
+// };
+
+// extern LuaTouchData touches[EVENT_BUFFER_SIZE];
+// #endif
 
 #else  // defined(LUA)
 

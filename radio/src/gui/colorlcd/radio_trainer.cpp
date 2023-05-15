@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -29,46 +30,84 @@ RadioTrainerPage::RadioTrainerPage():
 {
 }
 
-void RadioTrainerPage::build(FormWindow * window)
-{
 #if LCD_W > LCD_H
-#define TRAINER_LABEL_WIDTH  180
+static const lv_coord_t col_dsc[] = {LV_GRID_FR(7), LV_GRID_FR(13), LV_GRID_FR(10), LV_GRID_FR(10), LV_GRID_FR(10),
+                                     LV_GRID_TEMPLATE_LAST};
+                                     
+#define MULT_COL_CNT    3
 #else
-#define TRAINER_LABEL_WIDTH  100
+static const lv_coord_t col_dsc[] = {LV_GRID_FR(7), LV_GRID_FR(15), LV_GRID_FR(9), LV_GRID_FR(9),
+                                     LV_GRID_TEMPLATE_LAST};
+#define MULT_COL_CNT    2
 #endif
-  FormGridLayout grid;
-  grid.spacer(PAGE_PADDING);
-  grid.setLabelWidth(TRAINER_LABEL_WIDTH);
 
-  for (uint8_t i=0; i<NUM_STICKS; i++) {
-    uint8_t chan = channelOrder(i+1);
-    TrainerMix * td = &g_eeGeneral.trainer.mix[chan-1];
-    new StaticText(window, grid.getLabelSlot(), TEXT_AT_INDEX(STR_VSRCRAW, (i + 1)));
-    new Choice(window, grid.getFieldSlot(3,0), STR_TRNMODE, 0, 2, GET_SET_DEFAULT(td->mode));
-    auto weight = new NumberEdit(window, grid.getFieldSlot(3, 1), -125, 125, GET_SET_DEFAULT(td->studWeight));
+static const lv_coord_t row_dsc[] = {LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST};
+
+#if defined(PPM_UNIT_PERCENT_PREC1)
+  #define PPM_PRECISION PREC1
+#else
+  #define PPM_PRECISION 0
+#endif
+
+void RadioTrainerPage::build(FormWindow * form)
+{
+  FlexGridLayout grid(col_dsc, row_dsc, 2);
+  form->setFlexLayout();
+  form->padAll(4);
+#if LCD_W > LCD_H
+  form->padLeft(8);
+  form->padRight(8);
+#endif
+
+  for (uint8_t i = 0; i < NUM_STICKS; i++) {
+    uint8_t chan = channelOrder(i + 1);
+    TrainerMix* td = &g_eeGeneral.trainer.mix[chan - 1];
+
+    auto line = form->newLine(&grid);
+
+    new StaticText(line, rect_t{}, STR_VSRCRAW[chan], 0, COLOR_THEME_PRIMARY1);
+
+    new Choice(line, rect_t{}, STR_TRNMODE, 0, 2, GET_SET_DEFAULT(td->mode));
+    new Choice(line, rect_t{}, STR_TRNCHN, 0, 3, GET_SET_DEFAULT(td->srcChn));
+    auto weight = new NumberEdit(line, rect_t{}, -125, 125,
+                                 GET_SET_DEFAULT(td->studWeight));
     weight->setSuffix("%");
-    new Choice(window, grid.getFieldSlot(3,2), STR_TRNCHN, 0, 3, GET_SET_DEFAULT(td->srcChn));
-    grid.nextLine();
+
+#if LCD_H > LCD_W
+    line = form->newLine(&grid);
+    line->padLeft(30);
+    line->padBottom(8);
+#endif
+
+    auto d = new DynamicNumber<int16_t>(line, rect_t{},
+        [=]() { return (ppmInput[i] - g_eeGeneral.trainer.calib[i]) * 2; },
+        LEFT | PPM_PRECISION | COLOR_THEME_PRIMARY1);
   }
-  grid.nextLine();
+
+  auto line = form->newLine(&grid);
+  line->padTop(10);
 
   // Trainer multiplier
-  new StaticText(window, grid.getLabelSlot(), STR_MULTIPLIER);
-  auto multiplier = new NumberEdit(window, grid.getFieldSlot(3, 0), -10, 40, GET_SET_DEFAULT(g_eeGeneral.PPM_Multiplier));
-  multiplier->setDisplayHandler([](BitmapBuffer * dc, LcdFlags flags, int32_t value) {
-    dc->drawNumber(FIELD_PADDING_LEFT, FIELD_PADDING_TOP, value+10, flags | PREC1, 0);
-  });
-  grid.nextLine();
-  grid.nextLine();
+  auto lbl = new StaticText(line, rect_t{}, STR_MULTIPLIER, 0, COLOR_THEME_PRIMARY1);
+  lbl->padRight(4);
+  lv_obj_set_grid_cell(lbl->getLvObj(), LV_GRID_ALIGN_END, 0, MULT_COL_CNT, LV_GRID_ALIGN_CENTER, 0, 1);
+  auto multiplier = new NumberEdit(line, rect_t{}, -10, 40,
+                                   GET_SET_DEFAULT(g_eeGeneral.PPM_Multiplier));
+  multiplier->setDisplayHandler(
+      [](int32_t value) { return formatNumberAsString(value + 10, PREC1); });
+  lv_obj_set_grid_cell(multiplier->getLvObj(), LV_GRID_ALIGN_START, MULT_COL_CNT, 1, LV_GRID_ALIGN_CENTER, 0, 1);
+
+#if LCD_H > LCD_W
+  line = form->newLine(&grid);
+  line->padTop(10);
+#endif
 
   // Trainer calibration
-  new StaticText(window, grid.getLabelSlot(), STR_CAL);
-  for (int i = 0; i < NUM_STICKS; i++) {
-#if defined (PPM_UNIT_PERCENT_PREC1)
-    auto calib = new NumberEdit(window, grid.getFieldSlot(4, i), 0 , 0, [=]() { return (ppmInput[i]-g_eeGeneral.trainer.calib[i]) * 2; }, nullptr, 0, LEFT | PREC1);
-#else
-    auto calib = new NumberEdit(window, grid.getFieldSlot(4, i), 0 , 0, [=]() { return (ppmInput[i]-g_eeGeneral.trainer.calib[i]) / 5; }, nullptr, 0, LEFT);
-#endif
-    calib->setWindowFlags(REFRESH_ALWAYS);
-  }
+  auto btn = new TextButton(line, rect_t{0, 0, 0, 30}, std::string(STR_CAL), [=]() -> uint8_t {
+    memcpy(g_eeGeneral.trainer.calib, ppmInput,
+           sizeof(g_eeGeneral.trainer.calib));
+    SET_DIRTY();
+    return 0;
+  });
+  lv_obj_set_grid_cell(btn->getLvObj(), LV_GRID_ALIGN_STRETCH, MULT_COL_CNT+1, 1, LV_GRID_ALIGN_CENTER, 0, 1);
 }

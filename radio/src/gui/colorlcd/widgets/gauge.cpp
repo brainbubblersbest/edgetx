@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -24,7 +25,7 @@
 class GaugeWidget: public Widget
 {
   public:
-    GaugeWidget(const WidgetFactory * factory, FormGroup * parent, const rect_t & rect, Widget::PersistentData * persistentData):
+    GaugeWidget(const WidgetFactory* factory, Window* parent, const rect_t & rect, Widget::PersistentData* persistentData):
       Widget(factory, parent, rect, persistentData)
     {
     }
@@ -49,11 +50,11 @@ class GaugeWidget: public Widget
       int percent = divRoundClosest(100 * (value - min), (max - min));
 
       // Gauge label
-      drawSource(dc, 0, 0, index, FONT(XS) | FOCUS_COLOR);
+      drawSource(dc, 0, 0, index, FONT(XS) | COLOR_THEME_PRIMARY2);
 
       // Gauge
       lcdSetColor(color);
-      dc->drawSolidFilledRect(0, 16, width(), 16, FOCUS_COLOR);
+      dc->drawSolidFilledRect(0, 16, width(), 16, COLOR_THEME_PRIMARY2);
       dc->drawNumber(0+width()/2, 17, percent, FONT(XS) | CUSTOM_COLOR | CENTERED, 0, nullptr, "%");
       dc->invertRect(w, 16, width() - w, 16, CUSTOM_COLOR);
     }
@@ -77,8 +78,9 @@ const ZoneOption GaugeWidget::options[] = {
   { STR_SOURCE, ZoneOption::Source, OPTION_VALUE_UNSIGNED(1) },
   { STR_MIN, ZoneOption::Integer, OPTION_VALUE_SIGNED(-RESX), OPTION_VALUE_SIGNED(-RESX), OPTION_VALUE_SIGNED(RESX) },
   { STR_MAX, ZoneOption::Integer, OPTION_VALUE_SIGNED(RESX), OPTION_VALUE_SIGNED(-RESX), OPTION_VALUE_SIGNED(RESX) },
-  { STR_COLOR, ZoneOption::Color, OPTION_VALUE_UNSIGNED(RED) },
+  { STR_COLOR, ZoneOption::Color, OPTION_VALUE_UNSIGNED(COLOR_THEME_WARNING) },
   { nullptr, ZoneOption::Bool }
 };
 
-BaseWidgetFactory<GaugeWidget> gaugeWidget("Gauge", GaugeWidget::options);
+BaseWidgetFactory<GaugeWidget> gaugeWidget("Gauge", GaugeWidget::options,
+                                           STR_WIDGET_GAUGE);

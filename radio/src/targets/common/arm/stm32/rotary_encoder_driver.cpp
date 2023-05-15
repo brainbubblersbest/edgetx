@@ -1,8 +1,9 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   th9x - http://code.google.com/p/th9x 
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
  *
@@ -18,14 +19,118 @@
  * GNU General Public License for more details.
  */
 
-#include "opentx.h"
+#include "stm32_hal_ll.h"
+#include "stm32_exti_driver.h"
+#include "board.h"
 
-uint8_t rotencPosition;
+#include "hal.h"
+#include "board_common.h"
+
+#if !defined(BOOT)
+  #include "opentx.h"
+#endif
+
+volatile rotenc_t rotencValue = 0;
+volatile uint32_t rotencDt = 0;
+
+#if defined(BOOT)
+#define INC_ROT        1
+#define INC_ROT_2      2
+#else
+#define INC_ROT \
+  (g_eeGeneral.rotEncMode == ROTARY_ENCODER_MODE_INVERT_BOTH ? -1 : 1);
+#define INC_ROT_2 \
+  (g_eeGeneral.rotEncMode == ROTARY_ENCODER_MODE_INVERT_BOTH ? -2 : 2);
+#endif
+
+void rotaryEncoderCheck()
+{
+  static uint8_t state = 0;
+  static uint8_t re_count = 0;
+  uint8_t pins = ROTARY_ENCODER_POSITION();
+
+#if defined(ROTARY_ENCODER_SUPPORT_BUGGY_WIRING)
+  if (pins != (state & 0x03) && !(readKeys() & (1 << KEY_ENTER))) {
+    if (re_count == 0) {
+      // Need at least 2 values to correctly determine initial direction
+      re_count = 1;
+    } else {
+      if ((pins ^ (state & 0x03)) == 0x03) {
+        if (pins == 3) {
+          rotencValue += INC_ROT_2;
+        } else {
+          rotencValue -= INC_ROT_2;
+        }
+      } else {
+        if ((state & 0x01) ^ ((pins & 0x02) >> 1)) {
+          rotencValue -= INC_ROT;
+        } else {
+          rotencValue += INC_ROT;
+        }
+      }
+
+      if (re_count == 1)
+      {
+        re_count = 2;
+        // Assume 1st value is same direction as 2nd value
+        rotencValue = rotencValue * 2;
+      }
+    }
+    state &= ~0x03;
+    state |= pins;
+  }
+#else
+  if (pins != state && !(readKeys() & (1 << KEY_ENTER))) {
+    if (re_count == 0) {
+      // Need at least 2 values to correctly determine initial direction
+      re_count = 1;
+    } else {
+#if defined(ROTARY_ENCODER_INVERTED)
+      if (!(state & 0x01) ^ ((pins & 0x02) >> 1)) {
+#else
+      if ((state & 0x01) ^ ((pins & 0x02) >> 1)) {
+#endif
+        rotencValue -= INC_ROT;
+      } else {
+        rotencValue += INC_ROT;
+      }
+
+      if (re_count == 1)
+      {
+        re_count = 2;
+        // Assume 1st value is same direction as 2nd value
+        rotencValue = rotencValue * 2;
+      }
+    }
+    state = pins;
+  }
+#endif
+
+#if !defined(BOOT) && defined(COLORLCD)
+  static uint32_t last_tick = 0;
+  static rotenc_t last_value = 0;
+
+  rotenc_t value = rotencValue;
+  rotenc_t diff = (value - last_value) / ROTARY_ENCODER_GRANULARITY;
+
+  if (diff != 0) {
+    uint32_t now = RTOS_GET_MS();
+    uint32_t dt = now - last_tick;
+    // pre-compute accumulated dt (dx/dt is done later in LVGL driver)
+    rotencDt += dt;
+    last_tick = now;
+    last_value += diff * ROTARY_ENCODER_GRANULARITY;
+  }
+#endif
+}
+
+void rotaryEncoderStartDelay()
+{
+  ROTARY_ENCODER_TIMER->CR1 = TIM_CR1_CEN | TIM_CR1_URS;
+}
 
 void rotaryEncoderInit()
 {
-  rotencPosition = ROTARY_ENCODER_POSITION();
-
   ROTARY_ENCODER_TIMER->ARR = 99; // 100uS
   ROTARY_ENCODER_TIMER->PSC = (PERI1_FREQUENCY * TIMER_MULT_APB1) / 1000000 - 1; // 1uS
   ROTARY_ENCODER_TIMER->CCER = 0;
@@ -34,129 +139,16 @@ void rotaryEncoderInit()
   ROTARY_ENCODER_TIMER->CR1 = 0;
   ROTARY_ENCODER_TIMER->DIER |= TIM_DIER_UIE;
 
-  SYSCFG_EXTILineConfig(ROTARY_ENCODER_EXTI_PortSource, ROTARY_ENCODER_EXTI_PinSource1);
+  LL_SYSCFG_SetEXTISource(ROTARY_ENCODER_EXTI_PORT, ROTARY_ENCODER_EXTI_SYS_LINE1);
+  LL_SYSCFG_SetEXTISource(ROTARY_ENCODER_EXTI_PORT, ROTARY_ENCODER_EXTI_SYS_LINE2);
 
-#if defined(ROTARY_ENCODER_EXTI_LINE2)
-  SYSCFG_EXTILineConfig(ROTARY_ENCODER_EXTI_PortSource, ROTARY_ENCODER_EXTI_PinSource2);
-#endif
-
-  EXTI_InitTypeDef EXTI_InitStructure;
-  EXTI_StructInit(&EXTI_InitStructure);
-  EXTI_InitStructure.EXTI_Line = ROTARY_ENCODER_EXTI_LINE1;
-  EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-  EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
-  EXTI_InitStructure.EXTI_LineCmd = ENABLE;
-  EXTI_Init(&EXTI_InitStructure);
-
-#if defined(ROTARY_ENCODER_EXTI_LINE2)
-  EXTI_InitStructure.EXTI_Line = ROTARY_ENCODER_EXTI_LINE2;
-  EXTI_Init(&EXTI_InitStructure);
-#endif
-
-  NVIC_InitTypeDef NVIC_InitStructure;
-  NVIC_InitStructure.NVIC_IRQChannel = ROTARY_ENCODER_EXTI_IRQn1;
-  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 8;
-  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0; /* Not used as 4 bits are used for the pre-emption priority. */;
-  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-  NVIC_Init(&NVIC_InitStructure);
-
-#if defined(ROTARY_ENCODER_EXTI_IRQn2)
-  NVIC_InitStructure.NVIC_IRQChannel = ROTARY_ENCODER_EXTI_IRQn2;
-  NVIC_Init(&NVIC_InitStructure);
-#endif
-
+  uint32_t trigger = LL_EXTI_TRIGGER_RISING_FALLING;
+  stm32_exti_enable(ROTARY_ENCODER_EXTI_LINE1, trigger, rotaryEncoderStartDelay);
+  stm32_exti_enable(ROTARY_ENCODER_EXTI_LINE2, trigger, rotaryEncoderStartDelay);
+    
   NVIC_EnableIRQ(ROTARY_ENCODER_TIMER_IRQn);
   NVIC_SetPriority(ROTARY_ENCODER_TIMER_IRQn, 7);
 }
-
-void rotaryEncoderCheck()
-{
-#if (defined(RADIO_FAMILY_T16) && !defined(RADIO_T18)) || defined(RADIO_TX12)
-  static uint8_t state = 0;
-  uint8_t pins = ROTARY_ENCODER_POSITION();
-
-  if (pins != (state & 0x03) && !(readKeys() & (1 << KEY_ENTER))) {
-	if ((pins ^ (state & 0x03)) == 0x03)
-	{
-		if (pins == 3)
-		{
-			rotencValue += 2;
-		}
-		else
-		{
-			rotencValue -= 2;
-		}
-	}
-	else
-	{
-		if ((state & 0x01) ^ ((pins & 0x02) >> 1))
-		{
-			rotencValue -= 1;
-		}
-		else
-		{
-			rotencValue += 1;
-		}
-	}
-    state &= ~0x03;
-    state |= pins;
-#else
-  uint8_t newPosition = ROTARY_ENCODER_POSITION();
-  if (newPosition != rotencPosition && !(readKeys() & (1 << KEY_ENTER))) {
-    if ((rotencPosition & 0x01) ^ ((newPosition & 0x02) >> 1)) {
-      --rotencValue;
-    }
-    else {
-      ++rotencValue;
-    }
-    rotencPosition = newPosition;
-#endif
-#if !defined(BOOT)
-    if (g_eeGeneral.backlightMode & e_backlight_mode_keys) {
-      resetBacklightTimeout();
-    }
-    inactivity.counter = 0;
-#endif
-  }
-}
-
-void rotaryEncoderStartDelay()
-{
-  ROTARY_ENCODER_TIMER->CR1 = TIM_CR1_CEN | TIM_CR1_URS;
-}
-
-extern "C" void ROTARY_ENCODER_EXTI_IRQHandler1(void)
-{
-  if (EXTI_GetITStatus(ROTARY_ENCODER_EXTI_LINE1) != RESET) {
-    rotaryEncoderStartDelay();
-    EXTI_ClearITPendingBit(ROTARY_ENCODER_EXTI_LINE1);
-  }
-
-#if !defined(ROTARY_ENCODER_EXTI_IRQn2)
-  if (EXTI_GetITStatus(ROTARY_ENCODER_EXTI_LINE2) != RESET) {
-    rotaryEncoderStartDelay();
-    EXTI_ClearITPendingBit(ROTARY_ENCODER_EXTI_LINE2);
-  }
-#endif
-
-#if !defined(BOOT) && defined(INTMODULE_HEARTBEAT_REUSE_INTERRUPT_ROTARY_ENCODER)
-  check_intmodule_heartbeat();
-#endif
-
-#if !defined(BOOT) && defined(TELEMETRY_EXTI_REUSE_INTERRUPT_ROTARY_ENCODER)
-  check_telemetry_exti();
-#endif
-}
-
-#if defined(ROTARY_ENCODER_EXTI_IRQn2)
-extern "C" void ROTARY_ENCODER_EXTI_IRQHandler2(void)
-{
-  if (EXTI_GetITStatus(ROTARY_ENCODER_EXTI_LINE2) != RESET) {
-    rotaryEncoderStartDelay();
-    EXTI_ClearITPendingBit(ROTARY_ENCODER_EXTI_LINE2);
-  }
-}
-#endif
 
 extern "C" void ROTARY_ENCODER_TIMER_IRQHandler(void)
 {

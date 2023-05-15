@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -30,14 +31,12 @@
 enum FontIndex
 {
   FONT_STD_INDEX,
-#if !defined(BOLD)
   FONT_BOLD_INDEX,
   FONT_XXS_INDEX,
   FONT_XS_INDEX,
   FONT_L_INDEX,
   FONT_XL_INDEX,
   FONT_XXL_INDEX,
-#endif
 
   // this one MUST be last
   FONTS_COUNT
@@ -60,9 +59,16 @@ constexpr uint32_t MENU_FOOTER_HEIGHT =            0;
 constexpr uint32_t MENU_FOOTER_TOP =               LCD_H - MENU_FOOTER_HEIGHT;
 constexpr uint32_t MENU_BODY_HEIGHT =              MENU_FOOTER_TOP - MENU_BODY_TOP;
 constexpr uint32_t MENUS_MARGIN_LEFT =             6;
+constexpr coord_t  MENUS_SEPARATOR_HEIGHT =        15;
+
+constexpr uint32_t MENU_HEADER_BACK_BUTTON_WIDTH  = MENU_HEADER_HEIGHT;
+constexpr uint32_t MENU_HEADER_BACK_BUTTON_HEIGHT = MENU_HEADER_HEIGHT;
 
 constexpr coord_t PAGE_PADDING =                   6;
+constexpr uint32_t LABELS_LINE_HEIGHT =            30;
 constexpr uint32_t PAGE_LINE_HEIGHT =              20;
+constexpr coord_t  LINE_HEIGHT =                   PAGE_LINE_HEIGHT;
+
 constexpr uint32_t PAGE_LINE_SPACING =             2;
 constexpr uint32_t PAGE_INDENT_WIDTH =             10;
 constexpr uint32_t PAGE_LABEL_WIDTH =              240;
@@ -83,6 +89,12 @@ constexpr uint32_t DATETIME_SEPARATOR_X =          LCD_W - 53;
 constexpr uint32_t DATETIME_LINE1 =                7;
 constexpr uint32_t DATETIME_LINE2 =                22;
 constexpr uint32_t DATETIME_MIDDLE =               (LCD_W + DATETIME_SEPARATOR_X + 1) / 2;
+
+constexpr uint32_t RSSI_X =                        LCD_W - 90;
+constexpr uint32_t AUDIO_X =                       LCD_W - 130;
+constexpr uint32_t USB_X =                         LCD_W - 98;
+constexpr uint32_t LOG_X =                         LCD_W - 98;
+constexpr uint32_t GPS_X =                         LCD_W - 148;
 
 constexpr uint32_t MENUS_TOOLBAR_BUTTON_WIDTH =    30;
 constexpr uint32_t MENUS_TOOLBAR_BUTTON_PADDING =  3;
@@ -105,16 +117,14 @@ constexpr uint32_t PAGE_TITLE_LEFT =               50;
 
 
 constexpr uint32_t INPUT_EDIT_LABELS_WIDTH = 120;
-constexpr coord_t INPUT_EDIT_CURVE_WIDTH = 158;
+constexpr coord_t INPUT_EDIT_CURVE_WIDTH = 132;
 constexpr coord_t INPUT_EDIT_CURVE_HEIGHT = INPUT_EDIT_CURVE_WIDTH;
 constexpr coord_t INPUT_EDIT_CURVE_LEFT = PAGE_PADDING;
 constexpr coord_t INPUT_EDIT_CURVE_TOP = MENU_HEADER_HEIGHT + PAGE_PADDING;
 constexpr coord_t MENUS_LINE_HEIGHT = 30;
 constexpr coord_t MENUS_WIDTH = 200;
-constexpr coord_t MENUS_OFFSET_TOP = 20;
 constexpr coord_t POPUP_HEADER_HEIGHT = 30;
-constexpr coord_t MENUS_MIN_HEIGHT = 2 * MENUS_LINE_HEIGHT - 1;
-constexpr coord_t MENUS_MAX_HEIGHT = 7 * MENUS_LINE_HEIGHT - 1;
+constexpr coord_t MENUS_MAX_HEIGHT = LCD_H * 0.9;
 constexpr coord_t MODEL_SELECT_FOOTER_HEIGHT = 24;
 constexpr coord_t SCROLLBAR_WIDTH = 3;
 constexpr coord_t TABLE_LINE_HEIGHT = 50;

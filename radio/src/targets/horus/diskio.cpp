@@ -1,8 +1,9 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
- *   th9x - http://code.google.com/p/th9x 
+ *   opentx - https://github.com/opentx/opentx
+ *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
  *
@@ -25,9 +26,10 @@
 /*-----------------------------------------------------------------------*/
 
 #include "diskio.h"
-#include <string.h>
-#include "opentx.h"
+#include "debug.h"
 #include "targets/common/arm/stm32/sdio_sd.h"
+
+#include <string.h>
 
 /*-----------------------------------------------------------------------*/
 /* Lock / unlock functions                                               */
@@ -309,7 +311,8 @@ DRESULT disk_ioctl (
 
 // TODO everything here should not be in the driver layer ...
 
-FATFS g_FATFS_Obj __DMA;    // initialized in boardInit()
+bool _g_FATFS_init = false;
+FATFS g_FATFS_Obj __DMA; // this is in uninitialised section !!!
 
 #if defined(LOG_TELEMETRY)
 FIL g_telemetryFile = {};
@@ -327,6 +330,11 @@ void sdInit(void)
   }
 }
 #else
+
+#include "audio.h"
+#include "sdcard.h"
+#include "disk_cache.h"
+
 void sdInit()
 {
   TRACE("sdInit");
@@ -342,6 +350,7 @@ void sdMount()
   
   if (f_mount(&g_FATFS_Obj, "", 1) == FR_OK) {
     // call sdGetFreeSectors() now because f_getfree() takes a long time first time it's called
+    _g_FATFS_init = true;
     sdGetFreeSectors();
 
 #if defined(LOG_TELEMETRY)
@@ -385,7 +394,7 @@ void sdDone()
 
 uint32_t sdMounted()
 {
-  return g_FATFS_Obj.fs_type != 0;
+  return _g_FATFS_init && (g_FATFS_Obj.fs_type != 0);
 }
 
 uint32_t sdIsHC()

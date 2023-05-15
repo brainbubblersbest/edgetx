@@ -39,6 +39,11 @@
 #define RADIOMASTER_TX12_VARIANT       0x4002
 #define JUMPER_TLITE_VARIANT           0x4003
 #define RADIOMASTER_T8_VARIANT         0x4004
+#define JUMPER_TPRO_VARIANT            0x4005
+#define RADIOMASTER_ZORRO_VARIANT      0x4006
+#define BETAFPV_LR3PRO_VARIANT         0x4007
+#define RADIOMASTER_TX12_MK2_VARIANT   0x4008
+#define IFLIGHT_COMMANDO8_VARIANT      0x4009
 
 class OpenTxGeneralData: public TransformedField {
   public:

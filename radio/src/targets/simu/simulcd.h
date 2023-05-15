@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -27,7 +28,11 @@
 extern int g_snapshot_idx;
 extern bool simuLcdRefresh;
 
+#if defined(COLORLCD)
+extern pixel_t* simuLcdBuf;
+#else
 extern pixel_t simuLcdBuf[DISPLAY_BUFFER_SIZE];
 extern pixel_t displayBuf[DISPLAY_BUFFER_SIZE];
+#endif
 
 #endif // _SIMULCD_H_

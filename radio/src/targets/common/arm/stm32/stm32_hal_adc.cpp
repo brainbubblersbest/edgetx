@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -34,7 +35,16 @@ static void adc_init_pins()
   GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
 
 #if defined(ADC_GPIOA_PINS)
-  GPIO_InitStructure.GPIO_Pin = ADC_GPIOA_PINS;
+ #if defined(FLYSKY_GIMBAL)
+  if (globalData.flyskygimbals)
+  {
+      GPIO_InitStructure.GPIO_Pin = ADC_GPIOA_PINS_FS;
+  }
+  else
+ #endif
+  {
+      GPIO_InitStructure.GPIO_Pin = ADC_GPIOA_PINS;
+  }
   GPIO_Init(GPIOA, &GPIO_InitStructure);
 #endif
 
@@ -59,6 +69,7 @@ static void adc_setup_scan_mode(ADC_TypeDef* ADCx, uint8_t nconv)
   ADC_InitTypeDef ADC_InitStructure;
   ADC_StructInit(&ADC_InitStructure);
 
+  ADC_InitStructure.ADC_Resolution = ADC_Resolution_12b;
   ADC_InitStructure.ADC_ScanConvMode = ENABLE; // Sets ADC_CR1_SCAN
   ADC_InitStructure.ADC_ContinuousConvMode = DISABLE; // Clears ADC_CR2_CONT
   ADC_InitStructure.ADC_ExternalTrigConvEdge = ADC_ExternalTrigConvEdge_None; // Software trigger
@@ -74,7 +85,7 @@ static void adc_setup_scan_mode(ADC_TypeDef* ADCx, uint8_t nconv)
   ADC_DMARequestAfterLastTransferCmd(ADCx, ENABLE); // ADC_CR2_DDS
 }
 
-stm32_hal_adc_channel ADC_MAIN_channels[] = {
+static const stm32_hal_adc_channel ADC_MAIN_channels[] = {
     {ADC_CHANNEL_STICK_LH, ADC_SAMPTIME},
     {ADC_CHANNEL_STICK_LV, ADC_SAMPTIME},
     {ADC_CHANNEL_STICK_RV, ADC_SAMPTIME},
@@ -85,17 +96,22 @@ stm32_hal_adc_channel ADC_MAIN_channels[] = {
     { ADC_CHANNEL_POT3,    ADC_SAMPTIME },
     { ADC_CHANNEL_EXT1,    ADC_SAMPTIME },
     { ADC_CHANNEL_EXT2,    ADC_SAMPTIME },
+    { ADC_CHANNEL_EXT3,    ADC_SAMPTIME },
+    { ADC_CHANNEL_EXT4,    ADC_SAMPTIME },
     { ADC_CHANNEL_SLIDER1, ADC_SAMPTIME },
     { ADC_CHANNEL_SLIDER2, ADC_SAMPTIME },
     { ADC_CHANNEL_BATT,    ADC_SAMPTIME }
 #else
-#if defined(RADIO_T8) || defined(RADIO_TLITE)
-    // fake channels to fill unsused POT1/POT2
+#if defined(RADIO_T8) || defined(RADIO_TLITE) || defined(RADIO_COMMANDO8) || defined(RADIO_LR3PRO)
+    // fake channels to fill unused POT1/POT2
     {0, 0},
     {0, 0},
 #elif defined(PCBX7) || defined(PCBXLITE)
     {ADC_CHANNEL_POT1, ADC_SAMPTIME},
     {ADC_CHANNEL_POT2, ADC_SAMPTIME},
+#if defined(RADIO_BOXER)
+    {ADC_CHANNEL_POT3, ADC_SAMPTIME},
+#endif
 #elif defined(PCBX9LITE)
     {ADC_CHANNEL_POT1, ADC_SAMPTIME},
 #elif defined(PCBX9E)
@@ -131,12 +147,30 @@ static const stm32_hal_adc_channel* ADC_MAIN_get_channels()
   if (STICKS_PWM_ENABLED())
     return ADC_MAIN_channels + 4;
 #endif
-  return ADC_MAIN_channels + FIRST_ANALOG_ADC;
+#if defined(FLYSKY_GIMBAL)
+  if (globalData.flyskygimbals)
+  {
+      return ADC_MAIN_channels + FIRST_ANALOG_ADC_FS;
+  }
+  else
+#endif
+  {
+      return ADC_MAIN_channels + FIRST_ANALOG_ADC;
+  }
 }
 
 static uint8_t ADC_MAIN_get_nconv()
 {
-  return NUM_ANALOGS_ADC; // based on STICKS_PWM_ENABLED()
+#if defined(FLYSKY_GIMBAL)
+  if (globalData.flyskygimbals)
+  {
+    return NUM_ANALOGS_ADC_FS;
+  }
+  else
+#endif
+  {
+    return NUM_ANALOGS_ADC; // based on STICKS_PWM_ENABLED()
+  }
 }
 
 #if defined(ADC_EXT)
@@ -178,17 +212,35 @@ static const stm32_hal_adc_channel* ADC_EXT_get_channels()
 
 static uint16_t* ADC_MAIN_get_dma_buffer()
 {
-  return &adcValues[FIRST_ANALOG_ADC];
+#if defined(FLYSKY_GIMBAL)
+    if (globalData.flyskygimbals)
+    {
+        return &adcValues[FIRST_ANALOG_ADC_FS];
+    }
+    else
+#endif
+    {
+        return &adcValues[FIRST_ANALOG_ADC];
+    }
 }
 
 #if defined(ADC_EXT) && defined(ADC_EXT_DMA_Stream)
 static uint16_t* ADC_EXT_get_dma_buffer()
 {
-  return adcValues + NUM_ANALOGS_ADC + FIRST_ANALOG_ADC;
+#if defined(FLYSKY_GIMBAL)
+    if (globalData.flyskygimbals)
+    {
+        return adcValues + NUM_ANALOGS_ADC_FS + FIRST_ANALOG_ADC_FS;
+    }
+    else
+#endif
+    {
+        return adcValues + NUM_ANALOGS_ADC + FIRST_ANALOG_ADC;
+    }
 }
 #endif
 
-stm32_hal_adc ADC_hal_def[] = {
+static const stm32_hal_adc ADC_hal_def[] = {
     {
       ADC_MAIN,
       ADC_DMA_Stream, ADC_DMA_Channel, ADC_MAIN_get_dma_buffer,
@@ -389,7 +441,7 @@ static void stm32_hal_adc_wait_completion()
   // Wait for all ADCs to complete
   for (unsigned int i=0; i<10000; i++) {
     if (DMA_GetFlagStatus(ADC_DMA_Stream, ADC_DMA_TC_Flag) != RESET &&
-        DMA_GetFlagStatus(ADC_EXT_DMA_Stream, ADC_EXT_DMA_TC_Flag) != RESET) {
+        DMA_GetFlagStatus(ADC_EXT_DMA_Stream, ADC_EXT_TC_Flag) != RESET) {
       break;
     }
   }
@@ -409,6 +461,7 @@ static void stm32_hal_adc_wait_completion()
 #if defined(ADC_EXT) && !defined(ADC_EXT_DMA_Stream)
   if (isVBatBridgeEnabled()) {
     rtcBatteryVoltage = ADC_EXT->DR;
+    disableVBatBridge();
   }
 #endif
 #endif

@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -17,126 +18,80 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
-#include "libopenui_config.h"
 #include "switchchoice.h"
-#include "menutoolbar.h"
-#include "menu.h"
-#include "draw_functions.h"
-#include "strhelpers.h"
-#include "dataconstants.h"
-#include "opentx.h"
 
-class SwitchChoiceMenuToolbar : public MenuToolbar<SwitchChoice>
+#include "dataconstants.h"
+#include "draw_functions.h"
+#include "libopenui_config.h"
+#include "menu.h"
+#include "menutoolbar.h"
+#include "opentx.h"
+#include "strhelpers.h"
+
+class SwitchChoiceMenuToolbar : public MenuToolbar
 {
-  public:
-    SwitchChoiceMenuToolbar(SwitchChoice * choice, Menu * menu):
-      MenuToolbar<SwitchChoice>(choice, menu)
-    {
-      addButton(CHAR_SWITCH, SWSRC_FIRST_SWITCH, SWSRC_LAST_SWITCH);
-      addButton(CHAR_TRIM, SWSRC_FIRST_TRIM, SWSRC_LAST_TRIM);
-      addButton(CHAR_SWITCH, SWSRC_FIRST_LOGICAL_SWITCH, SWSRC_LAST_LOGICAL_SWITCH);
-    }
+ public:
+  SwitchChoiceMenuToolbar(SwitchChoice* choice, Menu* menu) :
+      MenuToolbar(choice, menu)
+  {
+    addButton(STR_CHAR_SWITCH, SWSRC_FIRST_SWITCH, SWSRC_LAST_SWITCH);
+    addButton(STR_CHAR_TRIM, SWSRC_FIRST_TRIM, SWSRC_LAST_TRIM);
+    addButton(STR_CHAR_SWITCH, SWSRC_FIRST_LOGICAL_SWITCH,
+              SWSRC_LAST_LOGICAL_SWITCH);
+  }
 };
 
-void SwitchChoice::paint(BitmapBuffer * dc)
+void SwitchChoice::LongPressHandler(void* data)
 {
-  FormField::paint(dc);
-
-  unsigned value = getValue();
-  LcdFlags textColor;
-  if (editMode)
-    textColor = FOCUS_COLOR;
-  else if (hasFocus())
-    textColor = FOCUS_COLOR;
-  // else if (value == 0)
-  //   textColor = DISABLE_COLOR;
-  else
-    textColor = DEFAULT_COLOR;
-
-  drawSwitch(dc, FIELD_PADDING_LEFT, FIELD_PADDING_TOP, value, textColor);
-  dc->drawBitmapPattern(rect.w - 20, (rect.h - 11) / 2, LBM_DROPDOWN,
-                        textColor);
+  SwitchChoice* swch = (SwitchChoice*)data;
+  if (!swch) return;
+  int16_t val = swch->_getValue();
+  if (swch->isValueAvailable && swch->isValueAvailable(-val)) {
+    swch->setValue(-val);
+    swch->invalidate();
+  }
 }
 
-void SwitchChoice::fillMenu(Menu * menu, std::function<bool(int16_t)> filter)
+SwitchChoice::SwitchChoice(Window* parent, const rect_t& rect, int vmin,
+                           int vmax, std::function<int16_t()> getValue,
+                           std::function<void(int16_t)> setValue) :
+    ChoiceEx(parent, rect, vmin, vmax, getValue, setValue)
 {
-  auto value = getValue();
-  int count = 0;
-  int current = 0;
-
-  menu->removeLines();
-
-  for (int i = vmin; i <= vmax; ++i) {
-    if (filter && !filter(i)) continue;
-    if (isValueAvailable && !isValueAvailable(i)) continue;
-    menu->addLine(getSwitchPositionName(i), [=]() { setValue(i); });
-    if (value == i) {
-      current = count;
-    }
-    ++count;
-  }
-
-  if (current >= 0) {
-    menu->select(current);
-  }
+  setBeforeDisplayMenuHandler([=](Menu* menu) {
+    auto tb = new SwitchChoiceMenuToolbar(this, menu);
+    menu->setToolbar(tb);
 
 #if defined(AUTOSWITCH)
-  menu->setWaitHandler([=]() {
-    swsrc_t val = 0;
-    swsrc_t swtch = getMovedSwitch();
-    if (swtch) {
-      div_t info = switchInfo(swtch);
-      if (IS_CONFIG_TOGGLE(info.quot)) {
-        if (info.rem != 0) {
-          val = (val == swtch ? swtch - 2 : swtch);
+    menu->setWaitHandler([menu, this, setValue, tb]() {
+      swsrc_t val = 0;
+      swsrc_t swtch = getMovedSwitch();
+      if (swtch) {
+        div_t info = switchInfo(swtch);
+        if (IS_CONFIG_TOGGLE(info.quot)) {
+          if (info.rem != 0) {
+            val = (val == swtch ? swtch - 2 : swtch);
+          }
+        } else {
+          val = swtch;
         }
-      } else {
-        val = swtch;
+        if (val && (!isValueAvailable || isValueAvailable(val))) {
+          // if (filtered) fillMenu(menu);
+          tb->resetFilter();
+          menu->select(getIndexFromValue(val));
+        }
       }
-      if (val && (!isValueAvailable || isValueAvailable(val))) {
-        if (setValue) setValue(val);
-        this->fillMenu(menu);
-      }
-    }
+    });
+#endif
   });
-#endif
-}
 
-void SwitchChoice::openMenu()
-{
-  auto menu = new Menu(this);
-  fillMenu(menu);
+  setTextHandler([=](int value) {
+    if (isValueAvailable && !isValueAvailable(value))
+      return std::to_string(0);  // we will fix this later
 
-  menu->setToolbar(new SwitchChoiceMenuToolbar(this, menu));
-  menu->setCloseHandler([=]() {
-      editMode = false;
-      setFocus(SET_FOCUS_DEFAULT);
+    return std::string(getSwitchPositionName(value));
   });
-}
 
-#if defined(HARDWARE_KEYS)
-void SwitchChoice::onEvent(event_t event)
-{
-  TRACE_WINDOWS("%s received event 0x%X", getWindowDebugString().c_str(), event);
+  set_lv_LongPressHandler(LongPressHandler, this);
 
-  if (event == EVT_KEY_BREAK(KEY_ENTER)) {
-    editMode = true;
-    invalidate();
-    openMenu();
-  }
-  else {
-    FormField::onEvent(event);
-  }
+  setAvailableHandler(isSwitchAvailableInMixes);
 }
-#endif
-
-#if defined(HARDWARE_TOUCH)
-bool SwitchChoice::onTouchEnd(coord_t, coord_t)
-{
-  setFocus(SET_FOCUS_DEFAULT);
-  setEditMode(true);
-  openMenu();
-  return true;
-}
-#endif

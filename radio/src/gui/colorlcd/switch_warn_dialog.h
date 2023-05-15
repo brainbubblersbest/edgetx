@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -26,33 +27,27 @@
 #include "opentx.h"
 #include "gridlayout.h"
 
-class SwitchWarnDialog: public FullScreenDialog {
-  public:
-    SwitchWarnDialog():
-      FullScreenDialog(WARNING_TYPE_ALERT, STR_SWITCHWARN)
-    {
-      last_bad_switches = 0xff;
-      states = g_model.switchWarningState;
-      bad_pots = 0;
-      last_bad_pots = 0xff;
-      setCloseCondition(std::bind(&SwitchWarnDialog::warningInactive, this));
-    }
+class SwitchWarnDialog : public FullScreenDialog
+{
+ public:
+  SwitchWarnDialog();
 
 #if defined(DEBUG_WINDOWS)
-    std::string getName() const override
-    {
-      return "SwitchWarnDialog";
-    }
+  std::string getName() const override { return "SwitchWarnDialog"; }
 #endif
 
-    void paint(BitmapBuffer * dc) override;
+  void checkEvents() override;
+  void paint(BitmapBuffer* dc) override;
 
-  protected:
-    swarnstate_t last_bad_switches;
-    swarnstate_t states;
-    uint8_t bad_pots;
-    uint8_t last_bad_pots;
-    bool warningInactive();
+ protected:
+  swarnstate_t last_bad_switches;
+  uint16_t     bad_pots;
+  uint16_t     last_bad_pots;
+  StaticText*  warn_label;
+
+  bool warningInactive();
+  
+  void init() override;
 };
 
 #endif

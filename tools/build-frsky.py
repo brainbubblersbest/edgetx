@@ -71,6 +71,11 @@ boards = {
         "PCB": "X9E",
         "DEFAULT_MODE": "2",
     },
+    "X9EHall": {
+        "PCB": "X9E",
+        "STICKS": "HORUS",
+        "DEFAULT_MODE": "2",
+    },
     "X7_FCC": {
         "PCB": "X7",
         "DEFAULT_MODE": "2",
@@ -137,7 +142,7 @@ def build(board, translation, srcdir):
         suffix = "" if index == 0 else "_%d" % index
         filename = "output/firmware_%s_%s_%s%s.bin" % (board.lower(), translation.lower(), timestamp(), suffix)
         if not os.path.exists(filename):
-            shutil.copy("%s/firmware.bin" % path, filename)
+            shutil.copy("%s/arm-none-eabi/firmware.bin" % path, filename)
             break
         index += 1
     shutil.rmtree(path)

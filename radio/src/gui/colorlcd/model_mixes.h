@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -18,25 +19,40 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _MODEL_MIXES_H_
-#define _MODEL_MIXES_H_
+#pragma once
 
-#include "tabsgroup.h"
+#include "model_inputs.h"
 
-class ModelMixesPage: public PageTab {
-  public:
-    ModelMixesPage();
 
-    void build(FormWindow * window) override
-    {
-      build(window, 0);
-    }
+class ModelMixesPage : public ModelInputsPage
+{
+  bool showMonitors = false;
+  Window* scroll_win = nullptr;
+  
+ public:
+  ModelMixesPage();
 
-  protected:
-    void build(FormWindow * window, int8_t focusMixIndex);
-    void rebuild(FormWindow * window, int8_t focusMixIndex);
-    void editMix(FormWindow * window, uint8_t channel, uint8_t mixIndex);
-    uint8_t s_copySrcIdx;
+  void build(FormWindow* window) override;
+
+ protected:
+  InputMixGroup* getGroupByIndex(uint8_t index) override;
+
+  void addLineButton(uint8_t index) override;
+  void addLineButton(mixsrc_t src, uint8_t index) override;
+  InputMixGroup* createGroup(FormWindow* form, mixsrc_t src) override;
+  InputMixButton* createLineButton(InputMixGroup* group,
+                                   uint8_t index) override;
+
+  void newMix();
+  void editMix(uint8_t input, uint8_t index);
+  void insertMix(uint8_t input, uint8_t index);
+  void deleteMix(uint8_t index);
+
+  void pasteMix(uint8_t dst_idx, uint8_t channel);
+  void pasteMixBefore(uint8_t dst_idx);
+  void pasteMixAfter(uint8_t dst_idx);
+
+  void enableMonitors(bool enabled);
+
+  bool reachMixesLimit();
 };
-
-#endif // _MODEL_MIXES_H_

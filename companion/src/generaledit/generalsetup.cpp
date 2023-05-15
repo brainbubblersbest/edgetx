@@ -125,6 +125,14 @@ ui(new Ui::GeneralSetup)
     ui->faimode_CB->setChecked(generalSettings.fai);
   }
 
+  if (!firmware->getCapability(RotaryEncoderNavigation)) {
+    ui->rotEncMode_CB->hide();
+    ui->rotEncMode_label->hide();
+  }
+  else {
+    populateRotEncModeCB();
+  }
+
   if (!firmware->getCapability(HasPxxCountry)) {
     ui->countrycode_label->hide();
     ui->countrycode_CB->hide();
@@ -243,17 +251,11 @@ ui(new Ui::GeneralSetup)
   ui->rssiPowerOffWarnChkB->setChecked(!generalSettings.disableRssiPoweroffAlarm); // Default is zero=checked
 
   if (IS_FAMILY_HORUS_OR_T16(firmware->getBoard())) {
-    ui->splashScreenChkB->hide();
     ui->splashScreenDuration->hide();
     ui->splashScreenLabel->hide();
   }
-  if (IS_TARANIS(firmware->getBoard())) {
-    ui->splashScreenChkB->hide();
-    ui->splashScreenDuration->setCurrentIndex(3-generalSettings.splashDuration);
-  }
   else {
-    ui->splashScreenDuration->hide();
-    ui->splashScreenChkB->setChecked(!generalSettings.splashMode);
+    ui->splashScreenDuration->setCurrentIndex(3-generalSettings.splashMode);
   }
 
   if (!firmware->getCapability(PwrButtonPress)) {
@@ -266,6 +268,10 @@ ui(new Ui::GeneralSetup)
     ui->pwrOnDelayLabel->hide();
     ui->pwrOnDelay->hide();
   }
+
+  QRegExp rx(CHAR_FOR_NAMES_REGEX);
+  ui->registrationId->setValidator(new QRegExpValidator(rx, this));
+  ui->registrationId->setMaxLength(REGISTRATION_ID_LEN);
 
   setValues();
 
@@ -328,7 +334,8 @@ void GeneralSetupPanel::populateBacklightCB()
   QString strings[] = { tr("OFF"), tr("Keys"), tr("Sticks"), tr("Keys + Sticks"), tr("ON"), NULL };
 
   b->clear();
-  for (int i=0; !strings[i].isNull(); i++) {
+  int startValue = (firmware->getCapability(LcdDepth)>=8)?1:0;
+  for (int i=startValue; !strings[i].isNull(); i++) {
     b->addItem(strings[i], 0);
     if (generalSettings.backlightMode == i) {
       b->setCurrentIndex(b->count()-1);
@@ -339,8 +346,14 @@ void GeneralSetupPanel::populateBacklightCB()
 void GeneralSetupPanel::populateVoiceLangCB()
 {
   QComboBox * b = ui->voiceLang_CB;
-  QString strings[] = { tr("English"), tr("Dutch"), tr("French"), tr("Italian"), tr("German"), tr("Czech"), tr("Slovak"), tr("Spanish"), tr("Polish"), tr("Portuguese"), tr("Russian"), tr("Swedish"), tr("Hungarian"), NULL};
-  QString langcode[] = { "en", "nl","fr", "it", "de", "cz", "sk", "es", "pl", "pt", "ru", "se", "hu", NULL};
+  QString strings[] = { tr("English"), tr("Danish"), tr("Dutch"), tr("French"), tr("Italian"), tr("German"),
+                        tr("Czech"), tr("Slovak"), tr("Spanish"), tr("Polish"), tr("Portuguese"), tr("Russian"),
+                        tr("Swedish"), tr("Hungarian"), tr("Chinese"), tr("Japanese"), tr("Hebrew"), NULL};
+
+  //  Note: these align with the radio NOT computer locales - TODO harmonise with ISO and one list!!!
+  QString langcode[] = { "en", "da", "nl","fr", "it", "de",
+                         "cz", "sk", "es", "pl", "pt", "ru",
+                         "se", "hu", "cn", "jp", "he", NULL};
 
   b->clear();
   for (int i=0; strings[i]!=NULL; i++) {
@@ -451,8 +464,14 @@ void GeneralSetupPanel::setValues()
   ui->pwrOnDelay->setValue(2 - generalSettings.pwrOnSpeed);
   ui->pwrOffDelay->setValue(2 - generalSettings.pwrOffSpeed);
 
-    // TODO: only if ACCESS available??
   ui->registrationId->setText(generalSettings.registrationId);
+
+  if (Boards::getCapability(firmware->getBoard(), Board::HasColorLcd)) {
+    ui->modelQuickSelect_CB->setChecked(generalSettings.modelQuickSelect);
+  } else {
+    ui->label_modelQuickSelect->hide();
+    ui->modelQuickSelect_CB->hide();
+  }
 }
 
 void GeneralSetupPanel::on_faimode_CB_stateChanged(int)
@@ -474,6 +493,31 @@ void GeneralSetupPanel::on_faimode_CB_stateChanged(int)
   emit modified();
 }
 
+void GeneralSetupPanel::populateRotEncModeCB()
+{
+  QComboBox * b = ui->rotEncMode_CB;
+  QString strings[] = { tr("Normal"), tr("Inverted"), tr("Vertical Inverted, Horizontal Normal"), tr("Vertical Inverted, Horizontal Alternate") };
+  int itemCount = 4;
+
+  if (Boards::getCapability(firmware->getBoard(), Board::HasColorLcd)) {
+    itemCount = 2;
+  }
+
+  b->clear();
+  for (uint8_t i=0; i < itemCount; i++) {
+    b->addItem(strings[i], 0);
+  }
+  b->setCurrentIndex(generalSettings.rotEncMode);
+}
+
+void GeneralSetupPanel::on_rotEncMode_CB_currentIndexChanged(int index)
+{
+  if (!lock) {
+    generalSettings.rotEncMode = index;
+    emit modified();
+  }
+}
+
 void GeneralSetupPanel::on_speakerPitchSB_editingFinished()
 {
   generalSettings.speakerPitch = ui->speakerPitchSB->value();
@@ -492,16 +536,9 @@ void GeneralSetupPanel::on_soundModeCB_currentIndexChanged(int index)
   emit modified();
 }
 
-
-void GeneralSetupPanel::on_splashScreenChkB_stateChanged(int )
-{
-  generalSettings.splashMode = ui->splashScreenChkB->isChecked() ? 0 : 1;
-  emit modified();
-}
-
 void GeneralSetupPanel::on_splashScreenDuration_currentIndexChanged(int index)
 {
-  generalSettings.splashDuration = 3-index;
+  generalSettings.splashMode = 3-index;
   emit modified();
 }
 
@@ -747,15 +784,18 @@ void GeneralSetupPanel::on_blAlarm_ChkB_stateChanged()
 
 void GeneralSetupPanel::on_registrationId_editingFinished()
 {
-  //copy ownerID back to generalSettings.registrationId
-  QByteArray array = ui->registrationId->text().toLocal8Bit();
-  strncpy(generalSettings.registrationId, array, 8);
-  generalSettings.registrationId[8] = '\0';
+  strncpy(generalSettings.registrationId, ui->registrationId->text().toLatin1(), REGISTRATION_ID_LEN);
   emit modified();
 }
 
 void GeneralSetupPanel::stickReverseEdited()
 {
   generalSettings.stickReverse = ((int)ui->stickReverse1->isChecked()) | ((int)ui->stickReverse2->isChecked()<<1) | ((int)ui->stickReverse3->isChecked()<<2) | ((int)ui->stickReverse4->isChecked()<<3);
+  emit modified();
+}
+
+void GeneralSetupPanel::on_modelQuickSelect_CB_stateChanged(int)
+{
+  generalSettings.modelQuickSelect = ui->modelQuickSelect_CB->isChecked();
   emit modified();
 }

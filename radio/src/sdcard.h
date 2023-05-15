@@ -1,7 +1,8 @@
 /*
- * Copyright (C) OpenTX
+ * Copyright (C) EdgeTX
  *
  * Based on code named
+ *   opentx - https://github.com/opentx/opentx
  *   th9x - http://code.google.com/p/th9x
  *   er9x - http://code.google.com/p/er9x
  *   gruvin9x - http://code.google.com/p/gruvin9x
@@ -21,16 +22,23 @@
 #ifndef _SDCARD_H_
 #define _SDCARD_H_
 
-#if !defined(SIMU)
 #include "ff.h"
-#endif
 
-#include "opentx.h"
+extern FATFS g_FATFS_Obj;
+extern FIL g_oLogFile;
+
+#include "translations.h"
+
+#define FILE_COPY_PREFIX "cp_"
 
 #define PATH_SEPARATOR      "/"
 #define ROOT_PATH           PATH_SEPARATOR
 #define MODELS_PATH         ROOT_PATH "MODELS"      // no trailing slash = important
+#define DELETED_MODELS_PATH MODELS_PATH PATH_SEPARATOR "DELETED"
+#define UNUSED_MODELS_PATH  MODELS_PATH PATH_SEPARATOR "UNUSED"
 #define RADIO_PATH          ROOT_PATH "RADIO"       // no trailing slash = important
+#define TEMPLATES_PATH      ROOT_PATH "TEMPLATES"
+#define PERS_TEMPL_PATH     TEMPLATES_PATH "/PERSONAL"
 #define LOGS_PATH           ROOT_PATH "LOGS"
 #define SCREENSHOTS_PATH    ROOT_PATH "SCREENSHOTS"
 #define SOUNDS_PATH         ROOT_PATH "SOUNDS/en"
@@ -40,6 +48,7 @@
 #define FIRMWARES_PATH      ROOT_PATH "FIRMWARE"
 #define AUTOUPDATE_FILENAME FIRMWARES_PATH PATH_SEPARATOR "autoupdate.frsk"
 #define EEPROMS_PATH        ROOT_PATH "EEPROM"
+#define BACKUP_PATH         ROOT_PATH "BACKUP"
 #define SCRIPTS_PATH        ROOT_PATH "SCRIPTS"
 #define WIZARD_PATH         SCRIPTS_PATH PATH_SEPARATOR "WIZARD"
 #define THEMES_PATH         ROOT_PATH "THEMES"
@@ -53,13 +62,21 @@
 
 #define LEN_FILE_PATH_MAX   (sizeof(SCRIPTS_TELEM_PATH)+1)  // longest + "/"
 
-#if defined(COLORLCD)
+#if defined(SDCARD_YAML) || defined(SDCARD_RAW)
 #define RADIO_FILENAME      "radio.bin"
 const char RADIO_MODELSLIST_PATH[] = RADIO_PATH PATH_SEPARATOR "models.txt";
 const char RADIO_SETTINGS_PATH[] = RADIO_PATH PATH_SEPARATOR RADIO_FILENAME;
 #if defined(SDCARD_YAML)
-const char RADIO_MODELSLIST_YAML_PATH[] = RADIO_PATH PATH_SEPARATOR "models.yml";
+#define LABELS_FILENAME     "labels.yml"
+#define MODELS_FILENAME     "models.yml"
+const char MODELSLIST_YAML_PATH[] = MODELS_PATH PATH_SEPARATOR MODELS_FILENAME;
+const char FALLBACK_MODELSLIST_YAML_PATH[] = RADIO_PATH PATH_SEPARATOR MODELS_FILENAME;
+const char LABELSLIST_YAML_PATH[] = MODELS_PATH PATH_SEPARATOR LABELS_FILENAME;
 const char RADIO_SETTINGS_YAML_PATH[] = RADIO_PATH PATH_SEPARATOR "radio.yml";
+const char RADIO_SETTINGS_TMPFILE_YAML_PATH[] = RADIO_PATH PATH_SEPARATOR "radio_new.yml";
+const char RADIO_SETTINGS_ERRORFILE_YAML_PATH[] = RADIO_PATH PATH_SEPARATOR "radio_error.yml";
+
+const char YAMLFILE_CHECKSUM_TAG_NAME[] = "checksum";
 #endif
 #define    SPLASH_FILE             "splash.png"
 #endif
@@ -102,15 +119,11 @@ const char RADIO_SETTINGS_YAML_PATH[] = RADIO_PATH PATH_SEPARATOR "radio.yml";
   filename[sizeof(path)+sizeof(var)] = '\0'; \
   strcat(&filename[sizeof(path)], ext)
 
-extern FATFS g_FATFS_Obj;
-extern FIL g_oLogFile;
-
-extern uint8_t logDelay;
+extern uint8_t logDelay100ms;
 void logsInit();
 void logsClose();
 void logsWrite();
 
-bool sdCardFormat();
 uint32_t sdGetNoSectors();
 uint32_t sdGetSize();
 uint32_t sdGetFreeSectors();
@@ -130,41 +143,47 @@ inline const char * SDCARD_ERROR(FRESULT result)
 const char * getBasename(const char * path);
 
 #if defined(PCBX12S)
-  #define OTX_FOURCC 0x3478746F // otx for X12S
+  #define ETX_FOURCC 0x3478746F // etx for X12S
 #elif defined(RADIO_T16)
-  #define OTX_FOURCC 0x3F78746F // otx for Jumper T16
+  #define ETX_FOURCC 0x3F78746F // etx for Jumper T16
 #elif defined(RADIO_T18)
-  #define OTX_FOURCC 0x4078746F // otx for Jumper T18
+  #define ETX_FOURCC 0x4078746F // etx for Jumper T18
 #elif defined(RADIO_TX16S)
-  #define OTX_FOURCC 0x3878746F // otx for Radiomaster TX16S
+  #define ETX_FOURCC 0x3878746F // etx for Radiomaster TX16S
 #elif defined(PCBX10)
-  #define OTX_FOURCC 0x3778746F // otx for X10
+  #define ETX_FOURCC 0x3778746F // etx for X10
 #elif defined(PCBX9E)
-  #define OTX_FOURCC 0x3578746F // otx for Taranis X9E
+  #define ETX_FOURCC 0x3578746F // etx for Taranis X9E
 #elif defined(PCBXLITES)
-  #define OTX_FOURCC 0x3B78746F // otx for Taranis X-Lite S
+  #define ETX_FOURCC 0x3B78746F // etx for Taranis X-Lite S
 #elif defined(PCBXLITE)
-  #define OTX_FOURCC 0x3978746F // otx for Taranis X-Lite
+  #define ETX_FOURCC 0x3978746F // etx for Taranis X-Lite
 #elif defined(RADIO_T12)
-  #define OTX_FOURCC 0x3D78746F // otx for Jumper T12
+  #define ETX_FOURCC 0x3D78746F // etx for Jumper T12
 #elif defined(RADIO_TLITE)
-  #define OTX_FOURCC 0x4278746F // otx for Jumper TLite
+  #define ETX_FOURCC 0x4278746F // etx for Jumper TLite
+#elif defined(RADIO_TPRO)
+  #define ETX_FOURCC 0x4678746F // etx for Jumper TPro
+#elif defined(RADIO_LR3PRO)
+  #define ETX_FOURCC 0x4478746F // etx for BETAFPV LR3PRO
 #elif defined(RADIO_TX12)
-  #define OTX_FOURCC 0x4178746F // otx for Radiomaster TX12
+  #define ETX_FOURCC 0x4178746F // etx for Radiomaster TX12
+#elif defined(RADIO_TX12MK2)
+  #define ETX_FOURCC 0x4878746F // etx for Radiomaster TX12MK2
+#elif defined(RADIO_ZORRO)
+  #define ETX_FOURCC 0x4778746F // otx for Radiomaster Zorro
 #elif defined(RADIO_T8)
-  #define OTX_FOURCC 0x4378746F // otx for Radiomaster T8
+  #define ETX_FOURCC 0x4378746F // etx for Radiomaster T8
 #elif defined(PCBX7)
-  #define OTX_FOURCC 0x3678746F // otx for Taranis X7 / X7S / X7 Express / X7S Express
+  #define ETX_FOURCC 0x3678746F // etx for Taranis X7 / X7S / X7 Express / X7S Express
 #elif defined(PCBX9LITES)
-  #define OTX_FOURCC 0x3E78746F // otx for Taranis X9-Lite S
+  #define ETX_FOURCC 0x3E78746F // etx for Taranis X9-Lite S
 #elif defined(PCBX9LITE)
-  #define OTX_FOURCC 0x3C78746F // otx for Taranis X9-Lite
+  #define ETX_FOURCC 0x3C78746F // etx for Taranis X9-Lite
 #elif defined(PCBX9D) || defined(PCBX9DP)
-  #define OTX_FOURCC 0x3378746F // otx for Taranis X9D
+  #define ETX_FOURCC 0x3378746F // etx for Taranis X9D
 #elif defined(PCBNV14)
-  #define OTX_FOURCC 0x3A78746F // otx for NV14
-#elif defined(PCBSKY9X)
-  #define OTX_FOURCC 0x3278746F // otx for sky9x
+  #define ETX_FOURCC 0x3A78746F // etx for NV14
 #endif
 
 bool isFileAvailable(const char * filename, bool exclDir = false);
@@ -172,11 +191,11 @@ unsigned int findNextFileIndex(char * filename, uint8_t size, const char * direc
 
 const char * sdCopyFile(const char * src, const char * dest);
 const char * sdCopyFile(const char * srcFilename, const char * srcDir, const char * destFilename, const char * destDir);
+const char * sdMoveFile(const char * src, const char * dest);
+const char * sdMoveFile(const char * srcFilename, const char * srcDir, const char * destFilename, const char * destDir);
 
 #define LIST_NONE_SD_FILE   1
 #define LIST_SD_FILE_EXT    2
 bool sdListFiles(const char * path, const char * extension, const uint8_t maxlen, const char * selection, uint8_t flags=0);
-
-void sdReadTextFile(const char * filename, char lines[NUM_BODY_LINES][LCD_COLS + 1], int & lines_count);
 
 #endif // _SDCARD_H_
